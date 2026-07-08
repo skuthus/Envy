@@ -30,7 +30,7 @@ public final class NoteStore: ObservableObject {
 
     public static func defaultDirectory() -> URL {
         let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
-        return docs.appendingPathComponent("Velocity Notes", isDirectory: true)
+        return docs.appendingPathComponent("Envy", isDirectory: true)
     }
 
     /// New notes are created in the first configured folder.
