@@ -11,6 +11,7 @@ struct NoteEditorView: View {
     var requireModifierForLinkClick: Bool
     var searchQuery: String
     var showTitleHeader: Bool
+    var fontZoom: CGFloat
     var onStatsChange: (Int, Int) -> Void
 
     @State private var content: String
@@ -32,6 +33,7 @@ struct NoteEditorView: View {
         requireModifierForLinkClick: Bool,
         searchQuery: String,
         showTitleHeader: Bool,
+        fontZoom: CGFloat,
         onStatsChange: @escaping (Int, Int) -> Void
     ) {
         self.store = store
@@ -43,6 +45,7 @@ struct NoteEditorView: View {
         self.requireModifierForLinkClick = requireModifierForLinkClick
         self.searchQuery = searchQuery
         self.showTitleHeader = showTitleHeader
+        self.fontZoom = fontZoom
         self.onStatsChange = onStatsChange
         // Seeded here rather than in .onAppear: with .id(noteID) forcing a
         // fresh instance per note, .onAppear runs AFTER the first body
@@ -65,7 +68,8 @@ struct NoteEditorView: View {
                 onNavigate: onNavigate,
                 theme: theme,
                 requireModifierForLinkClick: requireModifierForLinkClick,
-                searchQuery: searchQuery
+                searchQuery: searchQuery,
+                fontZoom: fontZoom
             )
             .focusable()
             .focused(focusedField, equals: .editor)

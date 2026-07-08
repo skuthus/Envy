@@ -143,12 +143,19 @@ enum MarkdownStyler {
         theme: Theme,
         revealedLinkRange: NSRange? = nil,
         searchQuery: String = "",
-        cursorSelection: NSRange? = nil
+        cursorSelection: NSRange? = nil,
+        fontSizeAdjustment: CGFloat = 0
     ) {
         let full = NSRange(location: 0, length: (text as NSString).length)
         guard full.length > 0 else { return }
 
-        let baseFont = theme.resolvedFont
+        let unadjustedFont = theme.resolvedFont
+        // Everything below derives its size from baseFont.pointSize (headings,
+        // bold, code, etc.), so nudging it here is enough to zoom the whole
+        // note proportionally without touching the user's saved theme size.
+        let baseFont = fontSizeAdjustment == 0
+            ? unadjustedFont
+            : NSFontManager.shared.convert(unadjustedFont, toSize: max(6, unadjustedFont.pointSize + fontSizeAdjustment))
         let markerColor = theme.resolvedMarkerColor
         let listMarkerColor = markerColor.withAlphaComponent(0.5)
         let linkColor = theme.resolvedLinkColor

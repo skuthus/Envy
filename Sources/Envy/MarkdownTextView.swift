@@ -67,6 +67,7 @@ struct MarkdownTextView: NSViewRepresentable {
     var theme: Theme
     var requireModifierForLinkClick: Bool
     var searchQuery: String
+    var fontZoom: CGFloat = 0
 
     func makeCoordinator() -> Coordinator {
         Coordinator(self)
@@ -115,9 +116,10 @@ struct MarkdownTextView: NSViewRepresentable {
         context.coordinator.textView = textView
         applyTheme(theme, to: textView, scrollView: scrollView)
         if let textStorage = textView.textStorage {
-            MarkdownStyler.style(textStorage: textStorage, text: text, theme: theme, searchQuery: searchQuery)
+            MarkdownStyler.style(textStorage: textStorage, text: text, theme: theme, searchQuery: searchQuery, fontSizeAdjustment: fontZoom)
         }
         context.coordinator.lastSearchQuery = searchQuery
+        context.coordinator.lastFontZoom = fontZoom
         return scrollView
     }
 
@@ -141,7 +143,9 @@ struct MarkdownTextView: NSViewRepresentable {
 
         applyTheme(theme, to: textView, scrollView: scrollView)
 
-        if context.coordinator.lastTheme != theme || context.coordinator.lastSearchQuery != searchQuery {
+        if context.coordinator.lastTheme != theme
+            || context.coordinator.lastSearchQuery != searchQuery
+            || context.coordinator.lastFontZoom != fontZoom {
             if let textStorage = textView.textStorage {
                 MarkdownStyler.style(
                     textStorage: textStorage,
@@ -149,11 +153,13 @@ struct MarkdownTextView: NSViewRepresentable {
                     theme: theme,
                     revealedLinkRange: context.coordinator.hoveredLinkRange,
                     searchQuery: searchQuery,
-                    cursorSelection: Self.currentSelection(of: textView)
+                    cursorSelection: Self.currentSelection(of: textView),
+                    fontSizeAdjustment: fontZoom
                 )
             }
             context.coordinator.lastTheme = theme
             context.coordinator.lastSearchQuery = searchQuery
+            context.coordinator.lastFontZoom = fontZoom
         }
 
         // Focus is handled by .focusable() + .focused(_:equals: .editor) on
@@ -199,6 +205,7 @@ struct MarkdownTextView: NSViewRepresentable {
         var hoveredLinkRange: NSRange?
         var lastTheme: Theme?
         var lastSearchQuery: String = ""
+        var lastFontZoom: CGFloat = 0
 
         private var cachedText: String = ""
         private var cachedWikiLinkRanges: [NSRange] = []
@@ -373,7 +380,8 @@ struct MarkdownTextView: NSViewRepresentable {
                 theme: parent.theme,
                 revealedLinkRange: hoveredLinkRange,
                 searchQuery: parent.searchQuery,
-                cursorSelection: MarkdownTextView.currentSelection(of: textView)
+                cursorSelection: MarkdownTextView.currentSelection(of: textView),
+                fontSizeAdjustment: parent.fontZoom
             )
         }
 

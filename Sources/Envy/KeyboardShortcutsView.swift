@@ -32,6 +32,11 @@ struct KeyboardShortcutsView: View {
             Entry(keys: "⌘↩", description: "Center the window on screen"),
             Entry(keys: "⌘⇧L", description: "Toggle horizontal / vertical layout"),
         ]),
+        Group(title: "Font", entries: [
+            Entry(keys: "⌘+", description: "Zoom in on the note text"),
+            Entry(keys: "⌘-", description: "Zoom out on the note text"),
+            Entry(keys: "⌘0", description: "Reset the note text zoom"),
+        ]),
         Group(title: "Standard", entries: [
             Entry(keys: "⌘,", description: "Settings"),
             Entry(keys: "⌘Q", description: "Quit"),

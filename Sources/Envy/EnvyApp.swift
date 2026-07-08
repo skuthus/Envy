@@ -117,6 +117,22 @@ struct EnvyApp: App {
                 }
                 .keyboardShortcut("l", modifiers: [.command, .shift])
             }
+            CommandMenu("Font") {
+                Button("Zoom In") {
+                    NotificationCenter.default.post(name: .zoomInRequested, object: nil)
+                }
+                .keyboardShortcut("+", modifiers: [.command])
+
+                Button("Zoom Out") {
+                    NotificationCenter.default.post(name: .zoomOutRequested, object: nil)
+                }
+                .keyboardShortcut("-", modifiers: [.command])
+
+                Button("Actual Size") {
+                    NotificationCenter.default.post(name: .zoomResetRequested, object: nil)
+                }
+                .keyboardShortcut("0", modifiers: [.command])
+            }
             CommandGroup(after: .windowArrangement) {
                 // No .keyboardShortcut here — ⌘↩ is handled by the local event
                 // monitor in AppDelegate instead, since SwiftUI's menu-shortcut

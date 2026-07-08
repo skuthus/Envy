@@ -54,6 +54,7 @@ struct ContentView: View {
     @AppStorage("showFooterClock") private var showFooterClock = false
     @AppStorage("showFooterClockDate") private var showFooterClockDate = false
     @AppStorage("footerClockDateFormat") private var footerClockDateFormatRaw = ClockDateFormat.short.rawValue
+    @AppStorage("editorFontZoom") private var editorFontZoom: Double = 0
 
     private var layoutMode: LayoutMode {
         LayoutMode(rawValue: layoutModeRaw) ?? .horizontal
@@ -131,6 +132,15 @@ struct ContentView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .toggleLayoutRequested)) { _ in
             layoutModeRaw = (layoutMode == .horizontal ? LayoutMode.vertical : .horizontal).rawValue
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .zoomInRequested)) { _ in
+            editorFontZoom = min(60, editorFontZoom + 1)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .zoomOutRequested)) { _ in
+            editorFontZoom = max(-8, editorFontZoom - 1)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .zoomResetRequested)) { _ in
+            editorFontZoom = 0
         }
         .onAppear {
             createWelcomeNoteIfNeeded()
@@ -256,6 +266,7 @@ struct ContentView: View {
                         requireModifierForLinkClick: requireModifierForLinkClick,
                         searchQuery: query,
                         showTitleHeader: showEditorTitleHeader,
+                        fontZoom: CGFloat(editorFontZoom),
                         onStatsChange: { words, characters in
                             editorWordCount = words
                             editorCharacterCount = characters
