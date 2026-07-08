@@ -16,7 +16,7 @@ struct AboutView: View {
                 .font(.callout)
                 .foregroundStyle(.secondary)
 
-            Text("Version 1.12")
+            Text("Version 1.0.0")
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
