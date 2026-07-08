@@ -39,7 +39,6 @@ final class HoverAwareTextView: NSTextView {
 
 struct MarkdownTextView: NSViewRepresentable {
     @Binding var text: String
-    var noteID: String
     var onNavigate: (String) -> Void
     var focusedField: FocusState<FocusField?>.Binding
     var theme: Theme
@@ -88,51 +87,38 @@ struct MarkdownTextView: NSViewRepresentable {
             MarkdownStyler.style(textStorage: textStorage, text: text, theme: theme, searchQuery: searchQuery)
         }
         context.coordinator.lastSearchQuery = searchQuery
-        context.coordinator.lastNoteID = noteID
         return scrollView
     }
 
+    static func currentSelection(of textView: NSTextView) -> NSRange? {
+        textView.window?.firstResponder === textView ? textView.selectedRange() : nil
+    }
+
+    // Note switches are handled by giving NoteEditorView a `.id(noteID)` in
+    // ContentView, which tears down and recreates this whole view (and its
+    // Coordinator/NSTextView) per note via makeNSView — so this never needs to
+    // reconcile `text` against a different note's content. It only ever needs
+    // to react to theme/search-query changes for the note already showing,
+    // and it restyles using the view's own live content rather than `text`,
+    // since `text` is just an echo of the last edit and can lag textView.string
+    // by a render cycle mid-typing. Comparing/pushing from `text` here was the
+    // previous bug: a stale value could overwrite what was just typed, which
+    // is what caused headings to flicker between their styled and plain form.
     func updateNSView(_ scrollView: NSScrollView, context: Context) {
         context.coordinator.parent = self
         guard let textView = context.coordinator.textView else { return }
 
         applyTheme(theme, to: textView, scrollView: scrollView)
 
-        // While actively typing, `text` is the SwiftUI binding echoed back from
-        // textDidChange — it can lag textView.string by a render cycle. Only
-        // ever push `text` into the view (and only ever compare against it) on
-        // a genuine note switch; a switched note is the one case textDidChange
-        // can't have already handled. Comparing raw string equality here too
-        // was the bug: a stale `text` value made this branch fire mid-typing,
-        // overwriting the just-typed content with an older snapshot and
-        // re-styling it, which is what caused headings to flicker between
-        // their styled and plain appearance while typing.
-        if context.coordinator.lastNoteID != noteID {
-            let selectedRange = textView.selectedRange()
-            textView.string = text
-            context.coordinator.hoveredLinkRange = nil
-            if let textStorage = textView.textStorage {
-                MarkdownStyler.style(
-                    textStorage: textStorage,
-                    text: text,
-                    theme: theme,
-                    searchQuery: searchQuery
-                )
-            }
-            textView.setSelectedRange(selectedRange)
-            context.coordinator.lastNoteID = noteID
-            context.coordinator.lastTheme = theme
-            context.coordinator.lastSearchQuery = searchQuery
-        } else if context.coordinator.lastTheme != theme || context.coordinator.lastSearchQuery != searchQuery {
-            // Restyle using the view's own live content, not `text` — same
-            // reasoning as above, just for the theme/search-change case.
+        if context.coordinator.lastTheme != theme || context.coordinator.lastSearchQuery != searchQuery {
             if let textStorage = textView.textStorage {
                 MarkdownStyler.style(
                     textStorage: textStorage,
                     text: textView.string,
                     theme: theme,
                     revealedLinkRange: context.coordinator.hoveredLinkRange,
-                    searchQuery: searchQuery
+                    searchQuery: searchQuery,
+                    cursorSelection: Self.currentSelection(of: textView)
                 )
             }
             context.coordinator.lastTheme = theme
@@ -169,7 +155,6 @@ struct MarkdownTextView: NSViewRepresentable {
         var hoveredLinkRange: NSRange?
         var lastTheme: Theme?
         var lastSearchQuery: String = ""
-        var lastNoteID: String?
 
         private var cachedText: String = ""
         private var cachedWikiLinkRanges: [NSRange] = []
@@ -182,16 +167,31 @@ struct MarkdownTextView: NSViewRepresentable {
             guard let textView = notification.object as? NSTextView else { return }
             let selectedRange = textView.selectedRange()
             parent.text = textView.string
-            if let textStorage = textView.textStorage {
-                MarkdownStyler.style(
-                    textStorage: textStorage,
-                    text: textView.string,
-                    theme: parent.theme,
-                    revealedLinkRange: hoveredLinkRange,
-                    searchQuery: parent.searchQuery
-                )
-            }
+            restyle(textView)
             textView.setSelectedRange(selectedRange)
+        }
+
+        func textViewDidChangeSelection(_ notification: Notification) {
+            guard let textView = notification.object as? NSTextView else { return }
+            restyle(textView)
+        }
+
+        /// Re-applies styling using the view's own live content and current
+        /// cursor position — the single source of truth for what's actually
+        /// on screen, so this is always safe to call from any AppKit-native
+        /// delegate callback (never from the SwiftUI-driven updateNSView,
+        /// which can see a stale `text` binding — see its own comments).
+        @MainActor
+        private func restyle(_ textView: NSTextView) {
+            guard let textStorage = textView.textStorage else { return }
+            MarkdownStyler.style(
+                textStorage: textStorage,
+                text: textView.string,
+                theme: parent.theme,
+                revealedLinkRange: hoveredLinkRange,
+                searchQuery: parent.searchQuery,
+                cursorSelection: MarkdownTextView.currentSelection(of: textView)
+            )
         }
 
         func textView(_ textView: NSTextView, clickedOnLink link: Any, at charIndex: Int) -> Bool {
@@ -222,28 +222,14 @@ struct MarkdownTextView: NSViewRepresentable {
 
             guard hit != hoveredLinkRange else { return }
             hoveredLinkRange = hit
-            if let textStorage = textView.textStorage {
-                MarkdownStyler.style(
-                    textStorage: textStorage,
-                    text: text,
-                    theme: parent.theme,
-                    revealedLinkRange: hit,
-                    searchQuery: parent.searchQuery
-                )
-            }
+            restyle(textView)
         }
 
         @MainActor
         func clearHover() {
-            guard hoveredLinkRange != nil, let textView, let textStorage = textView.textStorage else { return }
+            guard hoveredLinkRange != nil, let textView else { return }
             hoveredLinkRange = nil
-            MarkdownStyler.style(
-                textStorage: textStorage,
-                text: textView.string,
-                theme: parent.theme,
-                revealedLinkRange: nil,
-                searchQuery: parent.searchQuery
-            )
+            restyle(textView)
         }
 
         @MainActor

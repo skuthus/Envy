@@ -173,6 +173,12 @@ struct ContentView: View {
                     searchQuery: query,
                     showTitleHeader: showEditorTitleHeader
                 )
+                // Forces a fresh NoteEditorView (and its underlying NSTextView)
+                // per note instead of patching the same instance in place —
+                // patching relied on noteID and content always updating in the
+                // same render pass, which isn't guaranteed and could show one
+                // note's content inside another's editor.
+                .id(selectedID)
             } else {
                 ContentUnavailableView("No Note Selected", systemImage: "note.text")
             }

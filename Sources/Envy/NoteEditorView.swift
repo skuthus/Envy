@@ -12,13 +12,43 @@ struct NoteEditorView: View {
     var searchQuery: String
     var showTitleHeader: Bool
 
-    @State private var content: String = ""
+    @State private var content: String
     @State private var saveTask: Task<Void, Never>?
-    @State private var titleText: String = ""
+    @State private var titleText: String
     @FocusState private var isTitleFocused: Bool
 
     private var note: Note? {
         store.notes.first { $0.id == noteID }
+    }
+
+    init(
+        store: NoteStore,
+        noteID: String,
+        focusedField: FocusState<FocusField?>.Binding,
+        onNavigate: @escaping (String) -> Void,
+        onRename: @escaping (String) -> Void,
+        theme: Theme,
+        requireModifierForLinkClick: Bool,
+        searchQuery: String,
+        showTitleHeader: Bool
+    ) {
+        self.store = store
+        self.noteID = noteID
+        self.focusedField = focusedField
+        self.onNavigate = onNavigate
+        self.onRename = onRename
+        self.theme = theme
+        self.requireModifierForLinkClick = requireModifierForLinkClick
+        self.searchQuery = searchQuery
+        self.showTitleHeader = showTitleHeader
+        // Seeded here rather than in .onAppear: with .id(noteID) forcing a
+        // fresh instance per note, .onAppear runs AFTER the first body
+        // evaluation (and thus after MarkdownTextView's makeNSView already
+        // read the default ""), so anything set in .onAppear would arrive
+        // too late for the text view to ever pick up.
+        let initialNote = store.notes.first { $0.id == noteID }
+        _content = State(initialValue: initialNote?.content ?? "")
+        _titleText = State(initialValue: initialNote?.title ?? "")
     }
 
     var body: some View {
@@ -29,21 +59,12 @@ struct NoteEditorView: View {
             }
             MarkdownTextView(
                 text: $content,
-                noteID: noteID,
                 onNavigate: onNavigate,
                 focusedField: focusedField,
                 theme: theme,
                 requireModifierForLinkClick: requireModifierForLinkClick,
                 searchQuery: searchQuery
             )
-        }
-        .onAppear {
-            content = note?.content ?? ""
-            titleText = note?.title ?? ""
-        }
-        .onChange(of: noteID) { _, _ in
-            content = note?.content ?? ""
-            titleText = note?.title ?? ""
         }
         .onChange(of: content) { _, newValue in scheduleSave(newValue) }
     }
