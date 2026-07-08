@@ -66,6 +66,8 @@ struct NoteEditorView: View {
             )
             .focusable()
             .focused(focusedField, equals: .editor)
+            Divider()
+            footer
         }
         .onChange(of: content) { _, newValue in scheduleSave(newValue) }
     }
@@ -82,12 +84,21 @@ struct NoteEditorView: View {
                     if !focused { commitRename() }
                 }
             Spacer()
-            Text("\(wordCount) words, \(characterCount) characters")
-                .foregroundStyle(.secondary)
-                .font(.caption)
         }
         .padding(.horizontal)
         .padding(.vertical, 8)
+        .background(.bar)
+    }
+
+    private var footer: some View {
+        HStack {
+            Spacer()
+            Text("\(wordCount) words, \(characterCount) characters")
+                .foregroundStyle(.secondary)
+                .font(.caption2)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 4)
         .background(.bar)
     }
 
