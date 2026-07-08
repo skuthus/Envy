@@ -26,6 +26,7 @@ struct ContentView: View {
     @AppStorage("showWindowTitle") private var showWindowTitle = true
     @AppStorage(NotesDirectoryPreference.storageKey) private var notesDirectoryPathsRaw = ""
     @AppStorage("hasCreatedWelcomeNote") private var hasCreatedWelcomeNote = false
+    @AppStorage("moveFocusToEditorOnEnter") private var moveFocusToEditorOnEnter = true
 
     private var layoutMode: LayoutMode {
         LayoutMode(rawValue: layoutModeRaw) ?? .horizontal
@@ -281,20 +282,20 @@ struct ContentView: View {
     private func handleEnter() {
         if let exact = store.exactTitleMatch(for: query) {
             selectedID = exact.id
-            focusedField = .editor
+            if moveFocusToEditorOnEnter { focusedField = .editor }
             return
         }
 
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
-            if selectedID != nil { focusedField = .editor }
+            if selectedID != nil, moveFocusToEditorOnEnter { focusedField = .editor }
             return
         }
 
         let newNote = store.create(title: trimmed)
         selectedID = newNote.id
         query = ""
-        focusedField = .editor
+        if moveFocusToEditorOnEnter { focusedField = .editor }
     }
 
     private func createBlankNote() {

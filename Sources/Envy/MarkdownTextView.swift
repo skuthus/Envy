@@ -40,7 +40,6 @@ final class HoverAwareTextView: NSTextView {
 struct MarkdownTextView: NSViewRepresentable {
     @Binding var text: String
     var onNavigate: (String) -> Void
-    var focusedField: FocusState<FocusField?>.Binding
     var theme: Theme
     var requireModifierForLinkClick: Bool
     var searchQuery: String
@@ -125,9 +124,13 @@ struct MarkdownTextView: NSViewRepresentable {
             context.coordinator.lastSearchQuery = searchQuery
         }
 
-        if focusedField.wrappedValue == .editor, textView.window?.firstResponder !== textView {
-            textView.window?.makeFirstResponder(textView)
-        }
+        // Focus is handled by .focusable() + .focused(_:equals: .editor) on
+        // this view where it's instantiated in NoteEditorView, so it
+        // coordinates properly with the search field's own .focused() binding
+        // through SwiftUI's own focus engine — a manual makeFirstResponder
+        // bridge here was fighting that: SwiftUI kept reasserting .search
+        // (the only view it recognized as an actual focus target) since
+        // .editor didn't correspond to anything it knew about.
     }
 
     private func applyTheme(_ theme: Theme, to textView: NSTextView, scrollView: NSScrollView) {

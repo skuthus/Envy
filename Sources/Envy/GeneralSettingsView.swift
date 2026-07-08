@@ -10,6 +10,7 @@ struct GeneralSettingsView: View {
     @AppStorage("requireModifierForLinkClick") private var requireModifierForLinkClick = true
     @AppStorage("showEditorTitleHeader") private var showEditorTitleHeader = true
     @AppStorage(NotesDirectoryPreference.storageKey) private var notesDirectoryPathsRaw = ""
+    @AppStorage("moveFocusToEditorOnEnter") private var moveFocusToEditorOnEnter = true
     @State private var showingMarkupHelp = false
     @State private var openAtLogin = SMAppService.mainApp.status == .enabled
 
@@ -82,6 +83,10 @@ struct GeneralSettingsView: View {
                         NSWorkspace.shared.activateFileViewerSelecting([directories[0]])
                     }
                 }
+            }
+
+            Section("Search") {
+                Toggle("Move cursor to editor after opening a note", isOn: $moveFocusToEditorOnEnter)
             }
 
             Section("List") {

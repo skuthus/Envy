@@ -60,11 +60,12 @@ struct NoteEditorView: View {
             MarkdownTextView(
                 text: $content,
                 onNavigate: onNavigate,
-                focusedField: focusedField,
                 theme: theme,
                 requireModifierForLinkClick: requireModifierForLinkClick,
                 searchQuery: searchQuery
             )
+            .focusable()
+            .focused(focusedField, equals: .editor)
         }
         .onChange(of: content) { _, newValue in scheduleSave(newValue) }
     }
