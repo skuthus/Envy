@@ -16,6 +16,7 @@ enum WelcomeContent {
     ## Quick Start
 
     - Type in the search box to filter your notes as you type.
+    - Click **Name** or **Date** above the list to sort by it. Click the same one again to reverse the direction.
     - Press **↩** to open the highlighted note. If nothing matches, pressing **↩** creates a new note with that title instead.
     - Use **↑** and **↓** to move the highlighted note without leaving the search box.
     - If your search matches the start of an existing title, the rest of it shows up in grey. Press **→** to complete it.

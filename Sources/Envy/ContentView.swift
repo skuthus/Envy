@@ -7,6 +7,20 @@ enum LayoutMode: String {
     case vertical
 }
 
+enum NoteSortField: String {
+    case name
+    case date
+
+    /// The direction each field starts in when first selected — matches
+    /// Notational Velocity's convention (names A→Z, dates newest first).
+    var defaultAscending: Bool {
+        switch self {
+        case .name: return true
+        case .date: return false
+        }
+    }
+}
+
 struct ContentView: View {
     @StateObject private var store = NoteStore(directories: NotesDirectoryPreference.load())
     @State private var query = ""
@@ -33,9 +47,15 @@ struct ContentView: View {
     @AppStorage("hasCreatedWelcomeNote") private var hasCreatedWelcomeNote = false
     @AppStorage("moveFocusToEditorOnEnter") private var moveFocusToEditorOnEnter = true
     @AppStorage("listDensity") private var listDensityRaw = ListDensity.compact.rawValue
+    @AppStorage("noteSortField") private var sortFieldRaw = NoteSortField.date.rawValue
+    @AppStorage("noteSortAscending") private var sortAscending = false
 
     private var layoutMode: LayoutMode {
         LayoutMode(rawValue: layoutModeRaw) ?? .horizontal
+    }
+
+    private var sortField: NoteSortField {
+        NoteSortField(rawValue: sortFieldRaw) ?? .date
     }
 
     private var dateDisplayStyle: DateDisplayStyle {
@@ -51,7 +71,25 @@ struct ContentView: View {
     }
 
     private var filteredNotes: [Note] {
-        store.filtered(query: query)
+        sortedNotes(store.filtered(query: query))
+    }
+
+    /// Column sort is authoritative over the list's order — it applies on
+    /// top of (not instead of) the search filter, so typing still narrows
+    /// down which notes show up, but the active column always decides the
+    /// order they appear in, like Notational Velocity's Name/Date headers.
+    private func sortedNotes(_ notes: [Note]) -> [Note] {
+        switch sortField {
+        case .name:
+            return notes.sorted {
+                let result = $0.title.localizedStandardCompare($1.title)
+                return sortAscending ? result == .orderedAscending : result == .orderedDescending
+            }
+        case .date:
+            return notes.sorted {
+                sortAscending ? $0.modifiedDate < $1.modifiedDate : $0.modifiedDate > $1.modifiedDate
+            }
+        }
     }
 
     var body: some View {
@@ -121,6 +159,8 @@ struct ContentView: View {
     private var listPane: some View {
         VStack(spacing: 0) {
             searchField
+            listSortHeader
+            Divider()
             if store.isLoading {
                 HStack(spacing: 6) {
                     ProgressView()
@@ -221,6 +261,40 @@ struct ContentView: View {
         guard let note = suggestionNote else { return nil }
         let startIndex = note.title.index(note.title.startIndex, offsetBy: query.count)
         return String(note.title[startIndex...])
+    }
+
+    private var listSortHeader: some View {
+        HStack(spacing: 0) {
+            sortHeaderButton(field: .name, label: "Name")
+                .frame(maxWidth: .infinity, alignment: .leading)
+            sortHeaderButton(field: .date, label: "Date")
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 5)
+        .background(.bar)
+    }
+
+    private func sortHeaderButton(field: NoteSortField, label: String) -> some View {
+        Button {
+            if sortField == field {
+                sortAscending.toggle()
+            } else {
+                sortFieldRaw = field.rawValue
+                sortAscending = field.defaultAscending
+            }
+        } label: {
+            HStack(spacing: 3) {
+                Text(label)
+                if sortField == field {
+                    Image(systemName: sortAscending ? "chevron.up" : "chevron.down")
+                        .font(.system(size: 9, weight: .bold))
+                }
+            }
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(sortField == field ? .primary : .secondary)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 
     private var searchField: some View {
