@@ -131,7 +131,16 @@ struct MarkdownTextView: NSViewRepresentable {
     }
 
     private func applyTheme(_ theme: Theme, to textView: NSTextView, scrollView: NSScrollView) {
-        textView.font = theme.resolvedFont
+        // Deliberately NOT setting textView.font here. On a non-rich-text view
+        // (isRichText = false, set in makeNSView), assigning .font directly
+        // resets the font for the *entire* text uniformly — wiping out every
+        // per-character font MarkdownStyler applied (headings, bold, italic).
+        // This ran on every keystroke (applyTheme is called from updateNSView,
+        // which fires on every edit), silently reverting styled text back to
+        // plain right after textDidChange had just styled it. The base font
+        // for unstyled text is already covered by MarkdownStyler.style's own
+        // textStorage.setAttributes(...) call over the full range.
+
         // Always solid, regardless of the window's own transparency — body text
         // needs a legible, non-blurred backdrop even when the surrounding chrome
         // (sidebar, titlebar) is translucent.
@@ -158,6 +167,7 @@ struct MarkdownTextView: NSViewRepresentable {
 
         private var cachedText: String = ""
         private var cachedWikiLinkRanges: [NSRange] = []
+        private var isHandlingTextChange = false
 
         init(_ parent: MarkdownTextView) {
             self.parent = parent
@@ -165,14 +175,19 @@ struct MarkdownTextView: NSViewRepresentable {
 
         func textDidChange(_ notification: Notification) {
             guard let textView = notification.object as? NSTextView else { return }
-            let selectedRange = textView.selectedRange()
+            isHandlingTextChange = true
+            defer { isHandlingTextChange = false }
             parent.text = textView.string
             restyle(textView)
-            textView.setSelectedRange(selectedRange)
         }
 
         func textViewDidChangeSelection(_ notification: Notification) {
-            guard let textView = notification.object as? NSTextView else { return }
+            // Typing moves the cursor too, which fires this delegate method in
+            // addition to textDidChange for the same keystroke. If it ran again
+            // here, it would re-enter textStorage edits already in flight from
+            // textDidChange's own restyle — skip it, since textDidChange already
+            // restyles using the current cursor position.
+            guard !isHandlingTextChange, let textView = notification.object as? NSTextView else { return }
             restyle(textView)
         }
 
