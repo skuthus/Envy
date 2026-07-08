@@ -270,8 +270,19 @@ struct ContentView: View {
             sortHeaderButton(field: .date, label: "Date")
         }
         .padding(.horizontal, 12)
-        .padding(.vertical, 5)
-        .background(.bar)
+        .padding(.top, 10)
+        .padding(.bottom, 6)
+        .background(
+            // A fade instead of a flat fill so the bar doesn't read as a
+            // hard-edged block sitting right under the search capsule —
+            // it's transparent where it meets the capsule and settles into
+            // the bar tint by the time it reaches the divider below.
+            LinearGradient(
+                colors: [Color.clear, Color(nsColor: .controlBackgroundColor).opacity(0.9)],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+        )
     }
 
     private func sortHeaderButton(field: NoteSortField, label: String) -> some View {
@@ -313,7 +324,8 @@ struct ContentView: View {
                 .padding(.vertical, 6)
         }
         .glassEffect(.regular, in: Capsule())
-        .padding(10)
+        .padding(.horizontal, 10)
+        .padding(.top, 10)
         .focused($focusedField, equals: .search)
         .onKeyPress(.downArrow) { moveSelection(1); return .handled }
         .onKeyPress(.upArrow) { moveSelection(-1); return .handled }
