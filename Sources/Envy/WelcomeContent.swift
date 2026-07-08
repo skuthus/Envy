@@ -92,7 +92,7 @@ enum WelcomeContent {
     - **⌘+** and **⌘-** zoom the note text larger or smaller. **⌘0** resets it.
     - **⌥⌘↩** shows or hides Envy from anywhere on your Mac, even when another app is focused.
     - Settings → General has a toggle for whether pressing Return in the search box also moves your cursor into the editor, in case you'd rather stay in the search box instead.
-    - Settings → General can also show a small clock in the editor's footer, with an optional date in a few different formats.
+    - Settings → General can also show a small clock in the editor's footer, with an optional date in a few different formats, and an option to only show it while in full screen.
 
     ## Reference
 

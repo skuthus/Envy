@@ -35,6 +35,7 @@ struct ContentView: View {
     @State private var cachedWindowTitle: String?
     @State private var editorWordCount = 0
     @State private var editorCharacterCount = 0
+    @State private var isFullScreen = false
     @FocusState private var focusedField: FocusField?
     @AppStorage("layoutMode") private var layoutModeRaw = LayoutMode.horizontal.rawValue
     @AppStorage("theme") private var theme = Theme()
@@ -54,6 +55,7 @@ struct ContentView: View {
     @AppStorage("showFooterClock") private var showFooterClock = false
     @AppStorage("showFooterClockDate") private var showFooterClockDate = false
     @AppStorage("footerClockDateFormat") private var footerClockDateFormatRaw = ClockDateFormat.short.rawValue
+    @AppStorage("showFooterClockOnlyWhenFullScreen") private var showFooterClockOnlyWhenFullScreen = false
     @AppStorage("editorFontZoom") private var editorFontZoom: Double = 0
 
     private var layoutMode: LayoutMode {
@@ -142,7 +144,16 @@ struct ContentView: View {
         .onReceive(NotificationCenter.default.publisher(for: .zoomResetRequested)) { _ in
             editorFontZoom = 0
         }
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didEnterFullScreenNotification)) { note in
+            guard (note.object as? NSWindow) === NSApp.windows.first else { return }
+            isFullScreen = true
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didExitFullScreenNotification)) { note in
+            guard (note.object as? NSWindow) === NSApp.windows.first else { return }
+            isFullScreen = false
+        }
         .onAppear {
+            isFullScreen = NSApp.windows.first?.styleMask.contains(.fullScreen) ?? false
             createWelcomeNoteIfNeeded()
             selectDefaultIfNeeded()
             focusedField = .search
@@ -299,7 +310,7 @@ struct ContentView: View {
 
     private var editorFooter: some View {
         HStack {
-            if showFooterClock {
+            if showFooterClock && (!showFooterClockOnlyWhenFullScreen || isFullScreen) {
                 // TimelineView instead of a plain Text so the clock actually
                 // ticks forward — a static Text computed once in body would
                 // freeze at whatever time the view last happened to redraw.

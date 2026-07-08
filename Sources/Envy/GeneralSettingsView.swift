@@ -14,6 +14,7 @@ struct GeneralSettingsView: View {
     @AppStorage("showFooterClock") private var showFooterClock = false
     @AppStorage("showFooterClockDate") private var showFooterClockDate = false
     @AppStorage("footerClockDateFormat") private var footerClockDateFormatRaw = ClockDateFormat.short.rawValue
+    @AppStorage("showFooterClockOnlyWhenFullScreen") private var showFooterClockOnlyWhenFullScreen = false
     @State private var showingMarkupHelp = false
     @State private var openAtLogin = SMAppService.mainApp.status == .enabled
 
@@ -121,6 +122,8 @@ struct GeneralSettingsView: View {
                     }
                 }
                 .disabled(!showFooterClock || !showFooterClockDate)
+                Toggle("Only show clock in full screen", isOn: $showFooterClockOnlyWhenFullScreen)
+                    .disabled(!showFooterClock)
             }
 
             Section("Links") {
