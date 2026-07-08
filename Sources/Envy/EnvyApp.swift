@@ -42,10 +42,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             queue: .main
         ) { [weak self] note in
             guard let self, let window = note.object as? NSWindow, window === self.mainWindow else { return }
-            Self.applyTransparentChrome(to: window)
+            Self.applyWindowChrome(to: window)
         }
         if let window {
-            Self.applyTransparentChrome(to: window)
+            Self.applyWindowChrome(to: window)
         }
 
         hotKey.handler = { [weak self] in
@@ -56,11 +56,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         hotKey.register()
     }
 
-    private static func applyTransparentChrome(to window: NSWindow) {
+    private static func applyWindowChrome(to window: NSWindow) {
         window.styleMask.insert(.fullSizeContentView)
-        window.titlebarAppearsTransparent = true
-        window.isOpaque = false
-        window.backgroundColor = .clear
+        // The title bar is deliberately opaque (not transparent like the
+        // rest of the window) so it reads as one solid block together with
+        // the search/sort chrome directly below it, rather than fading into
+        // the translucent backdrop behind the note list and editor.
+        window.titlebarAppearsTransparent = false
+        window.isOpaque = true
+        window.backgroundColor = .windowBackgroundColor
     }
 
     @MainActor

@@ -158,8 +158,15 @@ struct ContentView: View {
 
     private var listPane: some View {
         VStack(spacing: 0) {
-            searchField
-            listSortHeader
+            VStack(spacing: 0) {
+                searchField
+                listSortHeader
+            }
+            // Opaque, not blurred — an exception to the rest of the window's
+            // translucent backdrop so the search/sort chrome (and, via the
+            // window's own opaque title bar, everything above it) reads as
+            // one solid block instead of fading into whatever's behind it.
+            .background(Color(nsColor: .windowBackgroundColor))
             Divider()
             if store.isLoading {
                 HStack(spacing: 6) {
@@ -272,21 +279,6 @@ struct ContentView: View {
         .padding(.horizontal, 12)
         .padding(.top, 10)
         .padding(.bottom, 6)
-        .background(alignment: .bottom) {
-            // A fade instead of a flat fill so the bar doesn't read as a
-            // hard-edged block sitting right under the search capsule. The
-            // gradient is taller than the header itself and bottom-aligned,
-            // so most of its run bleeds up above the header — a long, slow
-            // fade rather than a short one crammed into the header's own
-            // ~30pt height — while still landing at full tint right at the
-            // divider below.
-            LinearGradient(
-                colors: [Color.clear, Color(nsColor: .controlBackgroundColor).opacity(0.9)],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-            .frame(height: 70)
-        }
     }
 
     private func sortHeaderButton(field: NoteSortField, label: String) -> some View {
