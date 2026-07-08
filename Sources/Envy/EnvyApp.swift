@@ -4,14 +4,17 @@ import AppKit
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private let hotKey = GlobalHotKey()
     private var centerWindowMonitor: Any?
+    private weak var mainWindow: NSWindow?
+    private var keyObserver: Any?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
         NSApp.activate(ignoringOtherApps: true)
         AppearanceMode.applyStored()
-        for window in NSApp.windows {
-            window.makeKeyAndOrderFront(nil)
-        }
+
+        let window = NSApp.windows.first
+        mainWindow = window
+        window?.makeKeyAndOrderFront(nil)
 
         // A SwiftUI .commands keyboardShortcut(.return, modifiers: [.command])
         // here loses to AppKit's own default Return-key handling (which zooms/
@@ -27,15 +30,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Setting fullSizeContentView in the same tick as launch doesn't reliably
         // take effect — the content view has already been laid out against the
-        // window's initial (non-full-size) titlebar assumption. Deferring a tick
-        // lets AppKit actually relayout against the new style mask.
-        DispatchQueue.main.async {
-            for window in NSApp.windows {
-                window.styleMask.insert(.fullSizeContentView)
-                window.titlebarAppearsTransparent = true
-                window.isOpaque = false
-                window.backgroundColor = .clear
-            }
+        // window's initial (non-full-size) titlebar assumption, and exactly how
+        // long that takes varies (observed: a bare debug binary vs. a real signed
+        // .app bundle apply this at different points, leaving the packaged app
+        // with an opaque titlebar). Re-applying every time the window becomes key
+        // — not just once on a deferred tick — makes this self-healing regardless
+        // of that timing.
+        keyObserver = NotificationCenter.default.addObserver(
+            forName: NSWindow.didBecomeKeyNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] note in
+            guard let self, let window = note.object as? NSWindow, window === self.mainWindow else { return }
+            Self.applyTransparentChrome(to: window)
+        }
+        if let window {
+            Self.applyTransparentChrome(to: window)
         }
 
         hotKey.handler = { [weak self] in
@@ -44,6 +54,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
         hotKey.register()
+    }
+
+    private static func applyTransparentChrome(to window: NSWindow) {
+        window.styleMask.insert(.fullSizeContentView)
+        window.titlebarAppearsTransparent = true
+        window.isOpaque = false
+        window.backgroundColor = .clear
     }
 
     @MainActor
