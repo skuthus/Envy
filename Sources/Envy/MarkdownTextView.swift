@@ -8,12 +8,13 @@ final class HoverAwareTextView: NSTextView {
     /// that case the click is consumed rather than passed to normal
     /// cursor-placement/selection handling.
     var onClickPoint: ((NSPoint) -> Bool)?
-    /// Whether a given point is over a clickable checkbox — checked on every
-    /// mouse move to explicitly set the pointing-hand cursor. NSTextView
-    /// manages its own I-beam cursor via a mechanism that doesn't reliably
-    /// respect resetCursorRects()/addCursorRect (tried first; had no effect),
-    /// so this sets NSCursor directly instead of relying on that system.
-    var isOverCheckbox: ((NSPoint) -> Bool)?
+    /// Whether a given point is over a clickable checkbox or footnote
+    /// reference — checked on every mouse move to explicitly set the
+    /// pointing-hand cursor. NSTextView manages its own I-beam cursor via a
+    /// mechanism that doesn't reliably respect resetCursorRects()/
+    /// addCursorRect (tried first; had no effect), so this sets NSCursor
+    /// directly instead of relying on that system.
+    var isOverClickTarget: ((NSPoint) -> Bool)?
     private var hoverTrackingArea: NSTrackingArea?
 
     override func mouseDown(with event: NSEvent) {
@@ -46,7 +47,7 @@ final class HoverAwareTextView: NSTextView {
         super.mouseMoved(with: event)
         let point = convert(event.locationInWindow, from: nil)
         onHoverPoint?(point)
-        if isOverCheckbox?(point) == true {
+        if isOverClickTarget?(point) == true {
             NSCursor.pointingHand.set()
         } else {
             NSCursor.iBeam.set()
@@ -100,8 +101,10 @@ struct MarkdownTextView: NSViewRepresentable {
         textView.onClickPoint = { [weak coordinator = context.coordinator] point in
             coordinator?.handleClick(at: point) ?? false
         }
-        textView.isOverCheckbox = { [weak coordinator = context.coordinator] point in
-            coordinator?.checkboxHitRects().contains(where: { $0.contains(point) }) ?? false
+        textView.isOverClickTarget = { [weak coordinator = context.coordinator] point in
+            guard let coordinator else { return false }
+            return coordinator.checkboxHitRects().contains(where: { $0.contains(point) })
+                || coordinator.footnoteHitRects().contains(where: { $0.contains(point) })
         }
 
         let scrollView = NSScrollView()
@@ -375,7 +378,20 @@ struct MarkdownTextView: NSViewRepresentable {
         }
 
         func textView(_ textView: NSTextView, clickedOnLink link: Any, at charIndex: Int) -> Bool {
-            guard let url = link as? URL, url.scheme == "velocity" || url.scheme == "http" || url.scheme == "https" else {
+            guard let url = link as? URL else { return false }
+
+            // No modifier required, unlike other link types — this jumps
+            // within the same note rather than navigating away or creating
+            // anything, so there's nothing for the modifier requirement to
+            // guard against. Same reasoning as checkboxes being plain-click.
+            if url.scheme == "envy-footnote" {
+                let encoded = url.path.hasPrefix("/") ? String(url.path.dropFirst()) : url.path
+                let label = encoded.removingPercentEncoding ?? encoded
+                jumpToFootnoteDefinition(label: label, in: textView)
+                return true
+            }
+
+            guard url.scheme == "velocity" || url.scheme == "http" || url.scheme == "https" else {
                 return false
             }
 
@@ -397,6 +413,16 @@ struct MarkdownTextView: NSViewRepresentable {
                 NSWorkspace.shared.open(url)
             }
             return true
+        }
+
+        /// Scrolls to a footnote's definition and briefly flashes it (the
+        /// same highlight AppKit uses for Find results), without touching the
+        /// user's actual cursor/selection.
+        @MainActor
+        private func jumpToFootnoteDefinition(label: String, in textView: NSTextView) {
+            guard let range = MarkdownStyler.footnoteDefinitionRange(forLabel: label, in: textView.string) else { return }
+            textView.scrollRangeToVisible(range)
+            textView.showFindIndicator(for: range)
         }
 
         @MainActor
@@ -429,13 +455,21 @@ struct MarkdownTextView: NSViewRepresentable {
         @MainActor
         func handleClick(at point: NSPoint) -> Bool {
             guard let textView else { return false }
-            guard let checkbox = checkboxAndRect(at: point)?.checkbox else { return false }
 
-            let replacement = checkbox.isChecked ? " " : "x"
-            guard textView.shouldChangeText(in: checkbox.toggleRange, replacementString: replacement) else { return false }
-            textView.textStorage?.replaceCharacters(in: checkbox.toggleRange, with: replacement)
-            textView.didChangeText()
-            return true
+            if let checkbox = checkboxAndRect(at: point)?.checkbox {
+                let replacement = checkbox.isChecked ? " " : "x"
+                guard textView.shouldChangeText(in: checkbox.toggleRange, replacementString: replacement) else { return false }
+                textView.textStorage?.replaceCharacters(in: checkbox.toggleRange, with: replacement)
+                textView.didChangeText()
+                return true
+            }
+
+            if let footnote = footnoteAndRect(at: point)?.footnote {
+                jumpToFootnoteDefinition(label: footnote.label, in: textView)
+                return true
+            }
+
+            return false
         }
 
         /// Padded on-screen rect for every checkbox in the current text, used
@@ -479,6 +513,46 @@ struct MarkdownTextView: NSViewRepresentable {
                 }
             }
             return best.map { ($0.checkbox, $0.rect) }
+        }
+
+        /// Padded on-screen rect for every footnote reference, same reasoning
+        /// as checkboxHitRects() — the rendered glyph (a small raised number)
+        /// is a tiny click target otherwise.
+        @MainActor
+        func footnoteHitRects() -> [NSRect] {
+            guard let textView, let layoutManager = textView.layoutManager, let textContainer = textView.textContainer else { return [] }
+            let origin = textView.textContainerOrigin
+            let padding: CGFloat = 6
+            return MarkdownStyler.footnoteReferenceLabels(in: textView.string).map { footnote in
+                let glyphRange = layoutManager.glyphRange(forCharacterRange: footnote.labelRange, actualCharacterRange: nil)
+                var rect = layoutManager.boundingRect(forGlyphRange: glyphRange, in: textContainer)
+                rect.origin.x += origin.x
+                rect.origin.y += origin.y
+                return rect.insetBy(dx: -padding, dy: -padding)
+            }
+        }
+
+        /// Closest footnote reference to the click point among all whose
+        /// padded rect contains it — same reasoning as checkboxAndRect(at:).
+        @MainActor
+        private func footnoteAndRect(at point: NSPoint) -> (footnote: (labelRange: NSRange, label: String), rect: NSRect)? {
+            guard let textView, let layoutManager = textView.layoutManager, let textContainer = textView.textContainer else { return nil }
+            let origin = textView.textContainerOrigin
+            let padding: CGFloat = 6
+            var best: (footnote: (labelRange: NSRange, label: String), rect: NSRect, distance: CGFloat)?
+            for footnote in MarkdownStyler.footnoteReferenceLabels(in: textView.string) {
+                let glyphRange = layoutManager.glyphRange(forCharacterRange: footnote.labelRange, actualCharacterRange: nil)
+                var rect = layoutManager.boundingRect(forGlyphRange: glyphRange, in: textContainer)
+                rect.origin.x += origin.x
+                rect.origin.y += origin.y
+                let padded = rect.insetBy(dx: -padding, dy: -padding)
+                guard padded.contains(point) else { continue }
+                let distance = hypot(point.x - rect.midX, point.y - rect.midY)
+                if best == nil || distance < best!.distance {
+                    best = (footnote, padded, distance)
+                }
+            }
+            return best.map { ($0.footnote, $0.rect) }
         }
 
         @MainActor

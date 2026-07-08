@@ -22,6 +22,8 @@ enum MarkdownStyler {
     private static let linkRegex = try! NSRegularExpression(pattern: #"(?<!!)\[([^\[\]]+)\]\(([^()\s]+)\)"#)
     private static let autolinkBracketRegex = try! NSRegularExpression(pattern: #"<(https?://[^\s>]+)>"#)
     private static let bareURLRegex = try! NSRegularExpression(pattern: #"(?<![(<])\bhttps?://[^\s<>()]+\b"#)
+    private static let footnoteDefinitionRegex = try! NSRegularExpression(pattern: #"^\[\^([^\]]+)\]:[ \t]*"#, options: [.anchorsMatchLines])
+    private static let footnoteReferenceRegex = try! NSRegularExpression(pattern: #"\[\^([^\]]+)\]"#)
 
     static func wikiLinkFullRanges(in text: String) -> [NSRange] {
         let full = NSRange(location: 0, length: (text as NSString).length)
@@ -103,6 +105,36 @@ enum MarkdownStyler {
         guard let number = Int(numberText.dropLast()) else { return nil }
         let numberRange = NSRange(location: lineStart + match.range(at: 2).location, length: numberText.count - 1)
         return (numberRange, number, separator)
+    }
+
+    /// The range of the "[^label]:" marker for a footnote definition matching
+    /// `label`, if one exists — used to scroll a clicked reference to its
+    /// definition within the same note.
+    static func footnoteDefinitionRange(forLabel label: String, in text: String) -> NSRange? {
+        let full = NSRange(location: 0, length: (text as NSString).length)
+        for match in footnoteDefinitionRegex.matches(in: text, range: full) {
+            if (text as NSString).substring(with: match.range(at: 1)) == label {
+                return match.range
+            }
+        }
+        return nil
+    }
+
+    /// Every footnote reference's label range and text, excluding a
+    /// definition's own "[^label]" (which isn't a reference) — used to
+    /// compute a generous on-screen click target, since the rendered glyph
+    /// (a small raised number) is otherwise tiny.
+    static func footnoteReferenceLabels(in text: String) -> [(labelRange: NSRange, label: String)] {
+        let full = NSRange(location: 0, length: (text as NSString).length)
+        let definitionRanges = footnoteDefinitionRegex.matches(in: text, range: full).map(\.range)
+        func isDefinitionMarker(_ range: NSRange) -> Bool {
+            definitionRanges.contains { NSIntersectionRange($0, range).length > 0 }
+        }
+        return footnoteReferenceRegex.matches(in: text, range: full).compactMap { match in
+            guard !isDefinitionMarker(match.range) else { return nil }
+            let labelRange = match.range(at: 1)
+            return (labelRange, (text as NSString).substring(with: labelRange))
+        }
     }
 
     static func style(
@@ -200,6 +232,55 @@ enum MarkdownStyler {
             textStorage.addAttribute(.strikethroughStyle, value: NSUnderlineStyle.single.rawValue, range: match.range)
             textStorage.addAttribute(.strikethroughColor, value: markerColor, range: match.range)
             textStorage.addAttribute(.foregroundColor, value: NSColor.clear, range: match.range)
+        }
+
+        // Footnote definitions ("[^label]: text") are processed before
+        // references so their "[^label]:" marker range gets claimed —
+        // otherwise the reference regex below would also match it, since a
+        // definition's marker is syntactically identical to a reference.
+        for match in footnoteDefinitionRegex.matches(in: text, range: full) {
+            guard !isClaimed(match.range) else { continue }
+            let markerRange = match.range
+            let smallFont = NSFontManager.shared.convert(baseFont, toSize: max(baseFont.pointSize - 1, 9))
+            let lineRange = (text as NSString).lineRange(for: NSRange(location: markerRange.location, length: 0))
+            let contentStart = markerRange.location + markerRange.length
+            let contentRange = NSRange(location: contentStart, length: max(0, lineRange.location + lineRange.length - contentStart))
+            if contentRange.length > 0 {
+                textStorage.addAttribute(.font, value: smallFont, range: contentRange)
+                textStorage.addAttribute(.foregroundColor, value: NSColor.secondaryLabelColor, range: contentRange)
+            }
+            if touches(markerRange, cursorSelection) {
+                textStorage.addAttribute(.foregroundColor, value: markerColor, range: markerRange)
+            } else {
+                collapse(range: markerRange, in: textStorage, text: text, font: baseFont)
+            }
+            claimed.append(markerRange)
+        }
+
+        // Footnote references ("[^label]") render as a small raised marker
+        // (like a real footnote number), with "[^" and "]" collapsed. Always
+        // clickable regardless of reveal state, same reasoning as checkboxes:
+        // this is meant to be clicked to jump to its definition, not
+        // hand-edited in place.
+        for match in footnoteReferenceRegex.matches(in: text, range: full) {
+            guard !isClaimed(match.range) else { continue }
+            let labelRange = match.range(at: 1)
+            let openMarker = NSRange(location: match.range.location, length: labelRange.location - match.range.location)
+            let closeMarker = NSRange(location: labelRange.location + labelRange.length, length: 1)
+
+            let superscriptFont = NSFontManager.shared.convert(baseFont, toSize: max(baseFont.pointSize - 3, 8))
+            textStorage.addAttribute(.font, value: superscriptFont, range: labelRange)
+            textStorage.addAttribute(.baselineOffset, value: baseFont.pointSize * 0.35, range: labelRange)
+            textStorage.addAttribute(.foregroundColor, value: linkColor, range: labelRange)
+
+            let label = (text as NSString).substring(with: labelRange)
+            let encoded = label.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? label
+            if let url = URL(string: "envy-footnote:///\(encoded)") {
+                textStorage.addAttribute(.link, value: url, range: labelRange)
+            }
+
+            collapse(range: openMarker, in: textStorage, text: text, font: baseFont)
+            collapse(range: closeMarker, in: textStorage, text: text, font: baseFont)
         }
 
         for match in taskListRegex.matches(in: text, range: full) {
