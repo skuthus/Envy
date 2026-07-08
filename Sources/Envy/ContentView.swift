@@ -11,6 +11,11 @@ struct ContentView: View {
     @StateObject private var store = NoteStore(directories: NotesDirectoryPreference.load())
     @State private var query = ""
     @State private var selectedID: String?
+    /// Extra notes ⌘-selected alongside selectedID, for multi-select bulk
+    /// actions (Delete/Move/Open in Finder). selectedID stays the "primary"
+    /// selection driving the editor pane and keyboard navigation, unchanged
+    /// from before multi-select existed — this is purely additive.
+    @State private var multiSelectedIDs: Set<String> = []
     @State private var renamingNote: Note?
     @State private var renameText = ""
     @State private var cachedWindowTitle: String?
@@ -136,30 +141,21 @@ struct ContentView: View {
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .background(
                                     RoundedRectangle(cornerRadius: 6)
-                                        .fill(selectedID == note.id ? Color.accentColor.opacity(0.25) : Color.clear)
+                                        .fill(isSelected(note) ? Color.accentColor.opacity(0.25) : Color.clear)
                                 )
                                 .contentShape(Rectangle())
-                                .onTapGesture { selectedID = note.id }
+                                .onTapGesture {
+                                    if NSEvent.modifierFlags.contains(.command) {
+                                        toggleMultiSelect(note)
+                                    } else {
+                                        selectSingle(note)
+                                    }
+                                }
                                 .contextMenu {
-                                    Button("Rename") {
-                                        renameText = note.title
-                                        renamingNote = note
-                                    }
-                                    Button("Open in Finder") {
-                                        NSWorkspace.shared.activateFileViewerSelecting([note.url])
-                                    }
-                                    let otherFolders = otherDirectories(for: note)
-                                    if !otherFolders.isEmpty {
-                                        Menu("Move to Folder") {
-                                            ForEach(otherFolders, id: \.self) { directory in
-                                                Button(directory.lastPathComponent) {
-                                                    moveNote(note, to: directory)
-                                                }
-                                            }
-                                        }
-                                    }
-                                    Button("Delete", role: .destructive) {
-                                        deleteNote(note)
+                                    if fullSelection.count > 1 && fullSelection.contains(note.id) {
+                                        bulkContextMenuItems
+                                    } else {
+                                        singleContextMenuItems(for: note)
                                     }
                                 }
                                 .id(note.id)
@@ -286,6 +282,7 @@ struct ContentView: View {
     }
 
     private func moveSelection(_ delta: Int) {
+        multiSelectedIDs.removeAll()
         let list = filteredNotes
         guard !list.isEmpty else { return }
         if let currentID = selectedID, let idx = list.firstIndex(where: { $0.id == currentID }) {
@@ -300,6 +297,38 @@ struct ContentView: View {
         let list = filteredNotes
         if let selectedID, list.contains(where: { $0.id == selectedID }) { return }
         selectedID = list.first?.id
+    }
+
+    private var fullSelection: Set<String> {
+        multiSelectedIDs.union(selectedID.map { [$0] } ?? [])
+    }
+
+    private func isSelected(_ note: Note) -> Bool {
+        fullSelection.contains(note.id)
+    }
+
+    private func selectSingle(_ note: Note) {
+        selectedID = note.id
+        multiSelectedIDs.removeAll()
+    }
+
+    /// Toggles a note's membership in the selection. Demoting the current
+    /// primary (selectedID) promotes another selected note to take its place
+    /// if one exists, since selectedID always drives the editor pane and
+    /// must stay in sync with "is anything selected at all".
+    private func toggleMultiSelect(_ note: Note) {
+        if note.id == selectedID {
+            if let newPrimary = multiSelectedIDs.first {
+                multiSelectedIDs.remove(newPrimary)
+                selectedID = newPrimary
+            } else {
+                selectedID = nil
+            }
+        } else if multiSelectedIDs.contains(note.id) {
+            multiSelectedIDs.remove(note.id)
+        } else {
+            multiSelectedIDs.insert(note.id)
+        }
     }
 
     private func selectDefaultIfNeeded() {
@@ -362,6 +391,10 @@ struct ContentView: View {
     }
 
     private func deleteSelected() {
+        if fullSelection.count > 1 {
+            bulkDelete()
+            return
+        }
         guard let currentID = selectedID, let note = store.notes.first(where: { $0.id == currentID }) else { return }
         deleteNote(note)
     }
@@ -377,6 +410,78 @@ struct ContentView: View {
     private func otherDirectories(for note: Note) -> [URL] {
         let currentDirectory = note.url.deletingLastPathComponent()
         return store.noteDirectories.filter { $0 != currentDirectory }
+    }
+
+    @ViewBuilder
+    private func singleContextMenuItems(for note: Note) -> some View {
+        Button("Rename") {
+            renameText = note.title
+            renamingNote = note
+        }
+        Button("Open in Finder") {
+            NSWorkspace.shared.activateFileViewerSelecting([note.url])
+        }
+        let otherFolders = otherDirectories(for: note)
+        if !otherFolders.isEmpty {
+            Menu("Move to Folder") {
+                ForEach(otherFolders, id: \.self) { directory in
+                    Button(directory.lastPathComponent) {
+                        moveNote(note, to: directory)
+                    }
+                }
+            }
+        }
+        Button("Delete", role: .destructive) {
+            deleteNote(note)
+        }
+    }
+
+    @ViewBuilder
+    private var bulkContextMenuItems: some View {
+        let count = fullSelection.count
+        Button("Open \(count) Notes in Finder") {
+            bulkOpenInFinder()
+        }
+        if !store.noteDirectories.isEmpty {
+            Menu("Move \(count) Notes to Folder") {
+                ForEach(store.noteDirectories, id: \.self) { directory in
+                    Button(directory.lastPathComponent) {
+                        bulkMove(to: directory)
+                    }
+                }
+            }
+        }
+        Button("Delete \(count) Notes", role: .destructive) {
+            bulkDelete()
+        }
+    }
+
+    private func selectedNotes() -> [Note] {
+        let ids = fullSelection
+        return store.notes.filter { ids.contains($0.id) }
+    }
+
+    private func bulkOpenInFinder() {
+        NSWorkspace.shared.activateFileViewerSelecting(selectedNotes().map(\.url))
+    }
+
+    /// Moved notes get new ids (Note.id is the file path), so the old
+    /// selection can't carry over meaningfully — just clear it.
+    private func bulkMove(to directory: URL) {
+        for note in selectedNotes() {
+            store.move(note, to: directory)
+        }
+        multiSelectedIDs.removeAll()
+        selectedID = nil
+    }
+
+    private func bulkDelete() {
+        for note in selectedNotes() {
+            store.delete(note)
+        }
+        multiSelectedIDs.removeAll()
+        selectedID = filteredNotes.first?.id
+        focusedField = .search
     }
 
     private func moveNote(_ note: Note, to directory: URL) {
