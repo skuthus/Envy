@@ -27,6 +27,7 @@ struct ContentView: View {
     @AppStorage(NotesDirectoryPreference.storageKey) private var notesDirectoryPathsRaw = ""
     @AppStorage("hasCreatedWelcomeNote") private var hasCreatedWelcomeNote = false
     @AppStorage("moveFocusToEditorOnEnter") private var moveFocusToEditorOnEnter = true
+    @AppStorage("listDensity") private var listDensityRaw = ListDensity.compact.rawValue
 
     private var layoutMode: LayoutMode {
         LayoutMode(rawValue: layoutModeRaw) ?? .horizontal
@@ -34,6 +35,10 @@ struct ContentView: View {
 
     private var dateDisplayStyle: DateDisplayStyle {
         DateDisplayStyle(rawValue: dateDisplayStyleRaw) ?? .smart
+    }
+
+    private var listDensity: ListDensity {
+        ListDensity(rawValue: listDensityRaw) ?? .compact
     }
 
     private var backgroundBlurStrength: BlurStrength {
@@ -121,33 +126,53 @@ struct ContentView: View {
                 }
                 .padding(.bottom, 6)
             }
-            List(filteredNotes, selection: $selectedID) { note in
-                NoteRow(note: note, showPreview: showNotePreview, showDateModified: showDateModified, dateDisplayStyle: dateDisplayStyle)
-                    .contextMenu {
-                        Button("Rename") {
-                            renameText = note.title
-                            renamingNote = note
-                        }
-                        Button("Open in Finder") {
-                            NSWorkspace.shared.activateFileViewerSelecting([note.url])
-                        }
-                        let otherFolders = otherDirectories(for: note)
-                        if !otherFolders.isEmpty {
-                            Menu("Move to Folder") {
-                                ForEach(otherFolders, id: \.self) { directory in
-                                    Button(directory.lastPathComponent) {
-                                        moveNote(note, to: directory)
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(spacing: 0) {
+                        ForEach(filteredNotes) { note in
+                            NoteRow(note: note, showPreview: showNotePreview, showDateModified: showDateModified, dateDisplayStyle: dateDisplayStyle)
+                                .padding(.vertical, listDensity.rowVerticalPadding)
+                                .padding(.horizontal, 8)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 6)
+                                        .fill(selectedID == note.id ? Color.accentColor.opacity(0.25) : Color.clear)
+                                )
+                                .contentShape(Rectangle())
+                                .onTapGesture { selectedID = note.id }
+                                .contextMenu {
+                                    Button("Rename") {
+                                        renameText = note.title
+                                        renamingNote = note
+                                    }
+                                    Button("Open in Finder") {
+                                        NSWorkspace.shared.activateFileViewerSelecting([note.url])
+                                    }
+                                    let otherFolders = otherDirectories(for: note)
+                                    if !otherFolders.isEmpty {
+                                        Menu("Move to Folder") {
+                                            ForEach(otherFolders, id: \.self) { directory in
+                                                Button(directory.lastPathComponent) {
+                                                    moveNote(note, to: directory)
+                                                }
+                                            }
+                                        }
+                                    }
+                                    Button("Delete", role: .destructive) {
+                                        deleteNote(note)
                                     }
                                 }
-                            }
-                        }
-                        Button("Delete", role: .destructive) {
-                            deleteNote(note)
+                                .id(note.id)
                         }
                     }
+                    .padding(.horizontal, 4)
+                }
+                .onChange(of: selectedID) { _, newValue in
+                    if let newValue {
+                        proxy.scrollTo(newValue)
+                    }
+                }
             }
-            .listStyle(.sidebar)
-            .scrollContentBackground(.hidden)
             if !query.trimmingCharacters(in: .whitespaces).isEmpty && store.exactTitleMatch(for: query) == nil {
                 Text("Press \u{23CE} to create \"\(query)\"")
                     .font(.caption)

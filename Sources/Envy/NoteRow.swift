@@ -28,7 +28,6 @@ struct NoteRow: View {
                     .lineLimit(1)
             }
         }
-        .padding(.vertical, 2)
     }
 
     @ViewBuilder

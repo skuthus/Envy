@@ -6,6 +6,14 @@ struct ThemeSettingsView: View {
     @AppStorage("backgroundBlurStrength") private var backgroundBlurStrengthRaw = BlurStrength.strong.rawValue
     @AppStorage("appearanceMode") private var appearanceModeRaw = AppearanceMode.system.rawValue
     @AppStorage("showWindowTitle") private var showWindowTitle = true
+    @AppStorage("listDensity") private var listDensityRaw = ListDensity.compact.rawValue
+
+    private var listDensity: Binding<ListDensity> {
+        Binding(
+            get: { ListDensity(rawValue: listDensityRaw) ?? .compact },
+            set: { listDensityRaw = $0.rawValue }
+        )
+    }
 
     private var backgroundBlurStrength: Binding<BlurStrength> {
         Binding(
@@ -41,6 +49,11 @@ struct ThemeSettingsView: View {
                     }
                 }
                 Toggle("Show app title in window bar", isOn: $showWindowTitle)
+                Picker("Note List Density", selection: listDensity) {
+                    ForEach(ListDensity.allCases) { density in
+                        Text(density.label).tag(density)
+                    }
+                }
             }
 
             Toggle("Use Custom Theme", isOn: $theme.isCustom)
