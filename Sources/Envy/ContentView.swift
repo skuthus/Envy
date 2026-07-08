@@ -33,6 +33,8 @@ struct ContentView: View {
     @State private var renamingNote: Note?
     @State private var renameText = ""
     @State private var cachedWindowTitle: String?
+    @State private var editorWordCount = 0
+    @State private var editorCharacterCount = 0
     @FocusState private var focusedField: FocusField?
     @AppStorage("layoutMode") private var layoutModeRaw = LayoutMode.horizontal.rawValue
     @AppStorage("theme") private var theme = Theme()
@@ -241,32 +243,77 @@ struct ContentView: View {
     }
 
     private var editorPane: some View {
-        Group {
-            if let selectedID, store.notes.contains(where: { $0.id == selectedID }) {
-                NoteEditorView(
-                    store: store,
-                    noteID: selectedID,
-                    focusedField: $focusedField,
-                    onNavigate: navigateToNote,
-                    onRename: { newTitle in renameSelectedNote(to: newTitle) },
-                    theme: theme,
-                    requireModifierForLinkClick: requireModifierForLinkClick,
-                    searchQuery: query,
-                    showTitleHeader: showEditorTitleHeader,
-                    showFooterClock: showFooterClock,
-                    showFooterClockDate: showFooterClockDate,
-                    footerClockDateFormat: footerClockDateFormat
-                )
-                // Forces a fresh NoteEditorView (and its underlying NSTextView)
-                // per note instead of patching the same instance in place —
-                // patching relied on noteID and content always updating in the
-                // same render pass, which isn't guaranteed and could show one
-                // note's content inside another's editor.
-                .id(selectedID)
-            } else {
-                ContentUnavailableView("No Note Selected", systemImage: "note.text")
+        VStack(spacing: 0) {
+            Group {
+                if let selectedID, store.notes.contains(where: { $0.id == selectedID }) {
+                    NoteEditorView(
+                        store: store,
+                        noteID: selectedID,
+                        focusedField: $focusedField,
+                        onNavigate: navigateToNote,
+                        onRename: { newTitle in renameSelectedNote(to: newTitle) },
+                        theme: theme,
+                        requireModifierForLinkClick: requireModifierForLinkClick,
+                        searchQuery: query,
+                        showTitleHeader: showEditorTitleHeader,
+                        onStatsChange: { words, characters in
+                            editorWordCount = words
+                            editorCharacterCount = characters
+                        }
+                    )
+                    // Forces a fresh NoteEditorView (and its underlying NSTextView)
+                    // per note instead of patching the same instance in place —
+                    // patching relied on noteID and content always updating in the
+                    // same render pass, which isn't guaranteed and could show one
+                    // note's content inside another's editor.
+                    .id(selectedID)
+                } else {
+                    ContentUnavailableView("No Note Selected", systemImage: "note.text")
+                }
+            }
+            .frame(maxHeight: .infinity)
+            // Lives here (not inside NoteEditorView) specifically so it stays
+            // visible — clock included — even when no note is selected and
+            // NoteEditorView isn't in the view hierarchy at all.
+            Divider()
+            editorFooter
+        }
+        .onChange(of: selectedID) { _, newValue in
+            if newValue == nil {
+                editorWordCount = 0
+                editorCharacterCount = 0
             }
         }
+    }
+
+    private var editorFooter: some View {
+        HStack {
+            if showFooterClock {
+                // TimelineView instead of a plain Text so the clock actually
+                // ticks forward — a static Text computed once in body would
+                // freeze at whatever time the view last happened to redraw.
+                TimelineView(.periodic(from: .now, by: 30)) { context in
+                    Text(clockString(for: context.date))
+                        .foregroundStyle(.secondary)
+                        .font(.caption2)
+                }
+            }
+            Spacer()
+            if selectedID != nil {
+                Text("\(editorWordCount) words, \(editorCharacterCount) characters")
+                    .foregroundStyle(.secondary)
+                    .font(.caption2)
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 4)
+        .background(.bar)
+    }
+
+    private func clockString(for date: Date) -> String {
+        let time = date.formatted(date: .omitted, time: .shortened)
+        guard showFooterClockDate else { return time }
+        return "\(footerClockDateFormat.format(date)) · \(time)"
     }
 
     /// The top title-prefix match for the current search text, if any —

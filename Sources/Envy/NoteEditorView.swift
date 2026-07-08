@@ -11,9 +11,7 @@ struct NoteEditorView: View {
     var requireModifierForLinkClick: Bool
     var searchQuery: String
     var showTitleHeader: Bool
-    var showFooterClock: Bool
-    var showFooterClockDate: Bool
-    var footerClockDateFormat: ClockDateFormat
+    var onStatsChange: (Int, Int) -> Void
 
     @State private var content: String
     @State private var saveTask: Task<Void, Never>?
@@ -34,9 +32,7 @@ struct NoteEditorView: View {
         requireModifierForLinkClick: Bool,
         searchQuery: String,
         showTitleHeader: Bool,
-        showFooterClock: Bool,
-        showFooterClockDate: Bool,
-        footerClockDateFormat: ClockDateFormat
+        onStatsChange: @escaping (Int, Int) -> Void
     ) {
         self.store = store
         self.noteID = noteID
@@ -47,9 +43,7 @@ struct NoteEditorView: View {
         self.requireModifierForLinkClick = requireModifierForLinkClick
         self.searchQuery = searchQuery
         self.showTitleHeader = showTitleHeader
-        self.showFooterClock = showFooterClock
-        self.showFooterClockDate = showFooterClockDate
-        self.footerClockDateFormat = footerClockDateFormat
+        self.onStatsChange = onStatsChange
         // Seeded here rather than in .onAppear: with .id(noteID) forcing a
         // fresh instance per note, .onAppear runs AFTER the first body
         // evaluation (and thus after MarkdownTextView's makeNSView already
@@ -75,10 +69,12 @@ struct NoteEditorView: View {
             )
             .focusable()
             .focused(focusedField, equals: .editor)
-            Divider()
-            footer
         }
-        .onChange(of: content) { _, newValue in scheduleSave(newValue) }
+        .onAppear { onStatsChange(wordCount, characterCount) }
+        .onChange(of: content) { _, newValue in
+            scheduleSave(newValue)
+            onStatsChange(wordCount, characterCount)
+        }
     }
 
     private var header: some View {
@@ -97,34 +93,6 @@ struct NoteEditorView: View {
         .padding(.horizontal)
         .padding(.vertical, 8)
         .background(.bar)
-    }
-
-    private var footer: some View {
-        HStack {
-            if showFooterClock {
-                // TimelineView instead of a plain Text so the clock actually
-                // ticks forward — a static Text computed once in body would
-                // freeze at whatever time the view last happened to redraw.
-                TimelineView(.periodic(from: .now, by: 30)) { context in
-                    Text(clockString(for: context.date))
-                        .foregroundStyle(.secondary)
-                        .font(.caption2)
-                }
-            }
-            Spacer()
-            Text("\(wordCount) words, \(characterCount) characters")
-                .foregroundStyle(.secondary)
-                .font(.caption2)
-        }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 4)
-        .background(.bar)
-    }
-
-    private func clockString(for date: Date) -> String {
-        let time = date.formatted(date: .omitted, time: .shortened)
-        guard showFooterClockDate else { return time }
-        return "\(footerClockDateFormat.format(date)) · \(time)"
     }
 
     private func commitRename() {
