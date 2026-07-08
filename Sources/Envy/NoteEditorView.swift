@@ -88,6 +88,7 @@ struct NoteEditorView: View {
         }
         .padding(.horizontal)
         .padding(.vertical, 8)
+        .background(.bar)
     }
 
     private func commitRename() {
