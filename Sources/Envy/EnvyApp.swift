@@ -118,6 +118,18 @@ struct EnvyApp: App {
                 .keyboardShortcut("l", modifiers: [.command, .shift])
             }
             CommandMenu("Font") {
+                Button("Bold") {
+                    NotificationCenter.default.post(name: .boldSelectionRequested, object: nil)
+                }
+                .keyboardShortcut("b", modifiers: [.command])
+
+                Button("Italic") {
+                    NotificationCenter.default.post(name: .italicSelectionRequested, object: nil)
+                }
+                .keyboardShortcut("i", modifiers: [.command])
+
+                Divider()
+
                 Button("Zoom In") {
                     NotificationCenter.default.post(name: .zoomInRequested, object: nil)
                 }

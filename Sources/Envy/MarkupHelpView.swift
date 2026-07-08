@@ -19,8 +19,8 @@ struct MarkupHelpView: View {
     private let groups: [Group] = [
         Group(title: "Headings & Emphasis", entries: [
             Entry(syntax: "# Heading", description: "Larger, bold heading text. Use up to six #'s for smaller heading levels."),
-            Entry(syntax: "**bold**", description: "Bold text"),
-            Entry(syntax: "*italic*", description: "Italic text"),
+            Entry(syntax: "**bold**", description: "Bold text — select text and press Cmd+B to wrap or unwrap it"),
+            Entry(syntax: "*italic*", description: "Italic text — select text and press Cmd+I to wrap or unwrap it"),
             Entry(syntax: "***bold italic***", description: "Bold and italic together"),
             Entry(syntax: "~~strikethrough~~", description: "Strikethrough text"),
         ]),

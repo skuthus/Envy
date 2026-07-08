@@ -33,6 +33,8 @@ struct KeyboardShortcutsView: View {
             Entry(keys: "⌘⇧L", description: "Toggle horizontal / vertical layout"),
         ]),
         Group(title: "Font", entries: [
+            Entry(keys: "⌘B", description: "Bold the selected text (wraps it in **, or unwraps it if already bold)"),
+            Entry(keys: "⌘I", description: "Italicize the selected text (wraps it in *, or unwraps it if already italic)"),
             Entry(keys: "⌘+", description: "Zoom in on the note text"),
             Entry(keys: "⌘-", description: "Zoom out on the note text"),
             Entry(keys: "⌘0", description: "Reset the note text zoom"),

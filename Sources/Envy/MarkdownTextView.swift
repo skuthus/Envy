@@ -210,9 +210,29 @@ struct MarkdownTextView: NSViewRepresentable {
         private var cachedText: String = ""
         private var cachedWikiLinkRanges: [NSRange] = []
         private var isHandlingTextChange = false
+        private var boldObserver: NSObjectProtocol?
+        private var italicObserver: NSObjectProtocol?
 
         init(_ parent: MarkdownTextView) {
             self.parent = parent
+            super.init()
+            // Registered directly on the Coordinator (rather than routed
+            // through ContentView) since Cmd+B/Cmd+I need the live NSTextView
+            // and its current selection, which only this object has — there's
+            // only ever one NoteEditorView/Coordinator alive at a time, torn
+            // down and recreated per note via .id(noteID), so this doesn't
+            // need to disambiguate between multiple notes.
+            boldObserver = NotificationCenter.default.addObserver(forName: .boldSelectionRequested, object: nil, queue: .main) { [weak self] _ in
+                self?.toggleBold()
+            }
+            italicObserver = NotificationCenter.default.addObserver(forName: .italicSelectionRequested, object: nil, queue: .main) { [weak self] _ in
+                self?.toggleItalic()
+            }
+        }
+
+        deinit {
+            if let boldObserver { NotificationCenter.default.removeObserver(boldObserver) }
+            if let italicObserver { NotificationCenter.default.removeObserver(italicObserver) }
         }
 
         func textDidChange(_ notification: Notification) {
@@ -447,6 +467,70 @@ struct MarkdownTextView: NSViewRepresentable {
             guard let range = MarkdownStyler.headingRange(forSlug: slug, in: textView.string) else { return }
             textView.scrollRangeToVisible(range)
             textView.showFindIndicator(for: range)
+        }
+
+        // Not @MainActor: these are invoked from a @Sendable NotificationCenter
+        // observer closure (registered with queue: .main), where an explicit
+        // actor-isolated call would be a hard "sending non-Sendable value"
+        // compile error rather than the isolation-mismatch warnings tolerated
+        // elsewhere in this file. queue: .main already guarantees these run on
+        // the main thread at runtime, same trust placed in applyWindowChrome
+        // in EnvyApp.swift for its own unisolated NSWindow property writes.
+        private func toggleBold() {
+            guard let textView else { return }
+            toggleEmphasis(marker: "**", in: textView)
+        }
+
+        private func toggleItalic() {
+            guard let textView else { return }
+            toggleEmphasis(marker: "*", in: textView)
+        }
+
+        /// Wraps the current selection in `marker`, or unwraps it if it's
+        /// already immediately surrounded by one — a no-op if nothing is
+        /// selected, since there's no text to apply emphasis to.
+        private func toggleEmphasis(marker: String, in textView: NSTextView) {
+            let selRange = textView.selectedRange()
+            guard selRange.length > 0 else { return }
+            let nsText = textView.string as NSString
+            let markerLength = (marker as NSString).length
+
+            // For "*" (italic), a single star only counts as a real italic
+            // marker if it isn't actually one half of a "**" (bold) marker —
+            // otherwise toggling italic on bold text would eat one star off
+            // a "**" pair instead of wrapping/unwrapping italic markers.
+            func isLoneStar(at range: NSRange, checkingBefore: Bool) -> Bool {
+                guard marker == "*" else { return true }
+                let neighbor = checkingBefore ? range.location - 1 : range.location + range.length
+                guard neighbor >= 0, neighbor < nsText.length else { return true }
+                return nsText.substring(with: NSRange(location: neighbor, length: 1)) != "*"
+            }
+
+            let beforeRange = NSRange(location: selRange.location - markerLength, length: markerLength)
+            let afterRange = NSRange(location: selRange.location + selRange.length, length: markerLength)
+            let hasBefore = beforeRange.location >= 0
+                && nsText.substring(with: beforeRange) == marker
+                && isLoneStar(at: beforeRange, checkingBefore: true)
+            let hasAfter = afterRange.location + afterRange.length <= nsText.length
+                && nsText.substring(with: afterRange) == marker
+                && isLoneStar(at: afterRange, checkingBefore: false)
+
+            if hasBefore && hasAfter {
+                let innerText = nsText.substring(with: selRange)
+                let combinedRange = NSRange(location: beforeRange.location, length: markerLength + selRange.length + markerLength)
+                guard textView.shouldChangeText(in: combinedRange, replacementString: innerText) else { return }
+                textView.textStorage?.replaceCharacters(in: combinedRange, with: innerText)
+                textView.didChangeText()
+                textView.setSelectedRange(NSRange(location: beforeRange.location, length: (innerText as NSString).length))
+                return
+            }
+
+            let selectedText = nsText.substring(with: selRange)
+            let wrapped = "\(marker)\(selectedText)\(marker)"
+            guard textView.shouldChangeText(in: selRange, replacementString: wrapped) else { return }
+            textView.textStorage?.replaceCharacters(in: selRange, with: wrapped)
+            textView.didChangeText()
+            textView.setSelectedRange(NSRange(location: selRange.location + markerLength, length: selRange.length))
         }
 
         @MainActor

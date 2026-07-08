@@ -8,4 +8,6 @@ extension Notification.Name {
     static let zoomInRequested = Notification.Name("zoomInRequested")
     static let zoomOutRequested = Notification.Name("zoomOutRequested")
     static let zoomResetRequested = Notification.Name("zoomResetRequested")
+    static let boldSelectionRequested = Notification.Name("boldSelectionRequested")
+    static let italicSelectionRequested = Notification.Name("italicSelectionRequested")
 }

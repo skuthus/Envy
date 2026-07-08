@@ -36,6 +36,7 @@ enum WelcomeContent {
     - `*italic*` becomes *italic*
     - `***bold italic***` combines both
     - `~~strikethrough~~` becomes ~~strikethrough~~
+    - Select some text and press **⌘B** or **⌘I** to bold or italicize it directly, no typing asterisks by hand. Press again to undo it.
 
     ### Code
 
