@@ -141,7 +141,7 @@ struct ContentView: View {
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .background(
                                     RoundedRectangle(cornerRadius: 6)
-                                        .fill(isSelected(note) ? Color.accentColor.opacity(0.25) : Color.clear)
+                                        .fill(isSelected(note) ? Color(nsColor: theme.resolvedSelectionColor) : Color.clear)
                                 )
                                 .contentShape(Rectangle())
                                 .onTapGesture {

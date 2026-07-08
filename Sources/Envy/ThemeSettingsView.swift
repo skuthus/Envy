@@ -95,6 +95,17 @@ struct ThemeSettingsView: View {
                 ColorPicker("Highlight", selection: colorBinding(\.highlightColor))
             }
 
+            Section("Note List") {
+                HStack {
+                    ColorPicker("File List Highlight Color", selection: colorBinding(\.selectionColor))
+                    Spacer()
+                    Button("Reset") {
+                        theme.selectionColor = Theme.defaultSelectionColor
+                    }
+                    .disabled(theme.selectionColor == Theme.defaultSelectionColor)
+                }
+            }
+
             Section {
                 Text("Sample")
                     .font(.headline)

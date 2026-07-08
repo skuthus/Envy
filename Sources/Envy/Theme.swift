@@ -43,6 +43,7 @@ struct Theme: Equatable {
         nsColor: NSColor.textBackgroundColor.blended(withFraction: 0.08, of: .labelColor) ?? .clear
     )
     var highlightColor: CodableColor = CodableColor(nsColor: NSColor.systemYellow.withAlphaComponent(0.4))
+    var selectionColor: CodableColor = CodableColor(nsColor: NSColor.controlAccentColor.withAlphaComponent(0.25))
 
     var resolvedFont: NSFont {
         let name = isCustom ? fontName : "SF Pro Text"
@@ -68,6 +69,11 @@ struct Theme: Equatable {
     }
     // Not gated by isCustom — search highlighting is independent of the theme toggle.
     var resolvedHighlightColor: NSColor { highlightColor.nsColor }
+    // Also independent of isCustom — the note list's selection highlight is
+    // its own thing, not part of the editor's custom-theme colors.
+    var resolvedSelectionColor: NSColor { selectionColor.nsColor }
+
+    static let defaultSelectionColor = CodableColor(nsColor: NSColor.controlAccentColor.withAlphaComponent(0.25))
 }
 
 extension Theme: RawRepresentable {
@@ -86,6 +92,7 @@ extension Theme: RawRepresentable {
         var codeBackgroundColor: CodableColor
         // Optional so JSON saved before this field existed still decodes.
         var highlightColor: CodableColor?
+        var selectionColor: CodableColor?
     }
 
     init?(rawValue: String) {
@@ -100,7 +107,8 @@ extension Theme: RawRepresentable {
             markerColor: payload.markerColor,
             linkColor: payload.linkColor,
             codeBackgroundColor: payload.codeBackgroundColor,
-            highlightColor: payload.highlightColor ?? CodableColor(nsColor: NSColor.systemYellow.withAlphaComponent(0.4))
+            highlightColor: payload.highlightColor ?? CodableColor(nsColor: NSColor.systemYellow.withAlphaComponent(0.4)),
+            selectionColor: payload.selectionColor ?? Theme.defaultSelectionColor
         )
     }
 
@@ -114,7 +122,8 @@ extension Theme: RawRepresentable {
             markerColor: markerColor,
             linkColor: linkColor,
             codeBackgroundColor: codeBackgroundColor,
-            highlightColor: highlightColor
+            highlightColor: highlightColor,
+            selectionColor: selectionColor
         )
         guard let data = try? JSONEncoder().encode(payload),
               let string = String(data: data, encoding: .utf8) else { return "{}" }
