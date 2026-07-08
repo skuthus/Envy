@@ -73,3 +73,7 @@ By default, notes live in `~/Documents/Envy`. This folder (and any additional fo
 - `Sources/IconGenerator` — standalone tool that renders the app icon
 - `Sources/VelocitySelfCheck` — a manual assertion-based check suite (used in place of Swift Testing, which doesn't run reliably without a full Xcode install)
 - `Scripts/build-app.sh` — packages the release `.app` bundle
+
+## License
+
+[MIT](LICENSE)
