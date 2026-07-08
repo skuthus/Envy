@@ -30,6 +30,14 @@ struct PersistentVSplitView<Top: View, Bottom: View>: NSViewRepresentable {
         context.coordinator.splitView = splitView
         context.coordinator.topHost = topHost
         context.coordinator.bottomHost = bottomHost
+        // The view's bounds are still zero synchronously here, right after
+        // creation, so applyInitialPositionIfNeeded() can't size the divider
+        // yet — try again once this run loop tick's layout has actually
+        // happened, rather than only relying on updateNSView to eventually
+        // get called again (it doesn't, if nothing else changes afterward).
+        DispatchQueue.main.async {
+            context.coordinator.applyInitialPositionIfNeeded()
+        }
         return splitView
     }
 
@@ -64,7 +72,13 @@ struct PersistentVSplitView<Top: View, Bottom: View>: NSViewRepresentable {
         }
 
         func splitViewDidResizeSubviews(_ notification: Notification) {
-            guard let splitView, splitView.subviews.count == 2 else { return }
+            // AppKit fires this once on its own during the initial layout
+            // pass, before applyInitialPositionIfNeeded() has had a chance to
+            // restore the saved fraction — saving unconditionally meant that
+            // spurious first call overwrote a real saved position with
+            // whatever arbitrary split AppKit's own initial layout produced,
+            // which is why the divider never actually stuck across launches.
+            guard didApplyInitialPosition, let splitView, splitView.subviews.count == 2 else { return }
             let total = splitView.bounds.height - splitView.dividerThickness
             guard total > 0 else { return }
             let fraction = splitView.subviews[0].frame.height / total
