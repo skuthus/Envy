@@ -11,6 +11,9 @@ struct GeneralSettingsView: View {
     @AppStorage("showEditorTitleHeader") private var showEditorTitleHeader = true
     @AppStorage(NotesDirectoryPreference.storageKey) private var notesDirectoryPathsRaw = ""
     @AppStorage("moveFocusToEditorOnEnter") private var moveFocusToEditorOnEnter = true
+    @AppStorage("showFooterClock") private var showFooterClock = false
+    @AppStorage("showFooterClockDate") private var showFooterClockDate = false
+    @AppStorage("footerClockDateFormat") private var footerClockDateFormatRaw = ClockDateFormat.short.rawValue
     @State private var showingMarkupHelp = false
     @State private var openAtLogin = SMAppService.mainApp.status == .enabled
 
@@ -18,6 +21,13 @@ struct GeneralSettingsView: View {
         Binding(
             get: { DateDisplayStyle(rawValue: dateDisplayStyleRaw) ?? .smart },
             set: { dateDisplayStyleRaw = $0.rawValue }
+        )
+    }
+
+    private var footerClockDateFormat: Binding<ClockDateFormat> {
+        Binding(
+            get: { ClockDateFormat(rawValue: footerClockDateFormatRaw) ?? .short },
+            set: { footerClockDateFormatRaw = $0.rawValue }
         )
     }
 
@@ -102,6 +112,15 @@ struct GeneralSettingsView: View {
 
             Section("Editor") {
                 Toggle("Show title bar above note", isOn: $showEditorTitleHeader)
+                Toggle("Show clock in footer", isOn: $showFooterClock)
+                Toggle("Show date with clock", isOn: $showFooterClockDate)
+                    .disabled(!showFooterClock)
+                Picker("Date Format", selection: footerClockDateFormat) {
+                    ForEach(ClockDateFormat.allCases) { format in
+                        Text(format.label).tag(format)
+                    }
+                }
+                .disabled(!showFooterClock || !showFooterClockDate)
             }
 
             Section("Links") {

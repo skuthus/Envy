@@ -49,6 +49,9 @@ struct ContentView: View {
     @AppStorage("listDensity") private var listDensityRaw = ListDensity.compact.rawValue
     @AppStorage("noteSortField") private var sortFieldRaw = NoteSortField.date.rawValue
     @AppStorage("noteSortAscending") private var sortAscending = false
+    @AppStorage("showFooterClock") private var showFooterClock = false
+    @AppStorage("showFooterClockDate") private var showFooterClockDate = false
+    @AppStorage("footerClockDateFormat") private var footerClockDateFormatRaw = ClockDateFormat.short.rawValue
 
     private var layoutMode: LayoutMode {
         LayoutMode(rawValue: layoutModeRaw) ?? .horizontal
@@ -64,6 +67,10 @@ struct ContentView: View {
 
     private var listDensity: ListDensity {
         ListDensity(rawValue: listDensityRaw) ?? .compact
+    }
+
+    private var footerClockDateFormat: ClockDateFormat {
+        ClockDateFormat(rawValue: footerClockDateFormatRaw) ?? .short
     }
 
     private var backgroundBlurStrength: BlurStrength {
@@ -245,7 +252,10 @@ struct ContentView: View {
                     theme: theme,
                     requireModifierForLinkClick: requireModifierForLinkClick,
                     searchQuery: query,
-                    showTitleHeader: showEditorTitleHeader
+                    showTitleHeader: showEditorTitleHeader,
+                    showFooterClock: showFooterClock,
+                    showFooterClockDate: showFooterClockDate,
+                    footerClockDateFormat: footerClockDateFormat
                 )
                 // Forces a fresh NoteEditorView (and its underlying NSTextView)
                 // per note instead of patching the same instance in place —
