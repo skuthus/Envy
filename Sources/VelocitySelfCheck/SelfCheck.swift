@@ -1,0 +1,225 @@
+import Foundation
+@testable import VelocityCore
+
+@main
+struct SelfCheck {
+    @MainActor
+    static func main() async {
+        var failures: [String] = []
+
+        func check(_ name: String, _ condition: @autoclosure () -> Bool) {
+            if condition() {
+                print("PASS: \(name)")
+            } else {
+                print("FAIL: \(name)")
+                failures.append(name)
+            }
+        }
+
+        func waitForLoad(_ store: NoteStore) async {
+            var attempts = 0
+            while store.isLoading && attempts < 200 {
+                try? await Task.sleep(for: .milliseconds(5))
+                attempts += 1
+            }
+        }
+
+        func makeTempStore() async -> NoteStore {
+            let dir = FileManager.default.temporaryDirectory
+                .appendingPathComponent("VelocitySelfCheck-\(UUID().uuidString)", isDirectory: true)
+            let store = NoteStore(directories: [dir])
+            await waitForLoad(store)
+            return store
+        }
+
+        // createNoteWritesFileAndAppearsInList
+        do {
+            let store = await makeTempStore()
+            let note = store.create(title: "Hello World")
+            check("create writes file", FileManager.default.fileExists(atPath: note.url.path))
+            check("create appears in list", store.notes.count == 1)
+            check("create derives title", note.title == "Hello World")
+        }
+
+        // saveUpdatesContentAndPersistsAcrossReload
+        do {
+            let store = await makeTempStore()
+            var note = store.create(title: "Draft")
+            note.content = "Draft\nSome body text."
+            store.save(note)
+
+            let reloaded = NoteStore(directories: store.noteDirectories)
+            await waitForLoad(reloaded)
+            check("save persists count", reloaded.notes.count == 1)
+            check("save persists content", reloaded.notes.first?.content == "Draft\nSome body text.")
+        }
+
+        // deleteRemovesNoteFromListAndDisk
+        do {
+            let store = await makeTempStore()
+            let note = store.create(title: "Temporary")
+            store.delete(note)
+            check("delete empties list", store.notes.isEmpty)
+            check("delete removes file", !FileManager.default.fileExists(atPath: note.url.path))
+        }
+
+        // duplicateTitlesGetUniqueFilenames
+        do {
+            let store = await makeTempStore()
+            let first = store.create(title: "Untitled")
+            let second = store.create(title: "Untitled")
+            check("duplicate titles get unique filenames", first.url.lastPathComponent != second.url.lastPathComponent)
+            check("duplicate titles both present", store.notes.count == 2)
+        }
+
+        // exactTitleMatchIsCaseInsensitiveButRequiresFullTitle
+        do {
+            let store = await makeTempStore()
+            var note = store.create(title: "Meeting Notes")
+            note.content = "Meeting Notes\nAgenda here."
+            store.save(note)
+            check("exact match case-insensitive", store.exactTitleMatch(for: "meeting notes")?.id == note.id)
+            check("exact match requires full title", store.exactTitleMatch(for: "Meeting") == nil)
+        }
+
+        // filteredRanksTitleMatchesAboveContentOnlyMatches
+        do {
+            let store = await makeTempStore()
+            var titleMatch = store.create(title: "Grocery List")
+            titleMatch.content = "Grocery List\nmilk, eggs"
+            store.save(titleMatch)
+
+            var contentOnlyMatch = store.create(title: "Random Thoughts")
+            contentOnlyMatch.content = "Random Thoughts\nneed to buy groceries later"
+            store.save(contentOnlyMatch)
+
+            let results = store.filtered(query: "grocer")
+            check("filtered returns both matches", results.count == 2)
+            check("filtered ranks title match first", results.first?.id == titleMatch.id)
+            check("filtered ranks content-only match last", results.last?.id == contentOnlyMatch.id)
+        }
+
+        // renameMovesFileAndUpdatesIdentity
+        do {
+            let store = await makeTempStore()
+            let note = store.create(title: "Old Name")
+            let oldURL = note.url
+
+            let renamed = store.rename(note, to: "New Name")
+            check("rename changes title", renamed.title == "New Name")
+            check("rename moves file", !FileManager.default.fileExists(atPath: oldURL.path) && FileManager.default.fileExists(atPath: renamed.url.path))
+            check("rename updates store entry", store.notes.first?.id == renamed.id)
+            check("rename preserves content", renamed.content == note.content)
+        }
+
+        // moveRelocatesFileToAnotherConfiguredFolder
+        do {
+            let dirA = FileManager.default.temporaryDirectory
+                .appendingPathComponent("VelocitySelfCheck-\(UUID().uuidString)", isDirectory: true)
+            let dirB = FileManager.default.temporaryDirectory
+                .appendingPathComponent("VelocitySelfCheck-\(UUID().uuidString)", isDirectory: true)
+            let store = NoteStore(directories: [dirA, dirB])
+            await waitForLoad(store)
+
+            let note = store.create(title: "Relocate Me")
+            let oldURL = note.url
+            let moved = store.move(note, to: dirB)
+
+            check("move changes folder", moved.url.deletingLastPathComponent() == dirB)
+            check("move removes old file", !FileManager.default.fileExists(atPath: oldURL.path))
+            check("move creates new file", FileManager.default.fileExists(atPath: moved.url.path))
+            check("move preserves title", moved.title == "Relocate Me")
+            check("move updates store entry", store.notes.first { $0.title == "Relocate Me" }?.id == moved.id)
+
+            let noOp = store.move(moved, to: dirB)
+            check("move to same folder is a no-op", noOp.id == moved.id)
+        }
+
+        // setDirectoriesLoadsNewFoldersAndStopsWatchingOld
+        do {
+            let storeA = await makeTempStore()
+            storeA.create(title: "In Folder A")
+
+            let dirB = FileManager.default.temporaryDirectory
+                .appendingPathComponent("VelocitySelfCheck-\(UUID().uuidString)", isDirectory: true)
+            storeA.setDirectories([dirB])
+            await waitForLoad(storeA)
+            check("setDirectories updates noteDirectories", storeA.noteDirectories == [dirB])
+            check("setDirectories clears old folder's notes", storeA.notes.isEmpty)
+
+            storeA.create(title: "In Folder B")
+            check("setDirectories create lands in new folder", FileManager.default.fileExists(atPath: dirB.appendingPathComponent("In Folder B.md").path))
+        }
+
+        // multipleFoldersAggregateIntoOneFlatListWithUniqueIDs
+        do {
+            let dirA = FileManager.default.temporaryDirectory
+                .appendingPathComponent("VelocitySelfCheck-\(UUID().uuidString)", isDirectory: true)
+            let dirB = FileManager.default.temporaryDirectory
+                .appendingPathComponent("VelocitySelfCheck-\(UUID().uuidString)", isDirectory: true)
+            let store = NoteStore(directories: [dirA, dirB])
+            await waitForLoad(store)
+
+            // Same filename in two different folders — ids must not collide.
+            try? "from A".write(to: dirA.appendingPathComponent("Same Name.md"), atomically: true, encoding: .utf8)
+            try? "from B".write(to: dirB.appendingPathComponent("Same Name.md"), atomically: true, encoding: .utf8)
+            store.reload()
+            await waitForLoad(store)
+
+            check("multi-folder aggregates both notes", store.notes.count == 2)
+            check("multi-folder ids are unique despite same filename", Set(store.notes.map(\.id)).count == 2)
+
+            let created = store.create(title: "New Note")
+            check("create defaults to first folder", created.url.deletingLastPathComponent() == dirA)
+        }
+
+        // reloadInFlightAtLaunchDoesNotClobberAnImmediateCreate
+        do {
+            let dir = FileManager.default.temporaryDirectory
+                .appendingPathComponent("VelocitySelfCheck-\(UUID().uuidString)", isDirectory: true)
+            // Don't wait for the initial load — create immediately, racing the
+            // in-flight background scan of what was (at construction time) an
+            // empty folder.
+            let store = NoteStore(directories: [dir])
+            let note = store.create(title: "Immediate")
+            await waitForLoad(store)
+            check("create survives in-flight initial reload", store.notes.contains { $0.id == note.id })
+        }
+
+        // renameToExistingTitleGetsDeduped
+        do {
+            let store = await makeTempStore()
+            store.create(title: "Taken")
+            let other = store.create(title: "Other")
+            let renamed = store.rename(other, to: "Taken")
+            check("rename dedupes collisions", renamed.url.lastPathComponent != "Taken.md")
+            check("rename dedupe keeps two notes", store.notes.count == 2)
+        }
+
+        // renameToEmptyOrSameTitleIsNoOp
+        do {
+            let store = await makeTempStore()
+            let note = store.create(title: "Stable")
+            let unchanged = store.rename(note, to: "  ")
+            check("rename ignores blank title", unchanged.id == note.id)
+            check("rename ignores blank title (file untouched)", FileManager.default.fileExists(atPath: note.url.path))
+        }
+
+        // filteredExcludesNonMatchingNotes
+        do {
+            let store = await makeTempStore()
+            store.create(title: "Apples")
+            store.create(title: "Oranges")
+            let results = store.filtered(query: "zzz-no-match")
+            check("filtered excludes non-matches", results.isEmpty)
+        }
+
+        print("")
+        if failures.isEmpty {
+            print("All checks passed.")
+        } else {
+            print("\(failures.count) check(s) failed: \(failures.joined(separator: ", "))")
+            exit(1)
+        }
+    }
+}
