@@ -186,18 +186,49 @@ struct ContentView: View {
         }
     }
 
+    /// The top title-prefix match for the current search text, if any —
+    /// what the inline ghost-text completion offers and ⇾ accepts.
+    private var suggestionNote: Note? {
+        guard !query.isEmpty else { return nil }
+        let lowered = query.lowercased()
+        return filteredNotes.first {
+            $0.title.lowercased().hasPrefix(lowered) && $0.title.count > query.count
+        }
+    }
+
+    private var suggestionRemainder: String? {
+        guard let note = suggestionNote else { return nil }
+        let startIndex = note.title.index(note.title.startIndex, offsetBy: query.count)
+        return String(note.title[startIndex...])
+    }
+
     private var searchField: some View {
-        TextField("Search or Create Note", text: $query)
-            .textFieldStyle(.plain)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
-            .glassEffect(.regular, in: Capsule())
-            .padding(10)
-            .focused($focusedField, equals: .search)
-            .onKeyPress(.downArrow) { moveSelection(1); return .handled }
-            .onKeyPress(.upArrow) { moveSelection(-1); return .handled }
-            .onSubmit { handleEnter() }
-            .onChange(of: query) { _, _ in reconcileSelection() }
+        ZStack(alignment: .leading) {
+            if let suggestionRemainder {
+                (Text(query).foregroundColor(.clear) + Text(suggestionRemainder).foregroundColor(.secondary))
+                    .font(.body)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .allowsHitTesting(false)
+            }
+            TextField("Search or Create Note", text: $query)
+                .textFieldStyle(.plain)
+                .font(.body)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+        }
+        .glassEffect(.regular, in: Capsule())
+        .padding(10)
+        .focused($focusedField, equals: .search)
+        .onKeyPress(.downArrow) { moveSelection(1); return .handled }
+        .onKeyPress(.upArrow) { moveSelection(-1); return .handled }
+        .onKeyPress(.rightArrow) {
+            guard let suggestionNote else { return .ignored }
+            query = suggestionNote.title
+            return .handled
+        }
+        .onSubmit { handleEnter() }
+        .onChange(of: query) { _, _ in reconcileSelection() }
     }
 
     @ToolbarContentBuilder
