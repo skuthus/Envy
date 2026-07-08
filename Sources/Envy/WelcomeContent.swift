@@ -58,6 +58,11 @@ enum WelcomeContent {
     - `[text](url)` links to a web address. Cmd-click opens it in your browser.
     - A bare URL like https://example.com becomes clickable on its own.
 
+    ### Footnotes
+
+    - `text[^1]` adds a small clickable reference number, like this one[^1]. Click it to jump straight to its definition.
+    - `[^1]: explanation` defines it. Definitions can live anywhere in the note, though the bottom is the usual spot.
+
     ### Emoji
 
     - Type a shortcode like `:smile:` and finish it with the closing colon. It's replaced with the real emoji right away.
@@ -92,6 +97,8 @@ enum WelcomeContent {
     - The full keyboard shortcut list
     - A markup cheat sheet covering everything above
     - A searchable list of every emoji shortcode
+
+    [^1]: This is where that footnote reference above points. Notice how clicking it scrolled you all the way down here.
 
     Enjoy the app.
     """
