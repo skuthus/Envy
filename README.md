@@ -39,6 +39,15 @@ This builds a release binary, generates the app icon, assembles `dist/Envy.app`,
 cp -R dist/Envy.app /Applications/
 ```
 
+## Gatekeeper Warning
+
+Releases are ad-hoc signed, not notarized by Apple. On first launch, macOS will likely say Envy "can't be opened because it is from an unidentified developer" (or "is damaged and can't be opened"). To open it anyway:
+
+1. Right-click (or Control-click) `Envy.app` and choose **Open**, then click **Open** again in the dialog.
+2. If that doesn't work, run `xattr -cr /path/to/Envy.app` in Terminal.
+
+You only need to do this once per copy of the app.
+
 ## Notes Storage
 
 By default, notes live in `~/Documents/Envy`. This folder (and any additional folders you configure in Settings → General) is created automatically on first launch, along with a welcome note covering the basics.
