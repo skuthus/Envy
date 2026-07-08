@@ -29,6 +29,7 @@ struct NoteEditorView: View {
             }
             MarkdownTextView(
                 text: $content,
+                noteID: noteID,
                 onNavigate: onNavigate,
                 focusedField: focusedField,
                 theme: theme,
