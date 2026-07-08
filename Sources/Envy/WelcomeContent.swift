@@ -9,54 +9,94 @@ enum WelcomeContent {
     static let welcomeBody = """
     # Welcome to Envy
 
-    Envy is a fast, flat-file note-taking app inspired by Notational Velocity — one search box, instant results, and notes stored as plain `.md` files you can grep, sync, or edit with anything else you like.
+    Envy is a fast, flat-file note-taking app inspired by Notational Velocity. Type in one search box to find or create any note. Every note is a plain `.md` file, so you can edit it with anything else you like too.
 
-    This note was created automatically so you'd have something to look at on first launch. Delete it whenever you're ready — it won't come back.
+    This note was created automatically the first time you launched Envy. Delete it whenever you're ready. It won't come back.
 
     ## Quick Start
 
-    - Type in the search box at the top to filter your notes as you type.
-    - Press **↩** to open the highlighted note, or to create a new one if nothing matches your search.
-    - Use **↑ / ↓** to move the highlighted note without leaving the search box.
+    - Type in the search box to filter your notes as you type.
+    - Press **↩** to open the highlighted note. If nothing matches, pressing **↩** creates a new note with that title instead.
+    - Use **↑** and **↓** to move the highlighted note without leaving the search box.
+    - If your search matches the start of an existing title, the rest of it shows up in grey. Press **→** to complete it.
     - **⌘N** creates a blank note directly.
-    - **⌘⌫** deletes the selected note (moved to Trash, not permanently deleted).
+    - **⌘⌫** deletes the selected note. It goes to Trash, not gone for good.
 
-    That search box is the whole app — there's no separate "new note" dialog. If what you typed doesn't match an existing title, hitting Return just creates it.
+    There's no separate "new note" dialog. The search box handles both jobs.
 
     ## Formatting
 
-    Envy renders markdown live as you type, right in the editor — there's no separate preview mode to switch into. Try editing the lines below to see it in action:
+    Envy renders markdown live as you type. There's no preview mode to switch into. Syntax characters like `#` and `**` fade out of view once your cursor moves away, and reappear when you click back in to edit them. Try it right here:
 
-    - `# Heading` becomes a large **heading**
+    ### Text styles
+
+    - `# Heading` becomes a large **heading**. Use up to six `#`s for smaller headings.
     - `**bold**` becomes **bold**
     - `*italic*` becomes *italic*
-    - `` `code` `` becomes `code` with a subtle background
+    - `***bold italic***` combines both
+    - `~~strikethrough~~` becomes ~~strikethrough~~
 
-    The raw syntax characters (`#`, `*`, `` ` ``) stay visible but dimmed, so you can always see exactly what you typed.
+    ### Code
+
+    - `` `inline code` `` gets a subtle background
+    - A fenced code block, opened and closed with three backticks on their own lines, renders as monospaced text. Nothing inside it gets reinterpreted as markdown.
+
+    ### Structure
+
+    - `> a quote` renders as an indented blockquote
+    - `---` on its own line renders as a horizontal rule
+
+    ### Lists
+
+    - Start a line with `-` for a bullet list. Use `*` instead and it renders as an actual bullet character.
+    - Start a line with `1.` for a numbered list. Press Return to add the next item automatically. The numbers stay in order even if you add or delete an item in the middle.
+    - Start a line with `- [ ]` for a task list, and click the checkbox to mark it done.
+
+    ### Links
+
+    - `[[Note Title]]` links to another note. Cmd-click to follow it, and it creates the note if it doesn't exist yet.
+    - `[text](url)` links to a web address. Cmd-click opens it in your browser.
+    - A bare URL like https://example.com becomes clickable on its own.
+
+    ### Emoji
+
+    - Type a shortcode like `:smile:` and finish it with the closing colon. It's replaced with the real emoji right away.
 
     ## Linking Notes
 
-    Type `[[Note Title]]` anywhere in a note to link to another one. For example, this links to a small companion note: [[Example Linked Note]]
+    `[[Note Title]]` links work throughout Envy, not just in the list above. Here's one to a small companion note: [[Example Linked Note]]
 
-    Hold **⌘** and click a link to follow it. If the note doesn't exist yet, clicking creates it empty and takes you straight there — handy for jotting a quick outline of related notes before you've written any of them.
+    Hold **⌘** and click a link to follow it. If the note doesn't exist yet, clicking creates it and takes you straight there. That makes it easy to sketch out related notes before you've written any of them.
 
     ## Multiple Folders
 
-    Settings → General → Storage lets you add more than one notes folder. Envy merges every folder into one flat, searchable list — the folder a note lives in is invisible in search, but you can see and change it from a note's right-click menu ("Move to Folder"). The first folder in that list is where new notes get created by default.
+    Settings → General lets you add more than one notes folder. Envy merges them into a single searchable list. Which folder a note lives in doesn't affect search, but you can see and change it from a note's right-click menu.
 
     ## Customizing the Look
 
-    Settings → Appearance has font, color, and window-blur controls, plus a System / Light / Dark mode picker that's independent of your custom colors. Settings → General also has a layout toggle (⌘⇧L) for switching between a side-by-side and a stacked list/editor arrangement.
+    - Settings → Appearance lets you pick your own font and colors.
+    - A blur strength control adjusts how translucent the window background is.
+    - A note list density picker controls how much space each note takes up in the list.
+    - A mode setting matches System, Light, or Dark, independent of your custom colors.
+
+    ## Getting Around
+
+    - **⌘⇧L** toggles between a side-by-side and a stacked layout.
+    - **⌥⌘↩** shows or hides Envy from anywhere on your Mac, even when another app is focused.
+    - Settings → General has a toggle for whether pressing Return in the search box also moves your cursor into the editor, in case you'd rather stay in the search box instead.
 
     ## Reference
 
-    - **Envy → About Envy** has the full keyboard shortcut list and a markup cheat sheet, any time you need them again.
-    - The global shortcut **⌥⌘↩** shows or hides Envy from anywhere on your Mac, even when another app is focused — no need to switch apps or find the Dock icon.
+    **Envy → About Envy** has more reference material, including:
+
+    - The full keyboard shortcut list
+    - A markup cheat sheet covering everything above
+    - A searchable list of every emoji shortcode
 
     Enjoy the app.
     """
 
     static let linkedNoteBody = """
-    This is a real note, not a dead link. Following [[Welcome to Envy]] with ⌘-click landed you here — that's how linking works throughout Envy: any `[[Note Title]]` becomes a clickable path to another note, creating it on the spot if it doesn't exist yet.
+    This is a real note, not a dead link. Following [[Welcome to Envy]] with a Cmd-click landed you here. That's how linking works throughout Envy: any `[[Note Title]]` becomes a clickable path to another note, and clicking creates it on the spot if it doesn't exist yet.
     """
 }
