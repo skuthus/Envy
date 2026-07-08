@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import ServiceManagement
 import VelocityCore
 
 struct GeneralSettingsView: View {
@@ -10,6 +11,7 @@ struct GeneralSettingsView: View {
     @AppStorage("showEditorTitleHeader") private var showEditorTitleHeader = true
     @AppStorage(NotesDirectoryPreference.storageKey) private var notesDirectoryPathsRaw = ""
     @State private var showingMarkupHelp = false
+    @State private var openAtLogin = SMAppService.mainApp.status == .enabled
 
     private var dateDisplayStyle: Binding<DateDisplayStyle> {
         Binding(
@@ -25,6 +27,13 @@ struct GeneralSettingsView: View {
 
     var body: some View {
         Form {
+            Section("Startup") {
+                Toggle("Open Envy at Login", isOn: Binding(
+                    get: { openAtLogin },
+                    set: { setOpenAtLogin($0) }
+                ))
+            }
+
             Section("Storage") {
                 ForEach(Array(directories.enumerated()), id: \.element) { index, directory in
                     HStack {
@@ -104,6 +113,21 @@ struct GeneralSettingsView: View {
         .frame(width: 460)
         .sheet(isPresented: $showingMarkupHelp) {
             MarkupHelpView()
+        }
+    }
+
+    private func setOpenAtLogin(_ enabled: Bool) {
+        do {
+            if enabled {
+                try SMAppService.mainApp.register()
+            } else {
+                try SMAppService.mainApp.unregister()
+            }
+            openAtLogin = enabled
+        } catch {
+            // Reflect whatever actually took effect rather than trusting the
+            // requested value if registration failed.
+            openAtLogin = SMAppService.mainApp.status == .enabled
         }
     }
 
