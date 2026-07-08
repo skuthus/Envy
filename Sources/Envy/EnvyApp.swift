@@ -105,6 +105,18 @@ struct EnvyApp: App {
                 }
                 .keyboardShortcut("n", modifiers: [.command])
             }
+            CommandGroup(after: .newItem) {
+                Button("Delete Note") {
+                    NotificationCenter.default.post(name: .deleteSelectedRequested, object: nil)
+                }
+                .keyboardShortcut(.delete, modifiers: [.command])
+            }
+            CommandGroup(after: .toolbar) {
+                Button("Toggle Layout") {
+                    NotificationCenter.default.post(name: .toggleLayoutRequested, object: nil)
+                }
+                .keyboardShortcut("l", modifiers: [.command, .shift])
+            }
             CommandGroup(after: .windowArrangement) {
                 // No .keyboardShortcut here — ⌘↩ is handled by the local event
                 // monitor in AppDelegate instead, since SwiftUI's menu-shortcut

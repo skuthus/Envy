@@ -111,12 +111,17 @@ struct ContentView: View {
             }
         }
         .background(backgroundView.ignoresSafeArea())
-        .toolbar { toolbarContent }
         .onReceive(NotificationCenter.default.publisher(for: .newNoteRequested)) { _ in
             createBlankNote()
         }
         .onReceive(NotificationCenter.default.publisher(for: .summonRequested)) { _ in
             focusedField = .search
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .deleteSelectedRequested)) { _ in
+            deleteSelected()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .toggleLayoutRequested)) { _ in
+            layoutModeRaw = (layoutMode == .horizontal ? LayoutMode.vertical : .horizontal).rawValue
         }
         .onAppear {
             createWelcomeNoteIfNeeded()
@@ -332,35 +337,6 @@ struct ContentView: View {
         }
         .onSubmit { handleEnter() }
         .onChange(of: query) { _, _ in reconcileSelection() }
-    }
-
-    @ToolbarContentBuilder
-    private var toolbarContent: some ToolbarContent {
-        ToolbarItemGroup(placement: .primaryAction) {
-            Button {
-                createBlankNote()
-            } label: {
-                Label("New Note", systemImage: "square.and.pencil")
-            }
-
-            Button(role: .destructive) {
-                deleteSelected()
-            } label: {
-                Label("Delete", systemImage: "trash")
-            }
-            .keyboardShortcut(.delete, modifiers: [.command])
-            .disabled(selectedID == nil)
-
-            Button {
-                layoutModeRaw = (layoutMode == .horizontal ? LayoutMode.vertical : .horizontal).rawValue
-            } label: {
-                Label(
-                    "Toggle Layout",
-                    systemImage: layoutMode == .horizontal ? "rectangle.split.2x1" : "rectangle.split.1x2"
-                )
-            }
-            .keyboardShortcut("l", modifiers: [.command, .shift])
-        }
     }
 
     private func moveSelection(_ delta: Int) {
