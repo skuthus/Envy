@@ -25,6 +25,7 @@ struct ContentView: View {
     @AppStorage("showEditorTitleHeader") private var showEditorTitleHeader = true
     @AppStorage("showWindowTitle") private var showWindowTitle = true
     @AppStorage(NotesDirectoryPreference.storageKey) private var notesDirectoryPathsRaw = ""
+    @AppStorage("hasCreatedWelcomeNote") private var hasCreatedWelcomeNote = false
 
     private var layoutMode: LayoutMode {
         LayoutMode(rawValue: layoutModeRaw) ?? .horizontal
@@ -69,6 +70,7 @@ struct ContentView: View {
             focusedField = .search
         }
         .onAppear {
+            createWelcomeNoteIfNeeded()
             selectDefaultIfNeeded()
             focusedField = .search
             applyWindowTitleVisibility()
@@ -241,6 +243,27 @@ struct ContentView: View {
         if selectedID == nil {
             selectedID = store.notes.first?.id
         }
+    }
+
+    /// Seeds the default folder with a welcome note (and a small companion note
+    /// it links to) the very first time the app launches, and opens it. Gated by
+    /// a persisted flag rather than "notes list is empty" so it only ever fires
+    /// once, even if the user later deletes every note.
+    private func createWelcomeNoteIfNeeded() {
+        guard !hasCreatedWelcomeNote else { return }
+        hasCreatedWelcomeNote = true
+
+        let linked = store.create(title: WelcomeContent.linkedNoteTitle)
+        var linkedWithBody = linked
+        linkedWithBody.content = WelcomeContent.linkedNoteBody
+        store.save(linkedWithBody)
+
+        let welcome = store.create(title: WelcomeContent.title)
+        var welcomeWithBody = welcome
+        welcomeWithBody.content = WelcomeContent.welcomeBody
+        store.save(welcomeWithBody)
+
+        selectedID = welcome.id
     }
 
     private func navigateToNote(titled title: String) {
