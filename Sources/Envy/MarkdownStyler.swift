@@ -137,6 +137,43 @@ enum MarkdownStyler {
         }
     }
 
+    /// GitHub-style heading slug: lowercased, with anything that isn't a
+    /// letter, digit, space, or hyphen stripped, and whitespace collapsed to
+    /// single hyphens — how a `[text](#heading)` in-note anchor is expected
+    /// to reference a heading by its rendered text.
+    static func headingSlug(for headingText: String) -> String {
+        let lowered = headingText.lowercased()
+        let filtered = lowered.unicodeScalars.filter {
+            CharacterSet.alphanumerics.contains($0) || $0 == " " || $0 == "-"
+        }
+        let cleaned = String(String.UnicodeScalarView(filtered))
+        return cleaned.split(separator: " ", omittingEmptySubsequences: true).joined(separator: "-")
+    }
+
+    /// Every heading's slug (with GitHub-style "-1", "-2" suffixes appended
+    /// for repeated headings, in document order) paired with the range of
+    /// its heading text.
+    private static func headingSlugRanges(in text: String) -> [(slug: String, range: NSRange)] {
+        let full = NSRange(location: 0, length: (text as NSString).length)
+        var seenCounts: [String: Int] = [:]
+        return headerRegex.matches(in: text, range: full).map { match in
+            let contentRange = match.range(at: 2)
+            let headingText = (text as NSString).substring(with: contentRange)
+            let baseSlug = headingSlug(for: headingText)
+            let count = seenCounts[baseSlug, default: 0]
+            seenCounts[baseSlug] = count + 1
+            let slug = count == 0 ? baseSlug : "\(baseSlug)-\(count)"
+            return (slug, contentRange)
+        }
+    }
+
+    /// The range of the heading whose slug matches `slug` (from a
+    /// `[text](#slug)` in-note anchor link), if one exists — used to scroll
+    /// a clicked anchor link to its heading within the same note.
+    static func headingRange(forSlug slug: String, in text: String) -> NSRange? {
+        headingSlugRanges(in: text).first { $0.slug == slug }?.range
+    }
+
     static func style(
         textStorage: NSTextStorage,
         text: String,
@@ -474,8 +511,18 @@ enum MarkdownStyler {
 
         textStorage.addAttribute(.foregroundColor, value: linkColor, range: labelRange)
         textStorage.addAttribute(.underlineStyle, value: NSUnderlineStyle.single.rawValue, range: labelRange)
-        if let url = URL(string: (text as NSString).substring(with: urlRange)), url.scheme?.hasPrefix("http") == true {
-            textStorage.addAttribute(.link, value: url, range: labelRange)
+        if let url = URL(string: (text as NSString).substring(with: urlRange)) {
+            if url.scheme?.hasPrefix("http") == true {
+                textStorage.addAttribute(.link, value: url, range: labelRange)
+            } else if url.scheme == nil, url.host == nil, let fragment = url.fragment {
+                // "[text](#heading)" — an in-note anchor rather than a real
+                // URL, routed through its own scheme so the click handler can
+                // tell it apart from a wiki-link or a web link.
+                let encoded = fragment.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? fragment
+                if let headingURL = URL(string: "envy-heading:///\(encoded)") {
+                    textStorage.addAttribute(.link, value: headingURL, range: labelRange)
+                }
+            }
         }
 
         if revealed {

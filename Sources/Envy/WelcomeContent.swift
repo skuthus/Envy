@@ -58,6 +58,7 @@ enum WelcomeContent {
     - `[[Note Title]]` links to another note. Cmd-click to follow it, and it creates the note if it doesn't exist yet.
     - `[text](url)` links to a web address. Cmd-click opens it in your browser.
     - A bare URL like https://example.com becomes clickable on its own.
+    - `[text](#heading)` jumps to a heading in this note, like this link to [Structure](#structure). Click it, no modifier needed. The heading part matches the heading's own text, lowercased with spaces turned into hyphens.
 
     ### Footnotes
 

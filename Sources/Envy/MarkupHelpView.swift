@@ -41,6 +41,7 @@ struct MarkupHelpView: View {
             Entry(syntax: "[[Note Title]]", description: "Link to another note. Cmd+Click to open it — creates the note if it doesn't exist yet."),
             Entry(syntax: "[text](url)", description: "Link to a web address. Cmd+Click to open in your browser."),
             Entry(syntax: "<https://…>", description: "Autolink — bare URLs are also detected and made clickable automatically"),
+            Entry(syntax: "[text](#heading)", description: "Jump to a heading in this note — click, no modifier needed. Matches the heading's text lowercased with spaces turned into hyphens."),
         ]),
         Group(title: "Emoji", entries: [
             Entry(syntax: ":smile:", description: "Replaced with 😄 as soon as you finish typing it — the note just contains the emoji itself"),

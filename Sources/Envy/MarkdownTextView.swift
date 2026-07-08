@@ -399,6 +399,13 @@ struct MarkdownTextView: NSViewRepresentable {
                 return true
             }
 
+            if url.scheme == "envy-heading" {
+                let encoded = url.path.hasPrefix("/") ? String(url.path.dropFirst()) : url.path
+                let slug = encoded.removingPercentEncoding ?? encoded
+                jumpToHeading(slug: slug, in: textView)
+                return true
+            }
+
             guard url.scheme == "velocity" || url.scheme == "http" || url.scheme == "https" else {
                 return false
             }
@@ -429,6 +436,15 @@ struct MarkdownTextView: NSViewRepresentable {
         @MainActor
         private func jumpToFootnoteDefinition(label: String, in textView: NSTextView) {
             guard let range = MarkdownStyler.footnoteDefinitionRange(forLabel: label, in: textView.string) else { return }
+            textView.scrollRangeToVisible(range)
+            textView.showFindIndicator(for: range)
+        }
+
+        /// Scrolls to a heading matching an in-note `[text](#slug)` anchor
+        /// link, same jump-and-flash treatment as a footnote reference.
+        @MainActor
+        private func jumpToHeading(slug: String, in textView: NSTextView) {
+            guard let range = MarkdownStyler.headingRange(forSlug: slug, in: textView.string) else { return }
             textView.scrollRangeToVisible(range)
             textView.showFindIndicator(for: range)
         }
