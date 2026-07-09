@@ -31,6 +31,11 @@ struct ContentView: View {
     /// selection driving the editor pane and keyboard navigation, unchanged
     /// from before multi-select existed — this is purely additive.
     @State private var multiSelectedIDs: Set<String> = []
+    /// The fixed starting point for ⇧-click range selection — set by a plain
+    /// click, left alone by ⇧-click itself so repeated ⇧-clicks each
+    /// recompute the range from the same anchor rather than chaining from
+    /// wherever the previous ⇧-click landed (matching Finder).
+    @State private var selectionAnchorID: String?
     @State private var renamingNote: Note?
     @State private var renameText = ""
     @State private var cachedWindowTitle: String?
@@ -296,7 +301,9 @@ struct ContentView: View {
                                 )
                                 .contentShape(Rectangle())
                                 .onTapGesture {
-                                    if NSEvent.modifierFlags.contains(.command) {
+                                    if NSEvent.modifierFlags.contains(.shift) {
+                                        selectRange(to: note)
+                                    } else if NSEvent.modifierFlags.contains(.command) {
                                         toggleMultiSelect(note)
                                     } else {
                                         selectSingle(note)
@@ -590,6 +597,25 @@ struct ContentView: View {
     private func selectSingle(_ note: Note) {
         selectedID = note.id
         multiSelectedIDs.removeAll()
+        selectionAnchorID = note.id
+    }
+
+    /// ⇧-click range selection — selects every note between the fixed
+    /// anchor (see selectionAnchorID) and the clicked note, inclusive, in
+    /// the list's current sorted/filtered order. The clicked note becomes
+    /// the primary selection driving the editor, matching how ⌘-click
+    /// already updates selectedID when it lands on a new note.
+    private func selectRange(to note: Note) {
+        let list = filteredNotes
+        guard let anchorID = selectionAnchorID ?? selectedID,
+              let anchorIndex = list.firstIndex(where: { $0.id == anchorID }),
+              let targetIndex = list.firstIndex(where: { $0.id == note.id }) else {
+            selectSingle(note)
+            return
+        }
+        let range = anchorIndex < targetIndex ? anchorIndex...targetIndex : targetIndex...anchorIndex
+        selectedID = note.id
+        multiSelectedIDs = Set(list[range].map(\.id)).subtracting([note.id])
     }
 
     /// Toggles a note's membership in the selection. Demoting the current

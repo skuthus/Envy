@@ -24,6 +24,7 @@ enum WelcomeContent {
     - **⌘N** creates a blank note directly.
     - **⌘⌫** deletes the selected note. It goes to Trash, not gone for good.
     - **⌘⇧⌫** restores the note(s) you just deleted, right back where they were.
+    - Cmd-click notes in the list to select several at once. Shift-click to select every note between your last click and the new one.
 
     There's no separate "new note" dialog. The search box handles both jobs.
 
