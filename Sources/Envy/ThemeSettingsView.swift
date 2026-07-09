@@ -5,7 +5,6 @@ struct ThemeSettingsView: View {
     @AppStorage("theme") private var theme = Theme()
     @AppStorage("backgroundBlurStrength") private var backgroundBlurStrengthRaw = BlurStrength.strong.rawValue
     @AppStorage("appearanceMode") private var appearanceModeRaw = AppearanceMode.system.rawValue
-    @AppStorage("showWindowTitle") private var showWindowTitle = true
     @AppStorage("listDensity") private var listDensityRaw = ListDensity.compact.rawValue
 
     private var listDensity: Binding<ListDensity> {
@@ -48,7 +47,6 @@ struct ThemeSettingsView: View {
                         Text(mode.label).tag(mode)
                     }
                 }
-                Toggle("Show app title in window bar", isOn: $showWindowTitle)
                 Picker("Note List Density", selection: listDensity) {
                     ForEach(ListDensity.allCases) { density in
                         Text(density.label).tag(density)

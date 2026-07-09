@@ -48,7 +48,6 @@ struct ContentView: View {
     @AppStorage("dateDisplayStyle") private var dateDisplayStyleRaw = DateDisplayStyle.smart.rawValue
     @AppStorage("requireModifierForLinkClick") private var requireModifierForLinkClick = true
     @AppStorage("showEditorTitleHeader") private var showEditorTitleHeader = true
-    @AppStorage("showWindowTitle") private var showWindowTitle = true
     @AppStorage(NotesDirectoryPreference.storageKey) private var notesDirectoryPathsRaw = ""
     @AppStorage(NotesDirectoryPreference.disabledStorageKey) private var disabledDirectoryPathsRaw = ""
     @AppStorage("hasCreatedWelcomeNote") private var hasCreatedWelcomeNote = false
@@ -224,9 +223,6 @@ struct ContentView: View {
             } else {
                 showLoadingIndicator = false
             }
-        }
-        .onChange(of: showWindowTitle) { _, _ in
-            applyWindowTitleVisibility()
         }
         .onChange(of: layoutModeRaw) { _, _ in
             // Horizontal and vertical layouts are structurally different
@@ -817,16 +813,10 @@ struct ContentView: View {
             cachedWindowTitle = window.title.isEmpty ? "Envy" : window.title
         }
         window.titleVisibility = .visible
-        // A folder scope shows regardless of "Show app title in window
-        // bar" — it's live state the user asked to be able to see, not
-        // decoration. Shown *alone*, not appended after "Envy —": AppKit
-        // centers the title string as a whole, so prefixing it with a
-        // fixed "Envy —" pushed the actually-meaningful part (the scope
-        // name) off to the right of true center instead of centering it.
-        if let scopeLabel = folderScopeLabel {
-            window.title = scopeLabel
-        } else {
-            window.title = showWindowTitle ? (cachedWindowTitle ?? "Envy") : ""
-        }
+        // Shown *alone*, not appended after "Envy —": AppKit centers the
+        // title string as a whole, so prefixing it with a fixed "Envy —"
+        // pushed the actually-meaningful part (the scope name) off to the
+        // right of true center instead of centering it.
+        window.title = folderScopeLabel ?? cachedWindowTitle ?? "Envy"
     }
 }
