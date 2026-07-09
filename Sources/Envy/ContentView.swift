@@ -61,6 +61,7 @@ struct ContentView: View {
     @AppStorage("footerClockDateFormat") private var footerClockDateFormatRaw = ClockDateFormat.short.rawValue
     @AppStorage("showFooterClockOnlyWhenFullScreen") private var showFooterClockOnlyWhenFullScreen = false
     @AppStorage("editorFontZoom") private var editorFontZoom: Double = 0
+    @AppStorage("plainTextMode") private var plainTextMode = false
 
     private var layoutMode: LayoutMode {
         LayoutMode(rawValue: layoutModeRaw) ?? .horizontal
@@ -167,6 +168,9 @@ struct ContentView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .previousFolderRequested)) { _ in
             cycleActiveFolder(by: -1)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .togglePlainTextModeRequested)) { _ in
+            plainTextMode.toggle()
         }
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didEnterFullScreenNotification)) { note in
             guard (note.object as? NSWindow) === NSApp.windows.first else { return }
@@ -348,6 +352,7 @@ struct ContentView: View {
                         searchQuery: query,
                         showTitleHeader: showEditorTitleHeader,
                         fontZoom: CGFloat(editorFontZoom),
+                        plainTextMode: plainTextMode,
                         onStatsChange: { words, characters in
                             editorWordCount = words
                             editorCharacterCount = characters

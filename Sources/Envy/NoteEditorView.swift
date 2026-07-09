@@ -12,6 +12,7 @@ struct NoteEditorView: View {
     var searchQuery: String
     var showTitleHeader: Bool
     var fontZoom: CGFloat
+    var plainTextMode: Bool
     var onStatsChange: (Int, Int) -> Void
 
     @State private var content: String
@@ -34,6 +35,7 @@ struct NoteEditorView: View {
         searchQuery: String,
         showTitleHeader: Bool,
         fontZoom: CGFloat,
+        plainTextMode: Bool,
         onStatsChange: @escaping (Int, Int) -> Void
     ) {
         self.store = store
@@ -46,6 +48,7 @@ struct NoteEditorView: View {
         self.searchQuery = searchQuery
         self.showTitleHeader = showTitleHeader
         self.fontZoom = fontZoom
+        self.plainTextMode = plainTextMode
         self.onStatsChange = onStatsChange
         // Seeded here rather than in .onAppear: with .id(noteID) forcing a
         // fresh instance per note, .onAppear runs AFTER the first body
@@ -69,7 +72,8 @@ struct NoteEditorView: View {
                 theme: theme,
                 requireModifierForLinkClick: requireModifierForLinkClick,
                 searchQuery: searchQuery,
-                fontZoom: fontZoom
+                fontZoom: fontZoom,
+                plainTextMode: plainTextMode
             )
             .focusable()
             .focused(focusedField, equals: .editor)

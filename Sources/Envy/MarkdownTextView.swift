@@ -68,6 +68,7 @@ struct MarkdownTextView: NSViewRepresentable {
     var requireModifierForLinkClick: Bool
     var searchQuery: String
     var fontZoom: CGFloat = 0
+    var plainTextMode: Bool = false
 
     func makeCoordinator() -> Coordinator {
         Coordinator(self)
@@ -103,7 +104,9 @@ struct MarkdownTextView: NSViewRepresentable {
             coordinator?.handleClick(at: point) ?? false
         }
         textView.isOverClickTarget = { [weak coordinator = context.coordinator] point in
-            guard let coordinator else { return false }
+            // Plain-text mode never renders checkboxes/footnotes as anything
+            // but literal characters, so there's nothing there to click.
+            guard let coordinator, coordinator.parent.plainTextMode == false else { return false }
             return coordinator.checkboxHitRects().contains(where: { $0.contains(point) })
                 || coordinator.footnoteHitRects().contains(where: { $0.contains(point) })
         }
@@ -116,10 +119,15 @@ struct MarkdownTextView: NSViewRepresentable {
         context.coordinator.textView = textView
         applyTheme(theme, to: textView, scrollView: scrollView)
         if let textStorage = textView.textStorage {
-            MarkdownStyler.style(textStorage: textStorage, text: text, theme: theme, searchQuery: searchQuery, fontSizeAdjustment: fontZoom)
+            if plainTextMode {
+                MarkdownStyler.clearFormatting(textStorage: textStorage, text: text, theme: theme, fontSizeAdjustment: fontZoom)
+            } else {
+                MarkdownStyler.style(textStorage: textStorage, text: text, theme: theme, searchQuery: searchQuery, fontSizeAdjustment: fontZoom)
+            }
         }
         context.coordinator.lastSearchQuery = searchQuery
         context.coordinator.lastFontZoom = fontZoom
+        context.coordinator.lastPlainTextMode = plainTextMode
         return scrollView
     }
 
@@ -145,21 +153,27 @@ struct MarkdownTextView: NSViewRepresentable {
 
         if context.coordinator.lastTheme != theme
             || context.coordinator.lastSearchQuery != searchQuery
-            || context.coordinator.lastFontZoom != fontZoom {
+            || context.coordinator.lastFontZoom != fontZoom
+            || context.coordinator.lastPlainTextMode != plainTextMode {
             if let textStorage = textView.textStorage {
-                MarkdownStyler.style(
-                    textStorage: textStorage,
-                    text: textView.string,
-                    theme: theme,
-                    revealedLinkRange: context.coordinator.hoveredLinkRange,
-                    searchQuery: searchQuery,
-                    cursorSelection: Self.currentSelection(of: textView),
-                    fontSizeAdjustment: fontZoom
-                )
+                if plainTextMode {
+                    MarkdownStyler.clearFormatting(textStorage: textStorage, text: textView.string, theme: theme, fontSizeAdjustment: fontZoom)
+                } else {
+                    MarkdownStyler.style(
+                        textStorage: textStorage,
+                        text: textView.string,
+                        theme: theme,
+                        revealedLinkRange: context.coordinator.hoveredLinkRange,
+                        searchQuery: searchQuery,
+                        cursorSelection: Self.currentSelection(of: textView),
+                        fontSizeAdjustment: fontZoom
+                    )
+                }
             }
             context.coordinator.lastTheme = theme
             context.coordinator.lastSearchQuery = searchQuery
             context.coordinator.lastFontZoom = fontZoom
+            context.coordinator.lastPlainTextMode = plainTextMode
         }
 
         // Focus is handled by .focusable() + .focused(_:equals: .editor) on
@@ -206,6 +220,7 @@ struct MarkdownTextView: NSViewRepresentable {
         var lastTheme: Theme?
         var lastSearchQuery: String = ""
         var lastFontZoom: CGFloat = 0
+        var lastPlainTextMode: Bool = false
 
         private var cachedText: String = ""
         private var cachedWikiLinkRanges: [NSRange] = []
@@ -239,10 +254,18 @@ struct MarkdownTextView: NSViewRepresentable {
             guard let textView = notification.object as? NSTextView else { return }
             isHandlingTextChange = true
             defer { isHandlingTextChange = false }
-            expandEmojiShortcodeIfNeeded(in: textView)
+            // Plain-text mode skips every markdown-aware smart-editing
+            // behavior, not just visual styling — emoji expansion and
+            // auto-renumbering are still "the app noticing markdown" in a
+            // way a plain editor shouldn't do.
+            if !parent.plainTextMode {
+                expandEmojiShortcodeIfNeeded(in: textView)
+            }
             parent.text = textView.string
             restyle(textView)
-            renumberOrderedListIfNeeded(in: textView)
+            if !parent.plainTextMode {
+                renumberOrderedListIfNeeded(in: textView)
+            }
         }
 
         private static let emojiShortcodeRegex = try! NSRegularExpression(pattern: #":([a-zA-Z0-9_+\-]{1,32}):$"#)
@@ -346,7 +369,7 @@ struct MarkdownTextView: NSViewRepresentable {
         /// Return on a blank item exits the list rather than adding another
         /// empty one.
         func textView(_ textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
-            guard commandSelector == #selector(NSResponder.insertNewline(_:)) else { return false }
+            guard commandSelector == #selector(NSResponder.insertNewline(_:)), !parent.plainTextMode else { return false }
             return continueListIfNeeded(in: textView)
         }
 
@@ -394,6 +417,10 @@ struct MarkdownTextView: NSViewRepresentable {
         @MainActor
         private func restyle(_ textView: NSTextView) {
             guard let textStorage = textView.textStorage else { return }
+            if parent.plainTextMode {
+                MarkdownStyler.clearFormatting(textStorage: textStorage, text: textView.string, theme: parent.theme, fontSizeAdjustment: parent.fontZoom)
+                return
+            }
             MarkdownStyler.style(
                 textStorage: textStorage,
                 text: textView.string,
@@ -562,7 +589,11 @@ struct MarkdownTextView: NSViewRepresentable {
         /// textDidChange path — same restyle and save flow as typing.
         @MainActor
         func handleClick(at point: NSPoint) -> Bool {
-            guard let textView else { return false }
+            // Nothing renders as a clickable checkbox/footnote in plain-text
+            // mode (see isOverClickTarget in makeNSView), so nothing should
+            // be clickable either — otherwise clicking plain "[ ]" text
+            // could still silently toggle it.
+            guard let textView, !parent.plainTextMode else { return false }
 
             if let checkbox = checkboxAndRect(at: point)?.checkbox {
                 let replacement = checkbox.isChecked ? " " : "x"

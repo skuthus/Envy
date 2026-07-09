@@ -235,6 +235,11 @@ struct EnvyApp: App {
                     NotificationCenter.default.post(name: .toggleLayoutRequested, object: nil)
                 }
                 .keyboardShortcut(binding(for: .toggleLayout).keyEquivalent, modifiers: binding(for: .toggleLayout).eventModifiers)
+
+                Button("Toggle Plain-Text Mode") {
+                    NotificationCenter.default.post(name: .togglePlainTextModeRequested, object: nil)
+                }
+                .keyboardShortcut(binding(for: .togglePlainTextMode).keyEquivalent, modifiers: binding(for: .togglePlainTextMode).eventModifiers)
             }
             CommandMenu("Font") {
                 Button("Bold") {

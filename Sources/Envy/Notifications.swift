@@ -13,4 +13,5 @@ extension Notification.Name {
     static let openSettingsRequested = Notification.Name("openSettingsRequested")
     static let nextFolderRequested = Notification.Name("nextFolderRequested")
     static let previousFolderRequested = Notification.Name("previousFolderRequested")
+    static let togglePlainTextModeRequested = Notification.Name("togglePlainTextModeRequested")
 }

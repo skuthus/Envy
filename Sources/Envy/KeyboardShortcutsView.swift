@@ -48,6 +48,7 @@ struct KeyboardShortcutsView: View {
             Group(title: "Window", entries: [
                 Entry(action: .centerWindow, description: "Center the window on screen"),
                 Entry(action: .toggleLayout, description: "Toggle horizontal / vertical layout"),
+                Entry(action: .togglePlainTextMode, description: "Toggle plain-text mode (ignores all markdown formatting)"),
             ]),
             Group(title: "Folders", entries: [
                 Entry(action: .nextFolder, description: "Show only the next folder's notes"),

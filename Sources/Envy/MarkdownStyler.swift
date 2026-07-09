@@ -174,6 +174,31 @@ enum MarkdownStyler {
         headingSlugRanges(in: text).first { $0.slug == slug }?.range
     }
 
+    /// Plain-text mode's counterpart to `style(...)` — resets the whole
+    /// range to a single uniform font/color and nothing else: no collapsed
+    /// markers, no bold/heading/list styling, no glyph substitution, no
+    /// `.link` attributes (so clicking never navigates). The note's actual
+    /// file content is untouched either way; this only ever affects what's
+    /// drawn on screen.
+    static func clearFormatting(
+        textStorage: NSTextStorage,
+        text: String,
+        theme: Theme,
+        fontSizeAdjustment: CGFloat = 0
+    ) {
+        let full = NSRange(location: 0, length: (text as NSString).length)
+        guard full.length > 0 else { return }
+
+        let unadjustedFont = theme.resolvedFont
+        let baseFont = fontSizeAdjustment == 0
+            ? unadjustedFont
+            : NSFontManager.shared.convert(unadjustedFont, toSize: max(6, unadjustedFont.pointSize + fontSizeAdjustment))
+
+        textStorage.beginEditing()
+        textStorage.setAttributes([.font: baseFont, .foregroundColor: theme.resolvedTextColor], range: full)
+        textStorage.endEditing()
+    }
+
     static func style(
         textStorage: NSTextStorage,
         text: String,

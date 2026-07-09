@@ -93,6 +93,7 @@ enum ShortcutAction: String, CaseIterable, Identifiable {
     case previousFolder
     case centerWindow
     case summonApp
+    case togglePlainTextMode
 
     var id: String { rawValue }
 
@@ -110,6 +111,7 @@ enum ShortcutAction: String, CaseIterable, Identifiable {
         case .previousFolder: "Previous Folder"
         case .centerWindow: "Center Window"
         case .summonApp: "Show/Hide Envy (works from any app)"
+        case .togglePlainTextMode: "Toggle Plain-Text Mode"
         }
     }
 
@@ -139,6 +141,8 @@ enum ShortcutAction: String, CaseIterable, Identifiable {
             ShortcutBinding(character: String(KeyEquivalent.return.character), keyCode: kVK_Return, modifiers: SwiftUI.EventModifiers.command.rawValue)
         case .summonApp:
             ShortcutBinding(character: String(KeyEquivalent.return.character), keyCode: kVK_Return, modifiers: SwiftUI.EventModifiers([.command, .option]).rawValue)
+        case .togglePlainTextMode:
+            ShortcutBinding(character: "p", keyCode: kVK_ANSI_P, modifiers: SwiftUI.EventModifiers([.command, .shift]).rawValue)
         }
     }
 }

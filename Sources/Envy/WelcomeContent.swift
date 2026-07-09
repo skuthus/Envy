@@ -29,6 +29,8 @@ enum WelcomeContent {
 
     Envy renders markdown live as you type. There's no preview mode to switch into. Syntax characters like `#` and `**` fade out of view once your cursor moves away, and reappear when you click back in to edit them. Try it right here:
 
+    Prefer to see the raw markdown instead? **⌘⇧P** (or Settings → General) turns on plain-text mode, which shows every note as plain, unstyled text with none of the live formatting. Your notes are always plain markdown files either way. This just changes how Envy displays them.
+
     ### Text styles
 
     - `# Heading` becomes a large **heading**. Use up to six `#`s for smaller headings.
