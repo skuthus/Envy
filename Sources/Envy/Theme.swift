@@ -46,6 +46,13 @@ struct Theme: Equatable {
     var selectionColor: CodableColor = CodableColor(nsColor: NSColor.controlAccentColor.withAlphaComponent(0.25))
     var focusHighlightColor: CodableColor = Theme.defaultFocusHighlightColor
     var focusHighlightThickness: Double = Theme.defaultFocusHighlightThickness
+    // nil means "no color" — the note list shows the window's own blur/solid
+    // backdrop through, same as before this setting existed. Set, it's an
+    // opaque fill that applies regardless of the blur strength setting.
+    var fileListBackgroundColor: CodableColor?
+    // nil means "no color" — the note title uses the system's normal
+    // primary text color, same as before this setting existed.
+    var fileListTextColor: CodableColor?
 
     var resolvedFont: NSFont {
         let name = isCustom ? fontName : "SF Pro Text"
@@ -101,6 +108,8 @@ extension Theme: RawRepresentable {
         var selectionColor: CodableColor?
         var focusHighlightColor: CodableColor?
         var focusHighlightThickness: Double?
+        var fileListBackgroundColor: CodableColor?
+        var fileListTextColor: CodableColor?
     }
 
     init?(rawValue: String) {
@@ -118,7 +127,9 @@ extension Theme: RawRepresentable {
             highlightColor: payload.highlightColor ?? CodableColor(nsColor: NSColor.systemYellow.withAlphaComponent(0.4)),
             selectionColor: payload.selectionColor ?? Theme.defaultSelectionColor,
             focusHighlightColor: payload.focusHighlightColor ?? Theme.defaultFocusHighlightColor,
-            focusHighlightThickness: payload.focusHighlightThickness ?? Theme.defaultFocusHighlightThickness
+            focusHighlightThickness: payload.focusHighlightThickness ?? Theme.defaultFocusHighlightThickness,
+            fileListBackgroundColor: payload.fileListBackgroundColor,
+            fileListTextColor: payload.fileListTextColor
         )
     }
 
@@ -135,7 +146,9 @@ extension Theme: RawRepresentable {
             highlightColor: highlightColor,
             selectionColor: selectionColor,
             focusHighlightColor: focusHighlightColor,
-            focusHighlightThickness: focusHighlightThickness
+            focusHighlightThickness: focusHighlightThickness,
+            fileListBackgroundColor: fileListBackgroundColor,
+            fileListTextColor: fileListTextColor
         )
         guard let data = try? JSONEncoder().encode(payload),
               let string = String(data: data, encoding: .utf8) else { return "{}" }

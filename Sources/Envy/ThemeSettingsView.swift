@@ -7,6 +7,7 @@ struct ThemeSettingsView: View {
     @AppStorage("appearanceMode") private var appearanceModeRaw = AppearanceMode.system.rawValue
     @AppStorage("listDensity") private var listDensityRaw = ListDensity.compact.rawValue
     @AppStorage("fadeFocusHighlight") private var fadeFocusHighlight = false
+    @AppStorage("boldFileListText") private var boldFileListText = false
 
     private var listDensity: Binding<ListDensity> {
         Binding(
@@ -19,6 +20,48 @@ struct ThemeSettingsView: View {
         Binding(
             get: { BlurStrength(rawValue: backgroundBlurStrengthRaw) ?? .strong },
             set: { backgroundBlurStrengthRaw = $0.rawValue }
+        )
+    }
+
+    /// nil ("no color") lets the note list keep showing the window's own
+    /// blur/solid backdrop; enabling this picks a starting color (the
+    /// current window background) rather than leaving it at some arbitrary
+    /// default the user never chose.
+    private var fileListBackgroundColorEnabled: Binding<Bool> {
+        Binding(
+            get: { theme.fileListBackgroundColor != nil },
+            set: { enabled in
+                theme.fileListBackgroundColor = enabled
+                    ? (theme.fileListBackgroundColor ?? CodableColor(nsColor: .windowBackgroundColor))
+                    : nil
+            }
+        )
+    }
+
+    private var fileListBackgroundColorBinding: Binding<Color> {
+        Binding(
+            get: { theme.fileListBackgroundColor?.color ?? Color(nsColor: .windowBackgroundColor) },
+            set: { theme.fileListBackgroundColor = CodableColor(nsColor: NSColor($0)) }
+        )
+    }
+
+    /// Same nil-means-"no color" pattern as fileListBackgroundColorEnabled —
+    /// off, the note title just uses the system's normal primary text color.
+    private var fileListTextColorEnabled: Binding<Bool> {
+        Binding(
+            get: { theme.fileListTextColor != nil },
+            set: { enabled in
+                theme.fileListTextColor = enabled
+                    ? (theme.fileListTextColor ?? CodableColor(nsColor: .labelColor))
+                    : nil
+            }
+        )
+    }
+
+    private var fileListTextColorBinding: Binding<Color> {
+        Binding(
+            get: { theme.fileListTextColor?.color ?? Color(nsColor: .labelColor) },
+            set: { theme.fileListTextColor = CodableColor(nsColor: NSColor($0)) }
         )
     }
 
@@ -58,6 +101,20 @@ struct ThemeSettingsView: View {
                         Text(strength.label).tag(strength)
                     }
                 }
+                HStack {
+                    Toggle("File List Background Color", isOn: fileListBackgroundColorEnabled)
+                    if theme.fileListBackgroundColor != nil {
+                        ColorPicker("", selection: fileListBackgroundColorBinding)
+                            .labelsHidden()
+                    }
+                }
+                HStack {
+                    Toggle("File List Text Color", isOn: fileListTextColorEnabled)
+                    if theme.fileListTextColor != nil {
+                        ColorPicker("", selection: fileListTextColorBinding)
+                            .labelsHidden()
+                    }
+                }
             }
 
             Section("Focus Highlight") {
@@ -93,6 +150,10 @@ struct ThemeSettingsView: View {
                         .frame(width: 36, alignment: .trailing)
                 }
                 .disabled(!theme.isCustom)
+            }
+
+            Section("Bold Text") {
+                Toggle("Bold File List Text", isOn: $boldFileListText)
             }
 
             Section("Colors") {

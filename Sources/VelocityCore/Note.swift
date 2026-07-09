@@ -23,4 +23,20 @@ public struct Note: Identifiable, Equatable, Sendable {
             .split(separator: "\n", omittingEmptySubsequences: true)
             .joined(separator: " ")
     }
+
+    /// `#word`-style hashtags found anywhere in the note's content, lowercased
+    /// for case-insensitive matching. The negative lookbehind excludes "#"
+    /// preceded by a word character (mid-word, not a tag) or another "#"
+    /// (would otherwise match inside "## Heading"); markdown headings
+    /// themselves ("# Heading") are already excluded since they require a
+    /// space right after the "#", which this pattern doesn't allow.
+    public var tags: Set<String> {
+        let matches = Note.tagRegex.matches(in: content, range: NSRange(content.startIndex..., in: content))
+        return Set(matches.compactMap { match in
+            guard let range = Range(match.range(at: 1), in: content) else { return nil }
+            return content[range].lowercased()
+        })
+    }
+
+    private static let tagRegex = try! NSRegularExpression(pattern: #"(?<![\w#])#([A-Za-z0-9_-]+)"#)
 }

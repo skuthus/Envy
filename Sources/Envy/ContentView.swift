@@ -67,6 +67,7 @@ struct ContentView: View {
     @AppStorage("editorFontZoom") private var editorFontZoom: Double = 0
     @AppStorage("plainTextMode") private var plainTextMode = false
     @AppStorage("fadeFocusHighlight") private var fadeFocusHighlight = false
+    @AppStorage("boldFileListText") private var boldFileListText = false
 
     private var layoutMode: LayoutMode {
         LayoutMode(rawValue: layoutModeRaw) ?? .horizontal
@@ -94,6 +95,53 @@ struct ContentView: View {
 
     private var filteredNotes: [Note] {
         sortedNotes(store.filtered(query: query))
+    }
+
+    /// True if any whitespace-separated word in the query is a recognized
+    /// "tag:"/"date:" operator — matches NoteStore.filtered(query:), which
+    /// now honors these anywhere in the query (combined with free-text
+    /// terms), not just when the whole query starts with one.
+    private var containsSearchOperator: Bool {
+        query.split(separator: " ").contains { word in
+            let lowered = word.lowercased()
+            return lowered.hasPrefix("tag:") || lowered.hasPrefix("date:")
+        }
+    }
+
+    /// "tag:xyz"/"date:xyz" are search operators, not literal titles — Enter
+    /// shouldn't offer (or fall back to) creating a note literally named
+    /// after the whole query when one's present.
+    private var isSearchOperatorQuery: Bool {
+        containsSearchOperator
+    }
+
+    /// The typed query with every recognized operator word dimmed slightly,
+    /// to acknowledge it's being read as a command rather than literal
+    /// search text — whitespace is preserved exactly as typed, only the
+    /// operator/non-operator words differ in styling. Rendered as an
+    /// overlay in place of the search TextField's own (made-invisible) text
+    /// — see searchField below.
+    private var styledQueryText: Text {
+        guard containsSearchOperator else { return Text(query) }
+        var result = Text("")
+        var index = query.startIndex
+        while index < query.endIndex {
+            if query[index] == " " {
+                var end = index
+                while end < query.endIndex, query[end] == " " { end = query.index(after: end) }
+                result = result + Text(query[index..<end])
+                index = end
+            } else {
+                var end = index
+                while end < query.endIndex, query[end] != " " { end = query.index(after: end) }
+                let word = query[index..<end]
+                let lowered = word.lowercased()
+                let isOperator = lowered.hasPrefix("tag:") || lowered.hasPrefix("date:")
+                result = result + Text(word).foregroundColor(isOperator ? Color.primary.opacity(0.8) : .primary)
+                index = end
+            }
+        }
+        return result
     }
 
     /// Column sort is authoritative over the list's order — it applies on
@@ -264,6 +312,19 @@ struct ContentView: View {
         }
     }
 
+    /// An opaque fill behind the note list, applying regardless of the blur
+    /// strength setting — nil (the default, "no color") shows the window's
+    /// own blur/solid backdrop through instead, same as before this setting
+    /// existed.
+    @ViewBuilder
+    private var fileListBackground: some View {
+        if let fileListColor = theme.fileListBackgroundColor {
+            fileListColor.color
+        } else {
+            Color.clear
+        }
+    }
+
     private var listPane: some View {
         VStack(spacing: 0) {
             VStack(spacing: 0) {
@@ -274,6 +335,9 @@ struct ContentView: View {
             // translucent backdrop so the search/sort chrome (and, via the
             // window's own opaque title bar, everything above it) reads as
             // one solid block instead of fading into whatever's behind it.
+            // Deliberately NOT tinted by fileListBackgroundColor — that
+            // setting is scoped to the scrollable notes below, not this
+            // header, which stays looking like the rest of the window chrome.
             .background(Color(nsColor: .windowBackgroundColor))
             Divider()
             if showLoadingIndicator {
@@ -291,7 +355,7 @@ struct ContentView: View {
                 ScrollView {
                     LazyVStack(spacing: 0) {
                         ForEach(filteredNotes) { note in
-                            NoteRow(note: note, showPreview: showNotePreview, showDateModified: showDateModified, dateDisplayStyle: dateDisplayStyle)
+                            NoteRow(note: note, showPreview: showNotePreview, showDateModified: showDateModified, dateDisplayStyle: dateDisplayStyle, textColor: theme.fileListTextColor?.color, bold: boldFileListText)
                                 .padding(.vertical, listDensity.rowVerticalPadding)
                                 .padding(.horizontal, 8)
                                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -348,7 +412,8 @@ struct ContentView: View {
                     shape: Rectangle()
                 )
             }
-            if !query.trimmingCharacters(in: .whitespaces).isEmpty && store.exactTitleMatch(for: query) == nil {
+            .background(fileListBackground)
+            if !query.trimmingCharacters(in: .whitespaces).isEmpty && !isSearchOperatorQuery && store.exactTitleMatch(for: query) == nil {
                 Text("Press \u{23CE} to create \"\(query)\"")
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -526,9 +591,21 @@ struct ContentView: View {
                     .padding(.vertical, 6)
                     .allowsHitTesting(false)
             }
+            // Only shown (and only makes the real field's own text invisible
+            // below) once there's an actual recognized prefix — leaves the
+            // common case of an empty field or a plain search completely
+            // untouched, including the TextField's native placeholder.
+            if isSearchOperatorQuery {
+                styledQueryText
+                    .font(.body)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .allowsHitTesting(false)
+            }
             TextField("Search or Create Note", text: $query)
                 .textFieldStyle(.plain)
                 .font(.body)
+                .foregroundColor(isSearchOperatorQuery ? .clear : nil)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 6)
         }
@@ -671,6 +748,16 @@ struct ContentView: View {
     }
 
     private func handleEnter() {
+        // A search operator's "highlighted note" is whatever
+        // reconcileSelection() already settled selectedID on as the list
+        // narrowed — Enter just moves into it, same as the empty-query case
+        // below, rather than falling through to the exact-match/create-new-
+        // note logic (which would otherwise create a note literally titled
+        // "tag:xyz" or "date:xyz").
+        if isSearchOperatorQuery {
+            if selectedID != nil, moveFocusToEditorOnEnter { focusedField = .editor }
+            return
+        }
         if let exact = store.exactTitleMatch(for: query) {
             selectedID = exact.id
             if moveFocusToEditorOnEnter { focusedField = .editor }

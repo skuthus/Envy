@@ -6,6 +6,8 @@ struct NoteRow: View {
     var showPreview: Bool
     var showDateModified: Bool
     var dateDisplayStyle: DateDisplayStyle
+    var textColor: Color?
+    var bold: Bool = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
@@ -13,11 +15,14 @@ struct NoteRow: View {
                 Text(note.title)
                     .font(.body)
                     .lineLimit(1)
+                    .foregroundStyle(textColor ?? Color.primary)
+                    .fontWeight(bold ? .bold : nil)
                 if showDateModified {
                     Spacer()
                     dateText
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(textColor ?? Color.secondary)
+                        .fontWeight(bold ? .bold : nil)
                         .lineLimit(1)
                 }
             }
@@ -25,6 +30,7 @@ struct NoteRow: View {
                 Text(note.preview)
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                    .fontWeight(bold ? .bold : nil)
                     .lineLimit(1)
             }
         }

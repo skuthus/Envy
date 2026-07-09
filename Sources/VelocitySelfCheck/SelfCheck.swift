@@ -214,6 +214,123 @@ struct SelfCheck {
             check("filtered excludes non-matches", results.isEmpty)
         }
 
+        // noteTagsExtractsHashtagsButNotHeadings
+        do {
+            var note = Note(id: "x", url: URL(fileURLWithPath: "/tmp/x.md"), content: "", modifiedDate: Date())
+            note.content = "# Heading\nWorking on #work and #Side-Project, also foo#notatag and ##nope\nSee #work again"
+            check("tags extracts hashtags", note.tags == ["work", "side-project"])
+        }
+
+        // filteredTagQueryMatchesOnlyTaggedNotes
+        do {
+            let store = await makeTempStore()
+            var tagged = store.create(title: "Work Note")
+            tagged.content = "Discussed the roadmap #work"
+            store.save(tagged)
+
+            var untagged = store.create(title: "Grocery List")
+            untagged.content = "milk, eggs"
+            store.save(untagged)
+
+            let results = store.filtered(query: "tag:work")
+            check("tag query matches tagged note", results.count == 1)
+            check("tag query excludes untagged note", results.first?.id == tagged.id)
+
+            let caseInsensitive = store.filtered(query: "tag:WORK")
+            check("tag query is case-insensitive", caseInsensitive.count == 1)
+        }
+
+        // filteredTagQuerySupportsPartialMatch
+        do {
+            let store = await makeTempStore()
+            var techNote = store.create(title: "Conference Notes")
+            techNote.content = "Talked about #technology trends"
+            store.save(techNote)
+
+            var unrelated = store.create(title: "Recipe")
+            unrelated.content = "Pasta with garlic and olive oil."
+            store.save(unrelated)
+
+            let results = store.filtered(query: "tag:techn")
+            check("partial tag query matches longer tag", results.count == 1)
+            check("partial tag query finds the right note", results.first?.id == techNote.id)
+        }
+
+        // filteredCombinesTagOperatorWithFreeTextSearch
+        do {
+            let store = await makeTempStore()
+            var meetingNote = store.create(title: "Standup")
+            meetingNote.content = "Quick meeting about the roadmap #work"
+            store.save(meetingNote)
+
+            var otherWorkNote = store.create(title: "Expense Report")
+            otherWorkNote.content = "Filed the quarterly expenses #work"
+            store.save(otherWorkNote)
+
+            var unrelatedMeeting = store.create(title: "Book Club")
+            unrelatedMeeting.content = "Meeting to discuss chapter 5"
+            store.save(unrelatedMeeting)
+
+            let results = store.filtered(query: "tag:work meeting")
+            check("tag+text query matches note with both", results.count == 1)
+            check("tag+text query finds the right note", results.first?.id == meetingNote.id)
+            check("tag+text query excludes tag-only match", !results.contains { $0.id == otherWorkNote.id })
+            check("tag+text query excludes text-only match", !results.contains { $0.id == unrelatedMeeting.id })
+        }
+
+        // filteredMultiWordQueryMatchesScatteredTerms
+        do {
+            let store = await makeTempStore()
+            var scattered = store.create(title: "Evening Walk")
+            scattered.content = "Grabbed the leash before heading out.\nThe dog found an old bone in the yard."
+            store.save(scattered)
+
+            var partial = store.create(title: "Shopping List")
+            partial.content = "Need a new dog bed and some treats."
+            store.save(partial)
+
+            var unrelated = store.create(title: "Recipe")
+            unrelated.content = "Pasta with garlic and olive oil."
+            store.save(unrelated)
+
+            let results = store.filtered(query: "dog bone leash")
+            check("multi-word query matches scattered terms", results.count == 1)
+            check("multi-word query finds the right note", results.first?.id == scattered.id)
+            check("multi-word query excludes partial matches", !results.contains { $0.id == partial.id })
+            check("multi-word query excludes unrelated notes", !results.contains { $0.id == unrelated.id })
+        }
+
+        // filteredDateQueryMatchesExactDateInMultipleFormats
+        do {
+            let store = await makeTempStore()
+            let note = store.create(title: "Today Note")
+
+            let calendar = Calendar.current
+            let now = Date()
+            let year = calendar.component(.year, from: now)
+            let month = calendar.component(.month, from: now)
+            let day = calendar.component(.day, from: now)
+            let shortYear = year % 100
+
+            let isoQuery = String(format: "date:%04d-%02d-%02d", year, month, day)
+            let usShortQuery = String(format: "date:%d-%d-%02d", month, day, shortYear)
+            let usLongQuery = String(format: "date:%02d-%02d-%04d", month, day, year)
+
+            check("date query matches ISO format", store.filtered(query: isoQuery).contains { $0.id == note.id })
+            check("date query matches short US format", store.filtered(query: usShortQuery).contains { $0.id == note.id })
+            check("date query matches long US format", store.filtered(query: usLongQuery).contains { $0.id == note.id })
+        }
+
+        // filteredDateQuerySupportsRelativeKeywords
+        do {
+            let store = await makeTempStore()
+            let note = store.create(title: "Just Created")
+
+            check("date:today matches a just-created note", store.filtered(query: "date:today").contains { $0.id == note.id })
+            check("date:yesterday excludes a just-created note", !store.filtered(query: "date:yesterday").contains { $0.id == note.id })
+            check("date:week matches a just-created note", store.filtered(query: "date:week").contains { $0.id == note.id })
+        }
+
         print("")
         if failures.isEmpty {
             print("All checks passed.")

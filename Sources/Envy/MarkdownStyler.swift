@@ -566,12 +566,50 @@ enum MarkdownStyler {
         guard !trimmed.isEmpty else { return }
         let nsText = text as NSString
         guard nsText.length > 0 else { return }
-
-        let escaped = NSRegularExpression.escapedPattern(for: trimmed)
-        guard let regex = try? NSRegularExpression(pattern: escaped, options: [.caseInsensitive]) else { return }
         let fullRange = NSRange(location: 0, length: nsText.length)
-        for match in regex.matches(in: text, range: fullRange) {
-            textStorage.addAttribute(.backgroundColor, value: color, range: match.range)
+
+        func highlightMatches(ofPattern pattern: String) {
+            guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else { return }
+            for match in regex.matches(in: text, range: fullRange) {
+                textStorage.addAttribute(.backgroundColor, value: color, range: match.range)
+            }
+        }
+        func highlightLiteral(_ literal: String) {
+            highlightMatches(ofPattern: NSRegularExpression.escapedPattern(for: literal))
+        }
+
+        // Tokenized the same way NoteStore.filtered(query:) parses a query —
+        // "tag:"/"date:" can appear anywhere among the words, combined with
+        // free text, not just as the whole query. Each word highlights
+        // independently, since a scattered multi-word AND search has no
+        // single contiguous phrase to find in the first place.
+        for token in trimmed.split(separator: " ") where !token.isEmpty {
+            let lowered = token.lowercased()
+            if lowered.hasPrefix("tag:") {
+                // "tag:xxx" is a search operator, not literal text to look
+                // for, and (matching NoteStore.filtered's substring tag
+                // matching) "xxx" doesn't have to be the *whole* tag name —
+                // "tag:techn" matches "#technology". Highlight just the
+                // matched substring within each qualifying "#tag", not the
+                // tag's full extent, consistent with how a plain free-text
+                // search only highlights the substring actually searched.
+                let tagName = lowered.dropFirst("tag:".count)
+                guard !tagName.isEmpty else { continue }
+                let tagRegex = try? NSRegularExpression(pattern: "(?<![\\w#])#[A-Za-z0-9_-]+")
+                for tagMatch in tagRegex?.matches(in: text, range: fullRange) ?? [] {
+                    let tagText = nsText.substring(with: tagMatch.range)
+                    guard let subRange = tagText.range(of: tagName, options: .caseInsensitive) else { continue }
+                    let nsSubRange = NSRange(subRange, in: tagText)
+                    let absoluteRange = NSRange(location: tagMatch.range.location + nsSubRange.location, length: nsSubRange.length)
+                    textStorage.addAttribute(.backgroundColor, value: color, range: absoluteRange)
+                }
+            } else if lowered.hasPrefix("date:") {
+                // Nothing literal in the note text corresponds to a date
+                // filter — there's nothing to highlight.
+                continue
+            } else {
+                highlightLiteral(String(token))
+            }
         }
     }
 

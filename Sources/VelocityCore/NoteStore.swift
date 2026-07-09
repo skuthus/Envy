@@ -288,6 +288,53 @@ public final class NoteStore: ObservableObject {
         let q = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         guard !q.isEmpty else { return notes }
 
+        let tokens = q.split(separator: " ").map(String.init).filter { !$0.isEmpty }
+        let tagTokens = tokens.filter { $0.hasPrefix("tag:") }
+        let dateTokens = tokens.filter { $0.hasPrefix("date:") }
+        let freeTerms = tokens.filter { !$0.hasPrefix("tag:") && !$0.hasPrefix("date:") }
+
+        // A "tag:"/"date:" operator combines with whatever else is typed
+        // alongside it — "tag:work meeting" means tagged #work AND
+        // mentioning "meeting", not a literal tag named "work meeting". Only
+        // the first tag:/date: token is honored if more than one appears;
+        // combining multiple tags/dates has ambiguous AND-vs-OR semantics
+        // not worth guessing at.
+        if !tagTokens.isEmpty || !dateTokens.isEmpty {
+            let tagFilter = tagTokens.first.flatMap { token -> String? in
+                let name = String(token.dropFirst("tag:".count))
+                return name.isEmpty ? nil : name
+            }
+            let dateFilter = dateTokens.first.flatMap { Self.dateRange(for: String($0.dropFirst("date:".count))) }
+
+            return notes
+                .compactMap { note -> (Note, Int)? in
+                    if let tagFilter, !note.tags.contains(where: { $0.contains(tagFilter) }) { return nil }
+                    if let dateFilter, !(note.modifiedDate >= dateFilter.start && note.modifiedDate < dateFilter.end) { return nil }
+                    return Self.scoreByTermPresence(note: note, terms: freeTerms).map { (note, $0) }
+                }
+                .sorted { lhs, rhs in
+                    if lhs.1 != rhs.1 { return lhs.1 > rhs.1 }
+                    return lhs.0.modifiedDate > rhs.0.modifiedDate
+                }
+                .map(\.0)
+        }
+
+        // Multiple words don't have to appear together as one phrase — each
+        // word just has to show up somewhere in the note (title or content),
+        // in any order. A single word keeps the original scored ranking
+        // below untouched.
+        if freeTerms.count > 1 {
+            return notes
+                .compactMap { note -> (Note, Int)? in
+                    Self.scoreByTermPresence(note: note, terms: freeTerms).map { (note, $0) }
+                }
+                .sorted { lhs, rhs in
+                    if lhs.1 != rhs.1 { return lhs.1 > rhs.1 }
+                    return lhs.0.modifiedDate > rhs.0.modifiedDate
+                }
+                .map(\.0)
+        }
+
         return notes
             .compactMap { note -> (Note, Int)? in
                 let titleLower = note.title.lowercased()
@@ -312,6 +359,82 @@ public final class NoteStore: ObservableObject {
                 return lhs.0.modifiedDate > rhs.0.modifiedDate
             }
             .map(\.0)
+    }
+
+    /// Number of the given terms found in the note's title (used to rank
+    /// results when several notes all match), or nil if any term is missing
+    /// from both title and content entirely. An empty terms list always
+    /// "matches" with a score of 0 — used when a tag:/date: filter has no
+    /// free text alongside it.
+    private static func scoreByTermPresence(note: Note, terms: [String]) -> Int? {
+        guard !terms.isEmpty else { return 0 }
+        let titleLower = note.title.lowercased()
+        let contentLower = note.content.lowercased()
+        var titleMatches = 0
+        for term in terms {
+            let inTitle = titleLower.contains(term)
+            guard inTitle || contentLower.contains(term) else { return nil }
+            if inTitle { titleMatches += 1 }
+        }
+        return titleMatches
+    }
+
+    // MARK: - Date search
+
+    /// The [start, end) window a "date:" query resolves to — a single
+    /// calendar day for an exact date or "today"/"yesterday", or a rolling
+    /// window ending now for "week"/"month". nil for anything unrecognized,
+    /// which filtered(query:) treats as "show everything" rather than
+    /// silently returning zero results for a typo.
+    private static func dateRange(for dateQuery: String) -> (start: Date, end: Date)? {
+        guard !dateQuery.isEmpty else { return nil }
+        let calendar = Calendar.current
+        let now = Date()
+
+        switch dateQuery {
+        case "today":
+            let start = calendar.startOfDay(for: now)
+            return (start, calendar.date(byAdding: .day, value: 1, to: start) ?? now)
+        case "yesterday":
+            let todayStart = calendar.startOfDay(for: now)
+            let start = calendar.date(byAdding: .day, value: -1, to: todayStart) ?? todayStart
+            return (start, todayStart)
+        case "week":
+            return (calendar.date(byAdding: .day, value: -7, to: now) ?? now, now)
+        case "month":
+            return (calendar.date(byAdding: .day, value: -30, to: now) ?? now, now)
+        default:
+            guard let components = parseFlexibleDate(dateQuery), let start = calendar.date(from: components) else { return nil }
+            return (start, calendar.date(byAdding: .day, value: 1, to: start) ?? start)
+        }
+    }
+
+    /// Accepts "2026-04-15" (ISO, year first) as well as "4-15-26" /
+    /// "04-15-2026" (US month-day-year, either "-" or "/" as the separator)
+    /// — disambiguated by whether the first component has 4 digits, which
+    /// unambiguously identifies the ISO year-first form. A 2-digit year is
+    /// assumed to be 2000+, reasonable for a notes app.
+    private static func parseFlexibleDate(_ input: String) -> DateComponents? {
+        let parts = input.components(separatedBy: CharacterSet(charactersIn: "-/")).filter { !$0.isEmpty }
+        guard parts.count == 3,
+              let a = Int(parts[0]), let b = Int(parts[1]), let c = Int(parts[2]) else { return nil }
+
+        let year: Int
+        let month: Int
+        let day: Int
+        if parts[0].count == 4 {
+            year = a; month = b; day = c
+        } else {
+            month = a; day = b
+            year = c < 100 ? 2000 + c : c
+        }
+        guard (1...12).contains(month), (1...31).contains(day) else { return nil }
+
+        var components = DateComponents()
+        components.year = year
+        components.month = month
+        components.day = day
+        return components
     }
 
     // MARK: - Filenames

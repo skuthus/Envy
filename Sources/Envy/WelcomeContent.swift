@@ -16,6 +16,7 @@ enum WelcomeContent {
     ## Quick Start
 
     - Type in the search box to filter your notes as you type.
+    - Search several words at once, like `dog bone leash`, and Envy finds notes containing all of them anywhere in the text, even scattered across different lines.
     - Click **Name** or **Date** above the list to sort by it. Click the same one again to reverse the direction.
     - Press **↩** to open the highlighted note. If nothing matches, pressing **↩** creates a new note with that title instead.
     - Use **↑** and **↓** to move the highlighted note without leaving the search box.
@@ -80,6 +81,20 @@ enum WelcomeContent {
     `[[Note Title]]` links work throughout Envy, not just in the list above. Here's one to a small companion note: [[Example Linked Note]]
 
     Hold **⌘** and click a link to follow it. If the note doesn't exist yet, clicking creates it and takes you straight there. That makes it easy to sketch out related notes before you've written any of them.
+
+    ## Tags
+
+    Write `#work` anywhere in a note's text and Envy picks it up as a tag automatically, no separate tagging step needed.
+
+    Search `tag:work` to see every note tagged that way — it's not case-sensitive, and partial names work too: `tag:techn` matches `#technology`.
+
+    Combine it with regular search words, like `tag:work meeting`, to narrow further to tagged notes that also mention "meeting".
+
+    ## Searching by Date
+
+    Search `date:today` or `date:yesterday` for notes modified that day, or `date:week` / `date:month` for the last 7 or 30 days.
+
+    An exact date works too, in whichever format you'd naturally type it: `date:2026-04-15`, `date:4-15-26`, and `date:04-15-2026` all mean the same day.
 
     ## Multiple Folders
 
