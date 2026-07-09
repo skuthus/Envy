@@ -39,6 +39,7 @@ struct KeyboardShortcutsView: View {
             Group(title: "Notes", entries: [
                 Entry(action: .newNote, description: "New note"),
                 Entry(action: .deleteNote, description: "Delete the selected note"),
+                Entry(action: .restoreDeletedNote, description: "Restore the most recently deleted note(s)"),
                 Entry(keys: "⌘-click a [[link]]", description: "Open the linked note (creates it if it doesn't exist)"),
             ]),
             Group(title: "Search & Navigation", entries: [

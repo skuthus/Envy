@@ -229,6 +229,11 @@ struct EnvyApp: App {
                     NotificationCenter.default.post(name: .deleteSelectedRequested, object: nil)
                 }
                 .keyboardShortcut(binding(for: .deleteNote).keyEquivalent, modifiers: binding(for: .deleteNote).eventModifiers)
+
+                Button("Restore Deleted Note") {
+                    NotificationCenter.default.post(name: .restoreDeletedNoteRequested, object: nil)
+                }
+                .keyboardShortcut(binding(for: .restoreDeletedNote).keyEquivalent, modifiers: binding(for: .restoreDeletedNote).eventModifiers)
             }
             CommandGroup(after: .toolbar) {
                 Button("Toggle Layout") {

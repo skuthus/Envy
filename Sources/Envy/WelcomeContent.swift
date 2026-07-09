@@ -22,6 +22,7 @@ enum WelcomeContent {
     - If your search matches the start of an existing title, the rest of it shows up in grey. Press **→** to complete it.
     - **⌘N** creates a blank note directly.
     - **⌘⌫** deletes the selected note. It goes to Trash, not gone for good.
+    - **⌘⇧⌫** restores the note(s) you just deleted, right back where they were.
 
     There's no separate "new note" dialog. The search box handles both jobs.
 

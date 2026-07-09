@@ -169,10 +169,60 @@ public final class NoteStore: ObservableObject {
         }
     }
 
+    /// The most recently deleted note(s) — a single delete or a whole bulk
+    /// delete counts as one "action" for undo purposes, so this holds
+    /// everything from the last call to `delete(_:)` together, not a full
+    /// history stack. Replaced (not appended to) by the next delete, and
+    /// cleared once restored.
+    private var lastDeleted: [(note: Note, trashedURL: URL)] = []
+
+    public var canRestoreLastDeleted: Bool { !lastDeleted.isEmpty }
+
     public func delete(_ note: Note) {
+        delete([note])
+    }
+
+    public func delete(_ notesToDelete: [Note]) {
+        guard !notesToDelete.isEmpty else { return }
         markInternalWrite()
-        try? FileManager.default.trashItem(at: note.url, resultingItemURL: nil)
-        notes.removeAll { $0.id == note.id }
+        var trashed: [(note: Note, trashedURL: URL)] = []
+        for note in notesToDelete {
+            var resultingURL: NSURL?
+            // trashItem's resultingItemURL is the *actual* on-disk location
+            // in Trash, which may differ from a naive guess (macOS renames
+            // on a filename collision there) — capturing it is what makes
+            // restoring back to the exact right place possible.
+            if (try? FileManager.default.trashItem(at: note.url, resultingItemURL: &resultingURL)) != nil,
+               let trashedURL = resultingURL as URL? {
+                trashed.append((note, trashedURL))
+            }
+        }
+        lastDeleted = trashed
+        let deletedIDs = Set(notesToDelete.map(\.id))
+        notes.removeAll { deletedIDs.contains($0.id) }
+    }
+
+    /// Moves the most recently deleted note(s) back out of Trash to their
+    /// original location and re-adds them to `notes`. A note whose original
+    /// location has since been reused (e.g. a new note created with the same
+    /// filename) is silently skipped rather than overwriting it.
+    @discardableResult
+    public func restoreLastDeleted() -> [Note] {
+        guard !lastDeleted.isEmpty else { return [] }
+        markInternalWrite()
+        var restored: [Note] = []
+        for (note, trashedURL) in lastDeleted {
+            guard !FileManager.default.fileExists(atPath: note.url.path) else { continue }
+            do {
+                try FileManager.default.moveItem(at: trashedURL, to: note.url)
+                restored.append(note)
+            } catch {
+                continue
+            }
+        }
+        lastDeleted = []
+        notes.append(contentsOf: restored)
+        return restored
     }
 
     /// Renames the note by moving its underlying file to a new filename derived

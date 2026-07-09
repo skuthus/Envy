@@ -94,6 +94,7 @@ enum ShortcutAction: String, CaseIterable, Identifiable {
     case centerWindow
     case summonApp
     case togglePlainTextMode
+    case restoreDeletedNote
 
     var id: String { rawValue }
 
@@ -112,6 +113,7 @@ enum ShortcutAction: String, CaseIterable, Identifiable {
         case .centerWindow: "Center Window"
         case .summonApp: "Show/Hide Envy (works from any app)"
         case .togglePlainTextMode: "Toggle Plain-Text Mode"
+        case .restoreDeletedNote: "Restore Deleted Note"
         }
     }
 
@@ -143,6 +145,11 @@ enum ShortcutAction: String, CaseIterable, Identifiable {
             ShortcutBinding(character: String(KeyEquivalent.return.character), keyCode: kVK_Return, modifiers: SwiftUI.EventModifiers([.command, .option]).rawValue)
         case .togglePlainTextMode:
             ShortcutBinding(character: "p", keyCode: kVK_ANSI_P, modifiers: SwiftUI.EventModifiers([.command, .shift]).rawValue)
+        case .restoreDeletedNote:
+            // Not ⌘Z/⌘⇧Z — those are already claimed by NSTextView's own
+            // per-editor text undo/redo, and reusing them here would risk
+            // breaking normal typing-undo inside the note editor.
+            ShortcutBinding(character: String(KeyEquivalent.delete.character), keyCode: kVK_Delete, modifiers: SwiftUI.EventModifiers([.command, .shift]).rawValue)
         }
     }
 }

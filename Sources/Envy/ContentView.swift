@@ -148,6 +148,9 @@ struct ContentView: View {
         .onReceive(NotificationCenter.default.publisher(for: .deleteSelectedRequested)) { _ in
             deleteSelected()
         }
+        .onReceive(NotificationCenter.default.publisher(for: .restoreDeletedNoteRequested)) { _ in
+            restoreLastDeleted()
+        }
         .onReceive(NotificationCenter.default.publisher(for: .toggleLayoutRequested)) { _ in
             layoutModeRaw = (layoutMode == .horizontal ? LayoutMode.vertical : .horizontal).rawValue
         }
@@ -711,11 +714,21 @@ struct ContentView: View {
     }
 
     private func bulkDelete() {
-        for note in selectedNotes() {
-            store.delete(note)
-        }
+        // A single call so the whole selection is recorded as one delete
+        // action — restoring afterward brings back every note, not just
+        // the last one a loop of individual deletes would have remembered.
+        store.delete(selectedNotes())
         multiSelectedIDs.removeAll()
         selectedID = filteredNotes.first?.id
+        focusedField = .search
+    }
+
+    private func restoreLastDeleted() {
+        let restored = store.restoreLastDeleted()
+        guard let first = restored.first else { return }
+        if restored.count == 1 {
+            selectedID = first.id
+        }
         focusedField = .search
     }
 
