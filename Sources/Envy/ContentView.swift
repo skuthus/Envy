@@ -312,6 +312,13 @@ struct ContentView: View {
             Divider()
             editorFooter
         }
+        // Opaque, not the window's translucent backdrop — in horizontal
+        // layout this is the detail column of a NavigationSplitView, which
+        // (unlike the sidebar's search/sort chrome) had nothing of its own
+        // covering the strip between the opaque native title bar and where
+        // NoteEditorView's own background starts, letting the blur show
+        // through there and reading as a stray transparent gap.
+        .background(Color(nsColor: .windowBackgroundColor).ignoresSafeArea(edges: .top))
         .onChange(of: selectedID) { _, newValue in
             if newValue == nil {
                 editorWordCount = 0
