@@ -104,6 +104,7 @@ enum WelcomeContent {
     - **⌘↩** centers the window on screen.
     - **⌥⌘↩** shows or hides Envy from anywhere on your Mac, even when another app is focused.
     - A menu bar icon does the same thing on click. Right-click it for New Note, Settings, and Quit.
+    - Settings → General has a toggle to automatically hide Envy the moment you click into a different app or an empty part of the screen.
     - Settings → General has a toggle for whether pressing Return in the search box also moves your cursor into the editor, in case you'd rather stay in the search box instead.
     - Settings → General can also show a small clock in the editor's footer, with an optional date in a few different formats, and an option to only show it while in full screen.
     - Every shortcut above (plus the global summon key) can be changed in Settings → Shortcuts. Click a shortcut, then press a new combination to save it right away. A Reset button sits next to each one, plus a "Reset All to Defaults" for starting over.

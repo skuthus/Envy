@@ -8,6 +8,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var keyObserver: Any?
     private var statusItem: NSStatusItem?
     private var shortcutsObserver: Any?
+    private var resignActiveObserver: Any?
     private var appliedSummonBinding: ShortcutBinding?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -77,6 +78,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
 
         setUpStatusItem()
+
+        // Spotlight/Alfred-style auto-hide, opt-in via Settings → General.
+        // didResignActiveNotification only fires when a *different app*
+        // becomes active (or the desktop takes focus) — switching between
+        // Envy's own windows (Settings, About) keeps Envy active, so this
+        // can't accidentally hide the main window out from under those.
+        resignActiveObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.didResignActiveNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.hideIfAutoHideEnabled()
+        }
+    }
+
+    private func hideIfAutoHideEnabled() {
+        guard UserDefaults.standard.bool(forKey: "hideOnFocusLoss") else { return }
+        NSApp.hide(nil)
     }
 
     private func applySummonHotKey() {

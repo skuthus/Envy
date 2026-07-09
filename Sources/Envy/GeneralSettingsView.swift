@@ -17,6 +17,7 @@ struct GeneralSettingsView: View {
     @AppStorage("footerClockDateFormat") private var footerClockDateFormatRaw = ClockDateFormat.short.rawValue
     @AppStorage("showFooterClockOnlyWhenFullScreen") private var showFooterClockOnlyWhenFullScreen = false
     @AppStorage("plainTextMode") private var plainTextMode = false
+    @AppStorage("hideOnFocusLoss") private var hideOnFocusLoss = false
     @State private var showingMarkupHelp = false
     @State private var openAtLogin = SMAppService.mainApp.status == .enabled
 
@@ -74,6 +75,10 @@ struct GeneralSettingsView: View {
                     get: { openAtLogin },
                     set: { setOpenAtLogin($0) }
                 ))
+            }
+
+            Section("Window") {
+                Toggle("Hide Envy when clicking outside the app", isOn: $hideOnFocusLoss)
             }
 
             Section("Storage") {
