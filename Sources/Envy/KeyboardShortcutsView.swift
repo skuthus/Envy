@@ -2,11 +2,23 @@ import SwiftUI
 
 struct KeyboardShortcutsView: View {
     @Environment(\.dismiss) private var dismiss
+    @AppStorage(ShortcutPreferences.storageKey) private var customShortcutsRaw = ""
 
     private struct Entry: Identifiable {
         let id = UUID()
-        let keys: String
+        var action: ShortcutAction?
+        var staticKeys: String?
         let description: String
+
+        init(action: ShortcutAction, description: String) {
+            self.action = action
+            self.description = description
+        }
+
+        init(keys: String, description: String) {
+            self.staticKeys = keys
+            self.description = description
+        }
     }
 
     private struct Group: Identifiable {
@@ -15,40 +27,53 @@ struct KeyboardShortcutsView: View {
         let entries: [Entry]
     }
 
-    private let groups: [Group] = [
-        Group(title: "Global", entries: [
-            Entry(keys: "⌥⌘↩", description: "Show or hide Envy — works from any app"),
-        ]),
-        Group(title: "Notes", entries: [
-            Entry(keys: "⌘N", description: "New note"),
-            Entry(keys: "⌘⌫", description: "Delete the selected note"),
-            Entry(keys: "⌘-click a [[link]]", description: "Open the linked note (creates it if it doesn't exist)"),
-        ]),
-        Group(title: "Search & Navigation", entries: [
-            Entry(keys: "↑ / ↓", description: "Move the highlighted note while searching"),
-            Entry(keys: "↩", description: "Open the highlighted note, or create one from your search text"),
-        ]),
-        Group(title: "Window", entries: [
-            Entry(keys: "⌘↩", description: "Center the window on screen"),
-            Entry(keys: "⌘⇧L", description: "Toggle horizontal / vertical layout"),
-        ]),
-        Group(title: "Folders", entries: [
-            Entry(keys: "⌥→", description: "Show only the next folder's notes"),
-            Entry(keys: "⌥←", description: "Show only the previous folder's notes"),
-        ]),
-        Group(title: "Font", entries: [
-            Entry(keys: "⌘B", description: "Bold the selected text (wraps it in **, or unwraps it if already bold)"),
-            Entry(keys: "⌘I", description: "Italicize the selected text (wraps it in *, or unwraps it if already italic)"),
-            Entry(keys: "⌘+", description: "Zoom in on the note text"),
-            Entry(keys: "⌘-", description: "Zoom out on the note text"),
-            Entry(keys: "⌘0", description: "Reset the note text zoom"),
-        ]),
-        Group(title: "Standard", entries: [
-            Entry(keys: "⌘,", description: "Settings"),
-            Entry(keys: "⌘Q", description: "Quit"),
-            Entry(keys: "⌘W", description: "Close window"),
-        ]),
-    ]
+    // Entries tied to a ShortcutAction resolve their displayed keys from the
+    // user's current customization (Settings → Shortcuts) instead of a fixed
+    // string, so this reference sheet can't drift out of sync with what a
+    // shortcut is actually bound to.
+    private var groups: [Group] {
+        [
+            Group(title: "Global", entries: [
+                Entry(action: .summonApp, description: "Show or hide Envy — works from any app"),
+            ]),
+            Group(title: "Notes", entries: [
+                Entry(action: .newNote, description: "New note"),
+                Entry(action: .deleteNote, description: "Delete the selected note"),
+                Entry(keys: "⌘-click a [[link]]", description: "Open the linked note (creates it if it doesn't exist)"),
+            ]),
+            Group(title: "Search & Navigation", entries: [
+                Entry(keys: "↑ / ↓", description: "Move the highlighted note while searching"),
+                Entry(keys: "↩", description: "Open the highlighted note, or create one from your search text"),
+            ]),
+            Group(title: "Window", entries: [
+                Entry(action: .centerWindow, description: "Center the window on screen"),
+                Entry(action: .toggleLayout, description: "Toggle horizontal / vertical layout"),
+            ]),
+            Group(title: "Folders", entries: [
+                Entry(action: .nextFolder, description: "Show only the next folder's notes"),
+                Entry(action: .previousFolder, description: "Show only the previous folder's notes"),
+            ]),
+            Group(title: "Font", entries: [
+                Entry(action: .bold, description: "Bold the selected text (wraps it in **, or unwraps it if already bold)"),
+                Entry(action: .italic, description: "Italicize the selected text (wraps it in *, or unwraps it if already italic)"),
+                Entry(action: .zoomIn, description: "Zoom in on the note text"),
+                Entry(action: .zoomOut, description: "Zoom out on the note text"),
+                Entry(action: .actualSize, description: "Reset the note text zoom"),
+            ]),
+            Group(title: "Standard", entries: [
+                Entry(keys: "⌘,", description: "Settings"),
+                Entry(keys: "⌘Q", description: "Quit"),
+                Entry(keys: "⌘W", description: "Close window"),
+            ]),
+        ]
+    }
+
+    private func keys(for entry: Entry) -> String {
+        if let action = entry.action {
+            return ShortcutPreferences.binding(for: action, raw: customShortcutsRaw).displayString
+        }
+        return entry.staticKeys ?? ""
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -65,7 +90,7 @@ struct KeyboardShortcutsView: View {
 
                             ForEach(group.entries) { entry in
                                 HStack(alignment: .top, spacing: 12) {
-                                    Text(entry.keys)
+                                    Text(keys(for: entry))
                                         .font(.system(.body, design: .monospaced))
                                         .padding(.horizontal, 6)
                                         .padding(.vertical, 3)
@@ -79,6 +104,10 @@ struct KeyboardShortcutsView: View {
                             }
                         }
                     }
+
+                    Text("Customize any of these in Settings → Shortcuts.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
             }
             .frame(maxHeight: 320)

@@ -7,6 +7,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private weak var mainWindow: NSWindow?
     private var keyObserver: Any?
     private var statusItem: NSStatusItem?
+    private var shortcutsObserver: Any?
+    private var appliedSummonBinding: ShortcutBinding?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
@@ -18,14 +20,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         window?.delegate = self
         window?.makeKeyAndOrderFront(nil)
 
-        // A SwiftUI .commands keyboardShortcut(.return, modifiers: [.command])
-        // here loses to AppKit's own default Return-key handling (which zooms/
-        // full-screens the window) more often than it wins. A local monitor lets
-        // us intercept and consume the key combo ourselves, deterministically.
+        // A SwiftUI .commands keyboardShortcut here loses to AppKit's own
+        // default Return-key handling (which zooms/full-screens the window)
+        // more often than it wins. A local monitor lets us intercept and
+        // consume the key combo ourselves, deterministically — matched
+        // against the user's customizable binding (Settings → Shortcuts)
+        // rather than a hardcoded key, read fresh from UserDefaults on every
+        // keypress so a change in Settings takes effect immediately.
         centerWindowMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
-            let isPlainCommandReturn = event.keyCode == 36
-                && event.modifierFlags.intersection(.deviceIndependentFlagsMask) == [.command]
-            guard isPlainCommandReturn else { return event }
+            let raw = UserDefaults.standard.string(forKey: ShortcutPreferences.storageKey) ?? ""
+            let binding = ShortcutPreferences.binding(for: .centerWindow, raw: raw)
+            let relevant = event.modifierFlags.intersection([.command, .option, .control, .shift])
+            let matches = event.charactersIgnoringModifiers == binding.character && EventModifiers(relevant) == binding.eventModifiers
+            guard matches else { return event }
             NSApp.windows.first?.center()
             return nil
         }
@@ -55,9 +62,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 self?.toggleWindow()
             }
         }
-        hotKey.register()
+        applySummonHotKey()
+        // The global hotkey is registered once with whatever keyCode/
+        // modifiers were current at launch — re-applied whenever any
+        // UserDefaults value changes (cheap: guarded by an equality check
+        // against what's already registered) so a change in Settings →
+        // Shortcuts takes effect without restarting the app.
+        shortcutsObserver = NotificationCenter.default.addObserver(
+            forName: UserDefaults.didChangeNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.applySummonHotKey()
+        }
 
         setUpStatusItem()
+    }
+
+    private func applySummonHotKey() {
+        let raw = UserDefaults.standard.string(forKey: ShortcutPreferences.storageKey) ?? ""
+        let binding = ShortcutPreferences.binding(for: .summonApp, raw: raw)
+        guard binding != appliedSummonBinding else { return }
+        appliedSummonBinding = binding
+        hotKey.unregister()
+        hotKey.register(keyCode: UInt32(binding.keyCode), modifiers: binding.carbonModifiers)
     }
 
     private func setUpStatusItem() {
@@ -168,6 +196,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 struct EnvyApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     @Environment(\.openWindow) private var openWindow
+    // Reading this makes `body` re-evaluate (and thus re-register every
+    // menu shortcut below) whenever the user changes one in Settings.
+    @AppStorage(ShortcutPreferences.storageKey) private var customShortcutsRaw = ""
+
+    private func binding(for action: ShortcutAction) -> ShortcutBinding {
+        ShortcutPreferences.binding(for: action, raw: customShortcutsRaw)
+    }
 
     var body: some Scene {
         // Declaring the title here (rather than imperatively via window.title)
@@ -187,65 +222,70 @@ struct EnvyApp: App {
                 Button("New Note") {
                     NotificationCenter.default.post(name: .newNoteRequested, object: nil)
                 }
-                .keyboardShortcut("n", modifiers: [.command])
+                .keyboardShortcut(binding(for: .newNote).keyEquivalent, modifiers: binding(for: .newNote).eventModifiers)
             }
             CommandGroup(after: .newItem) {
                 Button("Delete Note") {
                     NotificationCenter.default.post(name: .deleteSelectedRequested, object: nil)
                 }
-                .keyboardShortcut(.delete, modifiers: [.command])
+                .keyboardShortcut(binding(for: .deleteNote).keyEquivalent, modifiers: binding(for: .deleteNote).eventModifiers)
             }
             CommandGroup(after: .toolbar) {
                 Button("Toggle Layout") {
                     NotificationCenter.default.post(name: .toggleLayoutRequested, object: nil)
                 }
-                .keyboardShortcut("l", modifiers: [.command, .shift])
+                .keyboardShortcut(binding(for: .toggleLayout).keyEquivalent, modifiers: binding(for: .toggleLayout).eventModifiers)
             }
             CommandMenu("Font") {
                 Button("Bold") {
                     NotificationCenter.default.post(name: .boldSelectionRequested, object: nil)
                 }
-                .keyboardShortcut("b", modifiers: [.command])
+                .keyboardShortcut(binding(for: .bold).keyEquivalent, modifiers: binding(for: .bold).eventModifiers)
 
                 Button("Italic") {
                     NotificationCenter.default.post(name: .italicSelectionRequested, object: nil)
                 }
-                .keyboardShortcut("i", modifiers: [.command])
+                .keyboardShortcut(binding(for: .italic).keyEquivalent, modifiers: binding(for: .italic).eventModifiers)
 
                 Divider()
 
                 Button("Zoom In") {
                     NotificationCenter.default.post(name: .zoomInRequested, object: nil)
                 }
-                .keyboardShortcut("+", modifiers: [.command])
+                .keyboardShortcut(binding(for: .zoomIn).keyEquivalent, modifiers: binding(for: .zoomIn).eventModifiers)
 
                 Button("Zoom Out") {
                     NotificationCenter.default.post(name: .zoomOutRequested, object: nil)
                 }
-                .keyboardShortcut("-", modifiers: [.command])
+                .keyboardShortcut(binding(for: .zoomOut).keyEquivalent, modifiers: binding(for: .zoomOut).eventModifiers)
 
                 Button("Actual Size") {
                     NotificationCenter.default.post(name: .zoomResetRequested, object: nil)
                 }
-                .keyboardShortcut("0", modifiers: [.command])
+                .keyboardShortcut(binding(for: .actualSize).keyEquivalent, modifiers: binding(for: .actualSize).eventModifiers)
             }
             CommandMenu("Folders") {
                 Button("Next Folder") {
                     NotificationCenter.default.post(name: .nextFolderRequested, object: nil)
                 }
-                .keyboardShortcut(.rightArrow, modifiers: [.option])
+                .keyboardShortcut(binding(for: .nextFolder).keyEquivalent, modifiers: binding(for: .nextFolder).eventModifiers)
 
                 Button("Previous Folder") {
                     NotificationCenter.default.post(name: .previousFolderRequested, object: nil)
                 }
-                .keyboardShortcut(.leftArrow, modifiers: [.option])
+                .keyboardShortcut(binding(for: .previousFolder).keyEquivalent, modifiers: binding(for: .previousFolder).eventModifiers)
             }
             CommandGroup(after: .windowArrangement) {
-                // No .keyboardShortcut here — ⌘↩ is handled by the local event
-                // monitor in AppDelegate instead, since SwiftUI's menu-shortcut
-                // registration for this combo loses to AppKit's default Return
-                // handling (which zooms/full-screens the window).
-                Button("Center Window") {
+                // No .keyboardShortcut here — its default (⌘↩) loses to
+                // AppKit's own default Return-key handling (which zooms/
+                // full-screens the window) more often than it wins, so this
+                // deliberately has no real .keyboardShortcut() — the local
+                // event monitor in AppDelegate handles the actual key press
+                // instead, reading the same customizable binding. The
+                // current binding is spelled out in the title itself rather
+                // than shown as a real menu key-equivalent, since attaching
+                // one here would reintroduce that exact conflict.
+                Button("Center Window  (\(binding(for: .centerWindow).displayString))") {
                     NSApp.windows.first?.center()
                 }
             }
