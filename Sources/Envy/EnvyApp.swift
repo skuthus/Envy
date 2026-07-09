@@ -1,7 +1,7 @@
 import SwiftUI
 import AppKit
 
-final class AppDelegate: NSObject, NSApplicationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private let hotKey = GlobalHotKey()
     private var centerWindowMonitor: Any?
     private weak var mainWindow: NSWindow?
@@ -15,6 +15,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let window = NSApp.windows.first
         mainWindow = window
+        window?.delegate = self
         window?.makeKeyAndOrderFront(nil)
 
         // A SwiftUI .commands keyboardShortcut(.return, modifiers: [.command])
@@ -148,6 +149,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             window.makeKeyAndOrderFront(nil)
             NotificationCenter.default.post(name: .summonRequested, object: nil)
         }
+    }
+
+    // The red close button would otherwise let SwiftUI actually destroy the
+    // WindowGroup's window — after that, NSApp.windows.first (used to
+    // summon it back, both from the global hotkey and the menu bar item)
+    // comes back nil or wrong, so clicking either appeared to do nothing.
+    // Hiding instead of closing keeps the window alive so it can always be
+    // brought back, the same "quit-resistant" behavior the summon hotkey
+    // and menu bar item are meant to provide.
+    func windowShouldClose(_ sender: NSWindow) -> Bool {
+        sender.orderOut(nil)
+        return false
     }
 }
 
