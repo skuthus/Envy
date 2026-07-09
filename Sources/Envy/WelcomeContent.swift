@@ -84,7 +84,7 @@ enum WelcomeContent {
 
     **⌥→** and **⌥←** cycle through your folders one at a time, showing only that folder's notes. "All Folders" is one of the stops too, so cycling always brings you back to the merged view. It's the same checkbox from Settings, just faster.
 
-    Whenever you're scoped down to one folder, its name shows in the title bar, right next to "Envy".
+    The title bar always shows which you're looking at: a folder's name when scoped to one, or "All Notes" for the merged view.
 
     ## Customizing the Look
 

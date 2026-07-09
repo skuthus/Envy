@@ -436,17 +436,20 @@ struct ContentView: View {
         .padding(.bottom, 6)
     }
 
-    /// Non-nil only when exactly one of several configured folders is
-    /// currently enabled (e.g. via ⌥→/⌥← or unchecking others in Settings)
-    /// — with the default "everything merged" view there's nothing to
-    /// disambiguate, so the window title shows no folder suffix.
-    private var singleActiveFolderName: String? {
+    /// Non-nil only when there's actually more than one folder configured —
+    /// with just a single folder total, scoping isn't a meaningful concept,
+    /// so the window title shows no scope suffix at all. Otherwise "All
+    /// Notes", or a specific folder's name if scoped to exactly one via
+    /// ⌥→/⌥← or unchecking others in Settings.
+    private var folderScopeLabel: String? {
         let allDirectories = NotesDirectoryPreference.decode(notesDirectoryPathsRaw)
         guard allDirectories.count > 1 else { return nil }
         let disabled = NotesDirectoryPreference.decodeDisabled(disabledDirectoryPathsRaw)
         let enabled = allDirectories.filter { !disabled.contains($0.path) }
-        guard enabled.count == 1 else { return nil }
-        return enabled[0].lastPathComponent
+        if enabled.count == 1 {
+            return enabled[0].lastPathComponent
+        }
+        return "All Notes"
     }
 
     private func sortHeaderButton(field: NoteSortField, label: String) -> some View {
@@ -799,8 +802,8 @@ struct ContentView: View {
         // reads naturally there instead of costing a dedicated row of
         // chrome above the note list.
         let base = showWindowTitle ? (cachedWindowTitle ?? "Envy") : ""
-        if let folderName = singleActiveFolderName {
-            window.title = base.isEmpty ? folderName : "\(base) — \(folderName)"
+        if let scopeLabel = folderScopeLabel {
+            window.title = base.isEmpty ? scopeLabel : "\(base) — \(scopeLabel)"
         } else {
             window.title = base
         }
