@@ -45,6 +45,8 @@ struct KeyboardShortcutsView: View {
             Group(title: "Search & Navigation", entries: [
                 Entry(keys: "↑ / ↓", description: "Move the highlighted note while searching"),
                 Entry(keys: "↩", description: "Open the highlighted note, or create one from your search text"),
+                Entry(action: .focusNextArea, description: "Move focus to the next area (search → list → editor)"),
+                Entry(action: .focusPreviousArea, description: "Move focus to the previous area"),
             ]),
             Group(title: "Window", entries: [
                 Entry(action: .centerWindow, description: "Center the window on screen"),

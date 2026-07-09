@@ -95,6 +95,8 @@ enum ShortcutAction: String, CaseIterable, Identifiable {
     case summonApp
     case togglePlainTextMode
     case restoreDeletedNote
+    case focusNextArea
+    case focusPreviousArea
 
     var id: String { rawValue }
 
@@ -114,6 +116,8 @@ enum ShortcutAction: String, CaseIterable, Identifiable {
         case .summonApp: "Show/Hide Envy (works from any app)"
         case .togglePlainTextMode: "Toggle Plain-Text Mode"
         case .restoreDeletedNote: "Restore Deleted Note"
+        case .focusNextArea: "Focus Next Area (Search / List / Editor)"
+        case .focusPreviousArea: "Focus Previous Area (Search / List / Editor)"
         }
     }
 
@@ -150,6 +154,10 @@ enum ShortcutAction: String, CaseIterable, Identifiable {
             // per-editor text undo/redo, and reusing them here would risk
             // breaking normal typing-undo inside the note editor.
             ShortcutBinding(character: String(KeyEquivalent.delete.character), keyCode: kVK_Delete, modifiers: SwiftUI.EventModifiers([.command, .shift]).rawValue)
+        case .focusNextArea:
+            ShortcutBinding(character: String(KeyEquivalent.downArrow.character), keyCode: kVK_DownArrow, modifiers: SwiftUI.EventModifiers.option.rawValue)
+        case .focusPreviousArea:
+            ShortcutBinding(character: String(KeyEquivalent.upArrow.character), keyCode: kVK_UpArrow, modifiers: SwiftUI.EventModifiers.option.rawValue)
         }
     }
 }

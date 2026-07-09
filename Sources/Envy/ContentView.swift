@@ -174,14 +174,10 @@ struct ContentView: View {
         .onReceive(NotificationCenter.default.publisher(for: .togglePlainTextModeRequested)) { _ in
             plainTextMode.toggle()
         }
-        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didEnterFullScreenNotification)) { note in
-            guard (note.object as? NSWindow) === NSApp.windows.first else { return }
-            isFullScreen = true
-        }
-        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didExitFullScreenNotification)) { note in
-            guard (note.object as? NSWindow) === NSApp.windows.first else { return }
-            isFullScreen = false
-        }
+        .modifier(FocusAndFullScreenNotifications(
+            cycleFocus: cycleFocus,
+            isFullScreen: $isFullScreen
+        ))
     }
 
     var body: some View {
@@ -322,6 +318,15 @@ struct ContentView: View {
                         proxy.scrollTo(newValue)
                     }
                 }
+                // Makes the list itself a real stop for Focus Next/Previous
+                // Area, not just something you tap into — arrow keys move the
+                // selection the same as they do from the search box, and
+                // Return drops straight into the editor.
+                .focusable()
+                .focused($focusedField, equals: .list)
+                .onKeyPress(.downArrow) { moveSelection(1); return .handled }
+                .onKeyPress(.upArrow) { moveSelection(-1); return .handled }
+                .onKeyPress(.return) { focusedField = .editor; return .handled }
             }
             if !query.trimmingCharacters(in: .whitespaces).isEmpty && store.exactTitleMatch(for: query) == nil {
                 Text("Press \u{23CE} to create \"\(query)\"")
@@ -513,6 +518,20 @@ struct ContentView: View {
         }
         .onSubmit { handleEnter() }
         .onChange(of: query) { _, _ in reconcileSelection() }
+    }
+
+    /// Cycles keyboard focus through search → list → editor (and back around),
+    /// wrapping in both directions. When nothing is focused yet, "next" lands
+    /// on search and "previous" lands on editor, so either direction always
+    /// does something sensible from a cold start.
+    private func cycleFocus(by direction: Int) {
+        let order: [FocusField] = [.search, .list, .editor]
+        if let current = focusedField, let currentIndex = order.firstIndex(of: current) {
+            let newIndex = (currentIndex + direction + order.count) % order.count
+            focusedField = order[newIndex]
+        } else {
+            focusedField = direction > 0 ? order.first : order.last
+        }
     }
 
     private func moveSelection(_ delta: Int) {
@@ -818,5 +837,33 @@ struct ContentView: View {
         // pushed the actually-meaningful part (the scope name) off to the
         // right of true center instead of centering it.
         window.title = folderScopeLabel ?? cachedWindowTitle ?? "Envy"
+    }
+}
+
+/// Split out of ContentView's body purely to keep the compiler's type-checking
+/// time reasonable — too many chained `.onReceive` modifiers in one expression
+/// has repeatedly hit "unable to type-check in reasonable time" as more were
+/// added, and splitting into a separate modifier lets the compiler solve this
+/// batch independently of the rest.
+private struct FocusAndFullScreenNotifications: ViewModifier {
+    let cycleFocus: (Int) -> Void
+    @Binding var isFullScreen: Bool
+
+    func body(content: Content) -> some View {
+        content
+            .onReceive(NotificationCenter.default.publisher(for: .focusNextAreaRequested)) { _ in
+                cycleFocus(1)
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .focusPreviousAreaRequested)) { _ in
+                cycleFocus(-1)
+            }
+            .onReceive(NotificationCenter.default.publisher(for: NSWindow.didEnterFullScreenNotification)) { note in
+                guard (note.object as? NSWindow) === NSApp.windows.first else { return }
+                isFullScreen = true
+            }
+            .onReceive(NotificationCenter.default.publisher(for: NSWindow.didExitFullScreenNotification)) { note in
+                guard (note.object as? NSWindow) === NSApp.windows.first else { return }
+                isFullScreen = false
+            }
     }
 }

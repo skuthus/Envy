@@ -4,6 +4,7 @@ import AppKit
 final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private let hotKey = GlobalHotKey()
     private var centerWindowMonitor: Any?
+    private var focusAreaMonitor: Any?
     private weak var mainWindow: NSWindow?
     private var keyObserver: Any?
     private var statusItem: NSStatusItem?
@@ -36,6 +37,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             guard matches else { return event }
             NSApp.windows.first?.center()
             return nil
+        }
+
+        // Option+Up/Down are already claimed by AppKit's own paragraph-
+        // navigation text editing (moveToBeginningOfParagraph:/
+        // moveToEndOfParagraph:) inside any text view — same category of
+        // conflict as Center Window above, same fix.
+        focusAreaMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            let raw = UserDefaults.standard.string(forKey: ShortcutPreferences.storageKey) ?? ""
+            let relevant = event.modifierFlags.intersection([.command, .option, .control, .shift])
+            let nextBinding = ShortcutPreferences.binding(for: .focusNextArea, raw: raw)
+            let previousBinding = ShortcutPreferences.binding(for: .focusPreviousArea, raw: raw)
+            if event.charactersIgnoringModifiers == nextBinding.character && EventModifiers(relevant) == nextBinding.eventModifiers {
+                NotificationCenter.default.post(name: .focusNextAreaRequested, object: nil)
+                return nil
+            }
+            if event.charactersIgnoringModifiers == previousBinding.character && EventModifiers(relevant) == previousBinding.eventModifiers {
+                NotificationCenter.default.post(name: .focusPreviousAreaRequested, object: nil)
+                return nil
+            }
+            return event
         }
 
         // Setting fullSizeContentView in the same tick as launch doesn't reliably
@@ -292,6 +313,23 @@ struct EnvyApp: App {
                     NotificationCenter.default.post(name: .zoomResetRequested, object: nil)
                 }
                 .keyboardShortcut(binding(for: .actualSize).keyEquivalent, modifiers: binding(for: .actualSize).eventModifiers)
+            }
+            CommandMenu("Navigate") {
+                // No .keyboardShortcut here, deliberately — Option+Up/Down are
+                // already claimed by AppKit's own paragraph-navigation text
+                // editing (moveToBeginningOfParagraph:/moveToEndOfParagraph:),
+                // which wins over a SwiftUI menu shortcut the same way Return's
+                // built-in zoom behavior beat Center Window's. The local event
+                // monitor in AppDelegate handles the actual key press instead,
+                // reading the same customizable binding; the current binding is
+                // just spelled out in the title here.
+                Button("Focus Next Area  (\(binding(for: .focusNextArea).displayString))") {
+                    NotificationCenter.default.post(name: .focusNextAreaRequested, object: nil)
+                }
+
+                Button("Focus Previous Area  (\(binding(for: .focusPreviousArea).displayString))") {
+                    NotificationCenter.default.post(name: .focusPreviousAreaRequested, object: nil)
+                }
             }
             CommandMenu("Folders") {
                 Button("Next Folder") {

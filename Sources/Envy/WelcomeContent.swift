@@ -19,6 +19,7 @@ enum WelcomeContent {
     - Click **Name** or **Date** above the list to sort by it. Click the same one again to reverse the direction.
     - Press **↩** to open the highlighted note. If nothing matches, pressing **↩** creates a new note with that title instead.
     - Use **↑** and **↓** to move the highlighted note without leaving the search box.
+    - **⌥↓** and **⌥↑** move keyboard focus between the search box, the note list, and the editor.
     - If your search matches the start of an existing title, the rest of it shows up in grey. Press **→** to complete it.
     - **⌘N** creates a blank note directly.
     - **⌘⌫** deletes the selected note. It goes to Trash, not gone for good.
