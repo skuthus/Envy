@@ -258,7 +258,6 @@ struct ContentView: View {
             VStack(spacing: 0) {
                 searchField
                 listSortHeader
-                activeFolderIndicator
             }
             // Opaque, not blurred — an exception to the rest of the window's
             // translucent backdrop so the search/sort chrome (and, via the
@@ -437,31 +436,10 @@ struct ContentView: View {
         .padding(.bottom, 6)
     }
 
-    /// Only shown when exactly one of several configured folders is
+    /// Non-nil only when exactly one of several configured folders is
     /// currently enabled (e.g. via ⌥→/⌥← or unchecking others in Settings)
     /// — with the default "everything merged" view there's nothing to
-    /// disambiguate, so no indicator.
-    @ViewBuilder
-    private var activeFolderIndicator: some View {
-        if let singleActiveFolderName {
-            HStack(spacing: 4) {
-                Image(systemName: "folder")
-                Text(singleActiveFolderName)
-                    .lineLimit(1)
-                Spacer()
-                Button("Show All") {
-                    disabledDirectoryPathsRaw = ""
-                }
-                .buttonStyle(.plain)
-                .underline()
-            }
-            .font(.caption)
-            .foregroundStyle(.secondary)
-            .padding(.horizontal, 12)
-            .padding(.bottom, 6)
-        }
-    }
-
+    /// disambiguate, so the window title shows no folder suffix.
     private var singleActiveFolderName: String? {
         let allDirectories = NotesDirectoryPreference.decode(notesDirectoryPathsRaw)
         guard allDirectories.count > 1 else { return nil }
@@ -764,34 +742,42 @@ struct ContentView: View {
         // premature flash to "No Note Selected" and back. The onChange(of:
         // store.notes) below reconciles it once the new notes actually land.
         focusedField = .search
+        applyWindowTitleVisibility()
     }
 
     /// Reuses the enable/disable checkboxes from Settings rather than a
-    /// separate transient "view filter" — cycling makes exactly one folder
-    /// enabled at a time and disables the rest, persisting like any other
-    /// checkbox change. If more than one folder is currently enabled (or the
-    /// currently-sole-enabled one isn't found), starts the cycle from the
-    /// first folder rather than trying to guess "next" from an ambiguous
-    /// starting point.
+    /// separate transient "view filter" — cycling enables exactly one
+    /// folder (or all of them) and disables the rest, persisting like any
+    /// other checkbox change. "All Folders" is itself one of the stops in
+    /// the cycle (state 0), sitting between the last folder and the first —
+    /// so cycling forward from "all" goes to folder 1, and cycling forward
+    /// from the last folder wraps back around to "all", same the other way.
+    /// If the current enabled set doesn't match any single stop exactly
+    /// (e.g. an arbitrary subset checked by hand in Settings), treats that
+    /// as "all" rather than guessing which folder was meant.
     private func cycleActiveFolder(by direction: Int) {
         let allDirectories = NotesDirectoryPreference.decode(notesDirectoryPathsRaw)
         guard allDirectories.count > 1 else { return }
         let disabled = NotesDirectoryPreference.decodeDisabled(disabledDirectoryPathsRaw)
         let enabledDirectories = allDirectories.filter { !disabled.contains($0.path) }
-        let currentIndex: Int? = enabledDirectories.count == 1
-            ? allDirectories.firstIndex(where: { $0.path == enabledDirectories[0].path })
-            : nil
 
-        let newIndex: Int
-        if let currentIndex {
-            newIndex = (currentIndex + direction + allDirectories.count) % allDirectories.count
+        let stateCount = allDirectories.count + 1 // 0 = all folders, 1...N = single folder N-1
+        let currentState: Int
+        if enabledDirectories.count == 1, let index = allDirectories.firstIndex(where: { $0.path == enabledDirectories[0].path }) {
+            currentState = index + 1
         } else {
-            newIndex = direction > 0 ? 0 : allDirectories.count - 1
+            currentState = 0
         }
 
-        let target = allDirectories[newIndex]
-        let newDisabled = Set(allDirectories.map(\.path)).subtracting([target.path])
-        disabledDirectoryPathsRaw = NotesDirectoryPreference.encodeDisabled(newDisabled)
+        let newState = (currentState + direction + stateCount) % stateCount
+
+        if newState == 0 {
+            disabledDirectoryPathsRaw = ""
+        } else {
+            let target = allDirectories[newState - 1]
+            let newDisabled = Set(allDirectories.map(\.path)).subtracting([target.path])
+            disabledDirectoryPathsRaw = NotesDirectoryPreference.encodeDisabled(newDisabled)
+        }
     }
 
     /// Blanks the title text rather than toggling titleVisibility — with a
@@ -804,6 +790,19 @@ struct ContentView: View {
             cachedWindowTitle = window.title.isEmpty ? "Envy" : window.title
         }
         window.titleVisibility = .visible
-        window.title = showWindowTitle ? (cachedWindowTitle ?? "Envy") : ""
+        guard showWindowTitle else {
+            window.title = ""
+            return
+        }
+        let base = cachedWindowTitle ?? "Envy"
+        // Appended rather than shown separately in the list — the title bar
+        // already says "what app/context am I in" for every other Mac app,
+        // so scoped-to-one-folder state reads naturally there instead of
+        // costing a dedicated row of chrome above the note list.
+        if let folderName = singleActiveFolderName {
+            window.title = "\(base) — \(folderName)"
+        } else {
+            window.title = base
+        }
     }
 }
