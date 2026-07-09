@@ -83,27 +83,26 @@ struct ThemeSettingsView: View {
             }
 
             Section("Colors") {
-                ColorPicker("Text", selection: colorBinding(\.textColor))
-                ColorPicker("Background", selection: colorBinding(\.backgroundColor))
-                ColorPicker("Markdown Markers", selection: colorBinding(\.markerColor))
-                ColorPicker("Links", selection: colorBinding(\.linkColor))
-                ColorPicker("Code Background", selection: colorBinding(\.codeBackgroundColor))
-            }
-            .disabled(!theme.isCustom)
-
-            Section("Search") {
-                ColorPicker("Highlight", selection: colorBinding(\.highlightColor))
-            }
-
-            Section("Note List") {
-                HStack {
-                    ColorPicker("File List Highlight Color", selection: colorBinding(\.selectionColor))
-                    Spacer()
-                    Button("Reset") {
-                        theme.selectionColor = Theme.defaultSelectionColor
-                    }
-                    .disabled(theme.selectionColor == Theme.defaultSelectionColor)
+                LazyVGrid(columns: [GridItem(.flexible(minimum: 160), alignment: .leading), GridItem(.flexible(minimum: 160), alignment: .leading)], spacing: 12) {
+                    colorSwatch("Text", selection: colorBinding(\.textColor))
+                        .disabled(!theme.isCustom)
+                    colorSwatch("Background", selection: colorBinding(\.backgroundColor))
+                        .disabled(!theme.isCustom)
+                    colorSwatch("Markers", selection: colorBinding(\.markerColor))
+                        .disabled(!theme.isCustom)
+                    colorSwatch("Links", selection: colorBinding(\.linkColor))
+                        .disabled(!theme.isCustom)
+                    colorSwatch("Code Background", selection: colorBinding(\.codeBackgroundColor))
+                        .disabled(!theme.isCustom)
+                    colorSwatch("Search Highlight", selection: colorBinding(\.highlightColor))
+                    colorSwatch(
+                        "File List Highlight Color",
+                        selection: colorBinding(\.selectionColor),
+                        onReset: { theme.selectionColor = Theme.defaultSelectionColor },
+                        isDefault: theme.selectionColor == Theme.defaultSelectionColor
+                    )
                 }
+                .padding(.vertical, 4)
             }
 
             Section {
@@ -120,7 +119,7 @@ struct ThemeSettingsView: View {
             }
         }
         .padding(20)
-        .frame(width: 420)
+        .frame(width: 460)
     }
 
     private var previewText: some View {
@@ -146,5 +145,34 @@ struct ThemeSettingsView: View {
             get: { theme[keyPath: keyPath].color },
             set: { theme[keyPath: keyPath] = CodableColor(nsColor: NSColor($0)) }
         )
+    }
+
+    /// A compact swatch + label pairing, laid out several to a row in a
+    /// grid instead of the one-ColorPicker-per-row layout Form gives by
+    /// default (which left most of each row's width empty).
+    @ViewBuilder
+    private func colorSwatch(
+        _ label: String,
+        selection: Binding<Color>,
+        onReset: (() -> Void)? = nil,
+        isDefault: Bool = true
+    ) -> some View {
+        HStack(spacing: 6) {
+            ColorPicker("", selection: selection)
+                .labelsHidden()
+            Text(label)
+                .font(.caption)
+                .fixedSize(horizontal: false, vertical: true)
+            if let onReset {
+                Button(action: onReset) {
+                    Image(systemName: "arrow.counterclockwise.circle")
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+                .opacity(isDefault ? 0.35 : 1)
+                .disabled(isDefault)
+                .help("Reset to default")
+            }
+        }
     }
 }
