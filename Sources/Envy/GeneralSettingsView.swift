@@ -10,6 +10,7 @@ struct GeneralSettingsView: View {
     @AppStorage("requireModifierForLinkClick") private var requireModifierForLinkClick = true
     @AppStorage("showEditorTitleHeader") private var showEditorTitleHeader = true
     @AppStorage(NotesDirectoryPreference.storageKey) private var notesDirectoryPathsRaw = ""
+    @AppStorage(NotesDirectoryPreference.disabledStorageKey) private var disabledDirectoryPathsRaw = ""
     @AppStorage("moveFocusToEditorOnEnter") private var moveFocusToEditorOnEnter = true
     @AppStorage("showFooterClock") private var showFooterClock = false
     @AppStorage("showFooterClockDate") private var showFooterClockDate = false
@@ -37,6 +38,34 @@ struct GeneralSettingsView: View {
         return decoded.isEmpty ? NotesDirectoryPreference.load() : decoded
     }
 
+    private var disabledPaths: Set<String> {
+        NotesDirectoryPreference.decodeDisabled(disabledDirectoryPathsRaw)
+    }
+
+    private func isEnabled(_ directory: URL) -> Bool {
+        !disabledPaths.contains(directory.path)
+    }
+
+    private func setEnabled(_ enabled: Bool, for directory: URL) {
+        var disabled = disabledPaths
+        if enabled {
+            disabled.remove(directory.path)
+        } else {
+            disabled.insert(directory.path)
+        }
+        disabledDirectoryPathsRaw = NotesDirectoryPreference.encodeDisabled(disabled)
+    }
+
+    private var enabledCount: Int {
+        directories.filter(isEnabled).count
+    }
+
+    /// The folder new notes actually land in — the first *enabled* one, not
+    /// necessarily index 0, since that could itself be disabled.
+    private var defaultDirectory: URL {
+        directories.first(where: isEnabled) ?? directories[0]
+    }
+
     var body: some View {
         Form {
             Section("Startup") {
@@ -49,8 +78,20 @@ struct GeneralSettingsView: View {
             Section("Storage") {
                 ForEach(Array(directories.enumerated()), id: \.element) { index, directory in
                     HStack {
+                        Toggle("", isOn: Binding(
+                            get: { isEnabled(directory) },
+                            set: { setEnabled($0, for: directory) }
+                        ))
+                        .toggleStyle(.checkbox)
+                        .labelsHidden()
+                        // Can't turn off the last enabled folder — same
+                        // "always at least one active" guarantee as removal
+                        // already enforces, just without deleting anything.
+                        .disabled(isEnabled(directory) && enabledCount <= 1)
+
                         VStack(alignment: .leading, spacing: 2) {
                             Text(directory.lastPathComponent)
+                                .foregroundStyle(isEnabled(directory) ? .primary : .secondary)
                             Text(directory.path)
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
@@ -58,7 +99,7 @@ struct GeneralSettingsView: View {
                                 .truncationMode(.middle)
                         }
                         Spacer()
-                        if index == 0 {
+                        if directory == defaultDirectory {
                             Text("Default")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
@@ -91,7 +132,7 @@ struct GeneralSettingsView: View {
                         addFolder()
                     }
                     Button("Reveal Default in Finder") {
-                        NSWorkspace.shared.activateFileViewerSelecting([directories[0]])
+                        NSWorkspace.shared.activateFileViewerSelecting([defaultDirectory])
                     }
                 }
             }

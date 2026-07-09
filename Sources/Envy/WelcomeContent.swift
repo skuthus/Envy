@@ -80,6 +80,8 @@ enum WelcomeContent {
 
     Settings → General lets you add more than one notes folder. Envy merges them into a single searchable list. Which folder a note lives in doesn't affect search, but you can see and change it from a note's right-click menu.
 
+    Uncheck a folder in that list to hide its notes from the list without removing the folder itself. Check it again any time to bring them back.
+
     ## Customizing the Look
 
     - Settings → Appearance lets you pick your own font and colors.

@@ -23,7 +23,7 @@ enum NoteSortField: String {
 
 struct ContentView: View {
     @Environment(\.openSettings) private var openSettings
-    @StateObject private var store = NoteStore(directories: NotesDirectoryPreference.load())
+    @StateObject private var store = NoteStore(directories: NotesDirectoryPreference.loadEnabled())
     @State private var query = ""
     @State private var selectedID: String?
     /// Extra notes ⌘-selected alongside selectedID, for multi-select bulk
@@ -48,6 +48,7 @@ struct ContentView: View {
     @AppStorage("showEditorTitleHeader") private var showEditorTitleHeader = true
     @AppStorage("showWindowTitle") private var showWindowTitle = true
     @AppStorage(NotesDirectoryPreference.storageKey) private var notesDirectoryPathsRaw = ""
+    @AppStorage(NotesDirectoryPreference.disabledStorageKey) private var disabledDirectoryPathsRaw = ""
     @AppStorage("hasCreatedWelcomeNote") private var hasCreatedWelcomeNote = false
     @AppStorage("moveFocusToEditorOnEnter") private var moveFocusToEditorOnEnter = true
     @AppStorage("listDensity") private var listDensityRaw = ListDensity.compact.rawValue
@@ -163,8 +164,11 @@ struct ContentView: View {
             focusedField = .search
             applyWindowTitleVisibility()
         }
-        .onChange(of: notesDirectoryPathsRaw) { _, newRaw in
-            switchNotesDirectories(to: newRaw)
+        .onChange(of: notesDirectoryPathsRaw) { _, _ in
+            switchNotesDirectories()
+        }
+        .onChange(of: disabledDirectoryPathsRaw) { _, _ in
+            switchNotesDirectories()
         }
         .onChange(of: showWindowTitle) { _, _ in
             applyWindowTitleVisibility()
@@ -663,9 +667,14 @@ struct ContentView: View {
         renameNote(note, to: newTitle)
     }
 
-    private func switchNotesDirectories(to raw: String) {
-        let directories = NotesDirectoryPreference.decode(raw)
-        store.setDirectories(directories)
+    private func switchNotesDirectories() {
+        let allDirectories = NotesDirectoryPreference.decode(notesDirectoryPathsRaw)
+        let disabled = NotesDirectoryPreference.decodeDisabled(disabledDirectoryPathsRaw)
+        let enabledDirectories = allDirectories.filter { !disabled.contains($0.path) }
+        // Falls back to the full list rather than letting NoteStore's own
+        // "no directories" handling silently switch to an unrelated default
+        // folder if every configured folder happens to be disabled.
+        store.setDirectories(enabledDirectories.isEmpty ? allDirectories : enabledDirectories)
         query = ""
         selectedID = store.notes.first?.id
         focusedField = .search
