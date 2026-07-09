@@ -113,8 +113,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func openSettingsFromStatusMenu() {
+        // The raw showSettingsWindow: selector send (a common trick for
+        // triggering SwiftUI's Settings scene from AppKit code) turned out
+        // unreliable here — routed through a notification instead, handled
+        // by ContentView using the properly supported
+        // \.openSettings environment action.
         NSApp.activate(ignoringOtherApps: true)
-        NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+        NotificationCenter.default.post(name: .openSettingsRequested, object: nil)
     }
 
     private func activateAndShowWindow() {

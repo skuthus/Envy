@@ -22,6 +22,7 @@ enum NoteSortField: String {
 }
 
 struct ContentView: View {
+    @Environment(\.openSettings) private var openSettings
     @StateObject private var store = NoteStore(directories: NotesDirectoryPreference.load())
     @State private var query = ""
     @State private var selectedID: String?
@@ -143,6 +144,9 @@ struct ContentView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .zoomResetRequested)) { _ in
             editorFontZoom = 0
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .openSettingsRequested)) { _ in
+            openSettings()
         }
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didEnterFullScreenNotification)) { note in
             guard (note.object as? NSWindow) === NSApp.windows.first else { return }
