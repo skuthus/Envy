@@ -165,6 +165,18 @@ struct ContentView: View {
         .onChange(of: showWindowTitle) { _, _ in
             applyWindowTitleVisibility()
         }
+        .onChange(of: layoutModeRaw) { _, _ in
+            // Horizontal and vertical layouts are structurally different
+            // top-level views (NavigationSplitView vs PersistentVSplitView)
+            // — swapping between them makes SwiftUI reassert the
+            // WindowGroup's own declared title ("Envy") on top of whatever
+            // we'd set, same as the reassertion noted in EnvyApp.swift.
+            // Deferred a tick so this reapplies after that reassertion,
+            // not before it.
+            DispatchQueue.main.async {
+                applyWindowTitleVisibility()
+            }
+        }
         .alert("Rename Note", isPresented: Binding(
             get: { renamingNote != nil },
             set: { if !$0 { renamingNote = nil } }
