@@ -122,7 +122,7 @@ struct ThemeSettingsView: View {
                 previewText
                     .padding(10)
                     .background(Color(nsColor: theme.resolvedBackgroundColor))
-                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
             }
 
             Button("Reset to Defaults") {

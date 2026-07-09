@@ -99,7 +99,7 @@ struct KeyboardShortcutsView: View {
                                         .padding(.horizontal, 6)
                                         .padding(.vertical, 3)
                                         .background(Color(nsColor: .textBackgroundColor).opacity(0.6))
-                                        .clipShape(RoundedRectangle(cornerRadius: 4))
+                                        .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
                                         .frame(minWidth: 150, alignment: .leading)
                                     Text(entry.description)
                                         .foregroundStyle(.secondary)
