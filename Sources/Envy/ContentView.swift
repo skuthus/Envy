@@ -258,6 +258,7 @@ struct ContentView: View {
             VStack(spacing: 0) {
                 searchField
                 listSortHeader
+                activeFolderIndicator
             }
             // Opaque, not blurred — an exception to the rest of the window's
             // translucent backdrop so the search/sort chrome (and, via the
@@ -434,6 +435,40 @@ struct ContentView: View {
         .padding(.horizontal, 12)
         .padding(.top, 10)
         .padding(.bottom, 6)
+    }
+
+    /// Only shown when exactly one of several configured folders is
+    /// currently enabled (e.g. via ⌥→/⌥← or unchecking others in Settings)
+    /// — with the default "everything merged" view there's nothing to
+    /// disambiguate, so no indicator.
+    @ViewBuilder
+    private var activeFolderIndicator: some View {
+        if let singleActiveFolderName {
+            HStack(spacing: 4) {
+                Image(systemName: "folder")
+                Text(singleActiveFolderName)
+                    .lineLimit(1)
+                Spacer()
+                Button("Show All") {
+                    disabledDirectoryPathsRaw = ""
+                }
+                .buttonStyle(.plain)
+                .underline()
+            }
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 12)
+            .padding(.bottom, 6)
+        }
+    }
+
+    private var singleActiveFolderName: String? {
+        let allDirectories = NotesDirectoryPreference.decode(notesDirectoryPathsRaw)
+        guard allDirectories.count > 1 else { return nil }
+        let disabled = NotesDirectoryPreference.decodeDisabled(disabledDirectoryPathsRaw)
+        let enabled = allDirectories.filter { !disabled.contains($0.path) }
+        guard enabled.count == 1 else { return nil }
+        return enabled[0].lastPathComponent
     }
 
     private func sortHeaderButton(field: NoteSortField, label: String) -> some View {

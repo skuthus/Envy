@@ -84,6 +84,8 @@ enum WelcomeContent {
 
     **⌥→** and **⌥←** cycle through your folders one at a time, showing only that folder's notes. It's the same checkbox from Settings, just faster.
 
+    Whenever you're scoped down to one folder, its name shows above the list. Click "Show All" right there to bring every folder back at once.
+
     ## Customizing the Look
 
     - Settings → Appearance lets you pick your own font and colors.
