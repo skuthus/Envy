@@ -37,6 +37,8 @@ struct ContentView: View {
     @State private var editorWordCount = 0
     @State private var editorCharacterCount = 0
     @State private var isFullScreen = false
+    @State private var showLoadingIndicator = false
+    @State private var loadingIndicatorTask: Task<Void, Never>?
     @FocusState private var focusedField: FocusField?
     @AppStorage("layoutMode") private var layoutModeRaw = LayoutMode.horizontal.rawValue
     @AppStorage("theme") private var theme = Theme()
@@ -192,6 +194,24 @@ struct ContentView: View {
             // the fresh list, rather than assuming it doesn't.
             reconcileSelection()
         }
+        .onChange(of: store.isLoading) { _, isLoading in
+            // A fade transition alone didn't stop the flash — a reload that
+            // finishes in well under the fade's own duration still visibly
+            // flickers the indicator in and back out. The actual fix is not
+            // showing it at all unless loading has been running long enough
+            // to be worth mentioning; local folder scans almost always
+            // finish under this delay, so it normally never appears.
+            loadingIndicatorTask?.cancel()
+            if isLoading {
+                loadingIndicatorTask = Task {
+                    try? await Task.sleep(for: .milliseconds(250))
+                    guard !Task.isCancelled else { return }
+                    showLoadingIndicator = true
+                }
+            } else {
+                showLoadingIndicator = false
+            }
+        }
         .onChange(of: showWindowTitle) { _, _ in
             applyWindowTitleVisibility()
         }
@@ -245,7 +265,7 @@ struct ContentView: View {
             // one solid block instead of fading into whatever's behind it.
             .background(Color(nsColor: .windowBackgroundColor))
             Divider()
-            if store.isLoading {
+            if showLoadingIndicator {
                 HStack(spacing: 6) {
                     ProgressView()
                         .controlSize(.small)
@@ -304,7 +324,7 @@ struct ContentView: View {
                     .padding(.bottom, 10)
             }
         }
-        .animation(.easeInOut(duration: 0.15), value: store.isLoading)
+        .animation(.easeInOut(duration: 0.15), value: showLoadingIndicator)
     }
 
     private var editorPane: some View {
