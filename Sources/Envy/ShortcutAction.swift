@@ -63,6 +63,36 @@ struct ShortcutBinding: Codable, Equatable {
         default: return String(char).uppercased()
         }
     }
+
+    /// A spelled-out rendering like "Command + Shift + L" — used in the
+    /// Shortcuts settings tab, where symbols packed tightly together (⌘⇧L)
+    /// read as cramped; the compact `displayString` is still used in the
+    /// About page's reference sheet, where a dense table of many entries is
+    /// the point.
+    var verboseDisplayString: String {
+        var parts: [String] = []
+        if eventModifiers.contains(.control) { parts.append("Control") }
+        if eventModifiers.contains(.option) { parts.append("Option") }
+        if eventModifiers.contains(.shift) { parts.append("Shift") }
+        if eventModifiers.contains(.command) { parts.append("Command") }
+        parts.append(Self.verboseCharacterName(for: character.first ?? " "))
+        return parts.joined(separator: " + ")
+    }
+
+    private static func verboseCharacterName(for char: Character) -> String {
+        switch char {
+        case KeyEquivalent.delete.character: return "Delete"
+        case KeyEquivalent.leftArrow.character: return "Left Arrow"
+        case KeyEquivalent.rightArrow.character: return "Right Arrow"
+        case KeyEquivalent.upArrow.character: return "Up Arrow"
+        case KeyEquivalent.downArrow.character: return "Down Arrow"
+        case KeyEquivalent.return.character: return "Return"
+        case KeyEquivalent.escape.character: return "Escape"
+        case KeyEquivalent.tab.character: return "Tab"
+        case " ": return "Space"
+        default: return String(char).uppercased()
+        }
+    }
 }
 
 enum ShortcutAction: String, CaseIterable, Identifiable {

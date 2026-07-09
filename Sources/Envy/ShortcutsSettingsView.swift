@@ -42,6 +42,7 @@ struct ShortcutsSettingsView: View {
                     HStack {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(action.label)
+                                .font(.body)
                             if let conflict = conflict(for: action) {
                                 Text("Also used by \(conflict.label)")
                                     .font(.caption)
@@ -55,6 +56,7 @@ struct ShortcutsSettingsView: View {
                         }
                         .disabled(!isCustomized(action))
                     }
+                    .padding(.vertical, 8)
                 }
             } footer: {
                 Text("Click a shortcut, then press the new key combination. Escape cancels.")
@@ -68,6 +70,6 @@ struct ShortcutsSettingsView: View {
             .disabled(ShortcutPreferences.loadAll(from: customShortcutsRaw).isEmpty)
         }
         .padding(20)
-        .frame(width: 480)
+        .frame(width: 560)
     }
 }
