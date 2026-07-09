@@ -97,6 +97,7 @@ enum WelcomeContent {
     - A note list density picker controls how much space each note takes up in the list.
     - A file list highlight color picker changes what the selected note looks like.
     - A mode setting matches System, Light, or Dark, independent of your custom colors.
+    - Moving focus to the search box, note list, or editor (by clicking, or with ⌥↓/⌥↑) highlights it with a border. A "Fade out focus highlight" toggle controls whether that border stays as long as it's focused or fades away after a moment, and its color and thickness are both customizable too.
 
     ## Getting Around
 

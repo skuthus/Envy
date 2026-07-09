@@ -61,6 +61,7 @@ struct ContentView: View {
     @AppStorage("showFooterClockOnlyWhenFullScreen") private var showFooterClockOnlyWhenFullScreen = false
     @AppStorage("editorFontZoom") private var editorFontZoom: Double = 0
     @AppStorage("plainTextMode") private var plainTextMode = false
+    @AppStorage("fadeFocusHighlight") private var fadeFocusHighlight = false
 
     private var layoutMode: LayoutMode {
         LayoutMode(rawValue: layoutModeRaw) ?? .horizontal
@@ -323,10 +324,22 @@ struct ContentView: View {
                 // selection the same as they do from the search box, and
                 // Return drops straight into the editor.
                 .focusable()
+                // The system's own default focus ring would otherwise show up
+                // here too, on top of the custom border below — and unlike
+                // that border, it's drawn by AppKit itself, so it ignores the
+                // fade entirely and just sits there permanently.
+                .focusEffectDisabled()
                 .focused($focusedField, equals: .list)
                 .onKeyPress(.downArrow) { moveSelection(1); return .handled }
                 .onKeyPress(.upArrow) { moveSelection(-1); return .handled }
                 .onKeyPress(.return) { focusedField = .editor; return .handled }
+                .focusHighlight(
+                    isFocused: focusedField == .list,
+                    fadeOut: fadeFocusHighlight,
+                    color: Color(nsColor: theme.resolvedFocusHighlightColor),
+                    lineWidth: CGFloat(theme.focusHighlightThickness),
+                    shape: Rectangle()
+                )
             }
             if !query.trimmingCharacters(in: .whitespaces).isEmpty && store.exactTitleMatch(for: query) == nil {
                 Text("Press \u{23CE} to create \"\(query)\"")
@@ -373,6 +386,13 @@ struct ContentView: View {
                 }
             }
             .frame(maxHeight: .infinity)
+            .focusHighlight(
+                isFocused: focusedField == .editor,
+                fadeOut: fadeFocusHighlight,
+                color: Color(nsColor: theme.resolvedFocusHighlightColor),
+                lineWidth: CGFloat(theme.focusHighlightThickness),
+                shape: Rectangle()
+            )
             // Lives here (not inside NoteEditorView) specifically so it stays
             // visible — clock included — even when no note is selected and
             // NoteEditorView isn't in the view hierarchy at all.
@@ -506,6 +526,13 @@ struct ContentView: View {
                 .padding(.vertical, 6)
         }
         .glassEffect(.regular, in: Capsule())
+        .focusHighlight(
+            isFocused: focusedField == .search,
+            fadeOut: fadeFocusHighlight,
+            color: Color(nsColor: theme.resolvedFocusHighlightColor),
+            lineWidth: CGFloat(theme.focusHighlightThickness),
+            shape: Capsule()
+        )
         .padding(.horizontal, 10)
         .padding(.top, 10)
         .focused($focusedField, equals: .search)
@@ -865,5 +892,48 @@ private struct FocusAndFullScreenNotifications: ViewModifier {
                 guard (note.object as? NSWindow) === NSApp.windows.first else { return }
                 isFullScreen = false
             }
+    }
+}
+
+/// Draws a stroked border around whichever pane currently has keyboard focus
+/// (search box or editor). With "Fade out focus highlight" off, it just
+/// tracks focus directly — on while focused, off the moment focus leaves.
+/// With it on, the border appears the same way but fades away on its own
+/// after a moment, so it reads as a brief "you're here now" cue rather than
+/// a persistent outline around wherever the cursor happens to be.
+private struct FocusHighlight<S: Shape>: ViewModifier {
+    let isFocused: Bool
+    let fadeOut: Bool
+    let color: Color
+    let lineWidth: CGFloat
+    let shape: S
+
+    @State private var visible = false
+    @State private var fadeTask: Task<Void, Never>?
+
+    func body(content: Content) -> some View {
+        content
+            .overlay(shape.stroke(color, lineWidth: lineWidth).opacity(visible ? 1 : 0))
+            .onChange(of: isFocused) { _, focused in
+                fadeTask?.cancel()
+                if focused {
+                    withAnimation(.easeInOut(duration: 0.15)) { visible = true }
+                    if fadeOut {
+                        fadeTask = Task {
+                            try? await Task.sleep(for: .milliseconds(400))
+                            guard !Task.isCancelled else { return }
+                            withAnimation(.easeInOut(duration: 0.2)) { visible = false }
+                        }
+                    }
+                } else {
+                    withAnimation(.easeInOut(duration: 0.15)) { visible = false }
+                }
+            }
+    }
+}
+
+private extension View {
+    func focusHighlight<S: Shape>(isFocused: Bool, fadeOut: Bool, color: Color, lineWidth: CGFloat, shape: S) -> some View {
+        modifier(FocusHighlight(isFocused: isFocused, fadeOut: fadeOut, color: color, lineWidth: lineWidth, shape: shape))
     }
 }

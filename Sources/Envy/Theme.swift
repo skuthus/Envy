@@ -44,6 +44,8 @@ struct Theme: Equatable {
     )
     var highlightColor: CodableColor = CodableColor(nsColor: NSColor.systemYellow.withAlphaComponent(0.4))
     var selectionColor: CodableColor = CodableColor(nsColor: NSColor.controlAccentColor.withAlphaComponent(0.25))
+    var focusHighlightColor: CodableColor = Theme.defaultFocusHighlightColor
+    var focusHighlightThickness: Double = Theme.defaultFocusHighlightThickness
 
     var resolvedFont: NSFont {
         let name = isCustom ? fontName : "SF Pro Text"
@@ -72,8 +74,12 @@ struct Theme: Equatable {
     // Also independent of isCustom — the note list's selection highlight is
     // its own thing, not part of the editor's custom-theme colors.
     var resolvedSelectionColor: NSColor { selectionColor.nsColor }
+    // Also independent of isCustom — same reasoning as selectionColor above.
+    var resolvedFocusHighlightColor: NSColor { focusHighlightColor.nsColor }
 
     static let defaultSelectionColor = CodableColor(nsColor: NSColor.controlAccentColor.withAlphaComponent(0.25))
+    static let defaultFocusHighlightColor = CodableColor(nsColor: NSColor.controlAccentColor.withAlphaComponent(0.25))
+    static let defaultFocusHighlightThickness: Double = 3
 }
 
 extension Theme: RawRepresentable {
@@ -93,6 +99,8 @@ extension Theme: RawRepresentable {
         // Optional so JSON saved before this field existed still decodes.
         var highlightColor: CodableColor?
         var selectionColor: CodableColor?
+        var focusHighlightColor: CodableColor?
+        var focusHighlightThickness: Double?
     }
 
     init?(rawValue: String) {
@@ -108,7 +116,9 @@ extension Theme: RawRepresentable {
             linkColor: payload.linkColor,
             codeBackgroundColor: payload.codeBackgroundColor,
             highlightColor: payload.highlightColor ?? CodableColor(nsColor: NSColor.systemYellow.withAlphaComponent(0.4)),
-            selectionColor: payload.selectionColor ?? Theme.defaultSelectionColor
+            selectionColor: payload.selectionColor ?? Theme.defaultSelectionColor,
+            focusHighlightColor: payload.focusHighlightColor ?? Theme.defaultFocusHighlightColor,
+            focusHighlightThickness: payload.focusHighlightThickness ?? Theme.defaultFocusHighlightThickness
         )
     }
 
@@ -123,7 +133,9 @@ extension Theme: RawRepresentable {
             linkColor: linkColor,
             codeBackgroundColor: codeBackgroundColor,
             highlightColor: highlightColor,
-            selectionColor: selectionColor
+            selectionColor: selectionColor,
+            focusHighlightColor: focusHighlightColor,
+            focusHighlightThickness: focusHighlightThickness
         )
         guard let data = try? JSONEncoder().encode(payload),
               let string = String(data: data, encoding: .utf8) else { return "{}" }

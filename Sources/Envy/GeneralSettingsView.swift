@@ -70,14 +70,11 @@ struct GeneralSettingsView: View {
 
     var body: some View {
         Form {
-            Section("Startup") {
+            Section("General") {
                 Toggle("Open Envy at Login", isOn: Binding(
                     get: { openAtLogin },
                     set: { setOpenAtLogin($0) }
                 ))
-            }
-
-            Section("Window") {
                 Toggle("Hide Envy when clicking outside the app", isOn: $hideOnFocusLoss)
             }
 
@@ -143,11 +140,8 @@ struct GeneralSettingsView: View {
                 }
             }
 
-            Section("Search") {
+            Section("Note List") {
                 Toggle("Move cursor to editor after opening a note", isOn: $moveFocusToEditorOnEnter)
-            }
-
-            Section("List") {
                 Toggle("Show content preview under title", isOn: $showNotePreview)
                 Toggle("Show date modified", isOn: $showDateModified)
                 Picker("Date Format", selection: dateDisplayStyle) {
@@ -160,6 +154,11 @@ struct GeneralSettingsView: View {
 
             Section("Editor") {
                 Toggle("Show title bar above note", isOn: $showEditorTitleHeader)
+                Toggle("Require ⌘-click to open note links", isOn: $requireModifierForLinkClick)
+                Toggle("Plain-text mode (ignore markdown formatting)", isOn: $plainTextMode)
+            }
+
+            Section("Footer Clock") {
                 Toggle("Show clock in footer", isOn: $showFooterClock)
                 Toggle("Show date with clock", isOn: $showFooterClockDate)
                     .disabled(!showFooterClock)
@@ -171,21 +170,14 @@ struct GeneralSettingsView: View {
                 .disabled(!showFooterClock || !showFooterClockDate)
                 Toggle("Only show clock in full screen", isOn: $showFooterClockOnlyWhenFullScreen)
                     .disabled(!showFooterClock)
-                Toggle("Plain-text mode (ignore markdown formatting)", isOn: $plainTextMode)
             }
 
-            Section("Links") {
-                Toggle("Require ⌘-click to open note links", isOn: $requireModifierForLinkClick)
-            }
-
-            Section("Help") {
-                Button("View Markup Commands…") {
-                    showingMarkupHelp = true
-                }
+            Button("View Markup Commands…") {
+                showingMarkupHelp = true
             }
         }
-        .padding(20)
-        .frame(width: 460)
+        .formStyle(.grouped)
+        .frame(width: 520)
         .sheet(isPresented: $showingMarkupHelp) {
             MarkupHelpView()
         }

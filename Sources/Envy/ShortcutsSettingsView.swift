@@ -58,6 +58,8 @@ struct ShortcutsSettingsView: View {
                     }
                     .padding(.vertical, 2)
                 }
+            } header: {
+                Text("Shortcuts")
             } footer: {
                 Text("Click a shortcut, then press the new key combination. Escape cancels.")
                     .font(.caption)
@@ -69,7 +71,7 @@ struct ShortcutsSettingsView: View {
             }
             .disabled(ShortcutPreferences.loadAll(from: customShortcutsRaw).isEmpty)
         }
-        .padding(20)
-        .frame(width: 500)
+        .formStyle(.grouped)
+        .frame(width: 520)
     }
 }
