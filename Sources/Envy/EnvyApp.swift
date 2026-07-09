@@ -233,12 +233,12 @@ struct EnvyApp: App {
                 Button("Next Folder") {
                     NotificationCenter.default.post(name: .nextFolderRequested, object: nil)
                 }
-                .keyboardShortcut("]", modifiers: [.command])
+                .keyboardShortcut(.rightArrow, modifiers: [.command])
 
                 Button("Previous Folder") {
                     NotificationCenter.default.post(name: .previousFolderRequested, object: nil)
                 }
-                .keyboardShortcut("[", modifiers: [.command])
+                .keyboardShortcut(.leftArrow, modifiers: [.command])
             }
             CommandGroup(after: .windowArrangement) {
                 // No .keyboardShortcut here — ⌘↩ is handled by the local event

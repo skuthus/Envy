@@ -185,6 +185,13 @@ struct ContentView: View {
         .onChange(of: disabledDirectoryPathsRaw) { _, _ in
             switchNotesDirectories()
         }
+        .onChange(of: store.notes) { _, _ in
+            // Fires once a reload actually finishes (folder switch, note
+            // added/removed/renamed elsewhere, etc.) — falls back to the
+            // first note only if the current selection no longer exists in
+            // the fresh list, rather than assuming it doesn't.
+            reconcileSelection()
+        }
         .onChange(of: showWindowTitle) { _, _ in
             applyWindowTitleVisibility()
         }
@@ -247,6 +254,7 @@ struct ContentView: View {
                         .foregroundStyle(.secondary)
                 }
                 .padding(.bottom, 6)
+                .transition(.opacity)
             }
             ScrollViewReader { proxy in
                 ScrollView {
@@ -296,6 +304,7 @@ struct ContentView: View {
                     .padding(.bottom, 10)
             }
         }
+        .animation(.easeInOut(duration: 0.15), value: store.isLoading)
     }
 
     private var editorPane: some View {
@@ -691,7 +700,14 @@ struct ContentView: View {
         // folder if every configured folder happens to be disabled.
         store.setDirectories(enabledDirectories.isEmpty ? allDirectories : enabledDirectories)
         query = ""
-        selectedID = store.notes.first?.id
+        // Deliberately NOT touching selectedID here: setDirectories() reloads
+        // asynchronously, so store.notes at this exact point is still the
+        // *previous* folder's notes — picking .first from it here would grab
+        // a note that's about to disappear. Keeping the current selection
+        // (still valid until the reload actually replaces store.notes) means
+        // the editor keeps showing it right up until the swap, instead of a
+        // premature flash to "No Note Selected" and back. The onChange(of:
+        // store.notes) below reconciles it once the new notes actually land.
         focusedField = .search
     }
 
