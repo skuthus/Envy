@@ -123,6 +123,12 @@ struct ContentView: View {
                 } detail: {
                     editorPane
                 }
+                // NavigationSplitView auto-adds a leading sidebar-toggle
+                // button to the window's toolbar — an unbalanced leading
+                // item throws off the title's centering (which is computed
+                // relative to the space between leading/trailing toolbar
+                // items, not the raw window width).
+                .toolbar(removing: .sidebarToggle)
             case .vertical:
                 PersistentVSplitView(storageKey: "verticalSplitFraction", defaultTopFraction: 0.6) {
                     listPane
