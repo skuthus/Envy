@@ -82,6 +82,8 @@ enum WelcomeContent {
 
     Uncheck a folder in that list to hide its notes from the list without removing the folder itself. Check it again any time to bring them back.
 
+    **⌘]** and **⌘[** cycle through your folders one at a time, showing only that folder's notes. It's the same checkbox from Settings, just faster.
+
     ## Customizing the Look
 
     - Settings → Appearance lets you pick your own font and colors.

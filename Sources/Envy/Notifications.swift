@@ -11,4 +11,6 @@ extension Notification.Name {
     static let boldSelectionRequested = Notification.Name("boldSelectionRequested")
     static let italicSelectionRequested = Notification.Name("italicSelectionRequested")
     static let openSettingsRequested = Notification.Name("openSettingsRequested")
+    static let nextFolderRequested = Notification.Name("nextFolderRequested")
+    static let previousFolderRequested = Notification.Name("previousFolderRequested")
 }

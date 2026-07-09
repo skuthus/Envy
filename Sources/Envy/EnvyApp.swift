@@ -229,6 +229,17 @@ struct EnvyApp: App {
                 }
                 .keyboardShortcut("0", modifiers: [.command])
             }
+            CommandMenu("Folders") {
+                Button("Next Folder") {
+                    NotificationCenter.default.post(name: .nextFolderRequested, object: nil)
+                }
+                .keyboardShortcut("]", modifiers: [.command])
+
+                Button("Previous Folder") {
+                    NotificationCenter.default.post(name: .previousFolderRequested, object: nil)
+                }
+                .keyboardShortcut("[", modifiers: [.command])
+            }
             CommandGroup(after: .windowArrangement) {
                 // No .keyboardShortcut here — ⌘↩ is handled by the local event
                 // monitor in AppDelegate instead, since SwiftUI's menu-shortcut

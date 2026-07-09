@@ -106,7 +106,12 @@ struct ContentView: View {
         }
     }
 
-    var body: some View {
+    // Split out of `body` — the full modifier chain in one expression (this
+    // plus onAppear/onChange/alert below) got too long for the type checker
+    // ("unable to type-check this expression in reasonable time"). Giving
+    // this its own `some View`-typed property lets the compiler solve it
+    // independently instead of as one combinatorially large expression.
+    private var notificationHandledLayout: some View {
         Group {
             switch layoutMode {
             case .horizontal:
@@ -149,6 +154,12 @@ struct ContentView: View {
         .onReceive(NotificationCenter.default.publisher(for: .openSettingsRequested)) { _ in
             openSettings()
         }
+        .onReceive(NotificationCenter.default.publisher(for: .nextFolderRequested)) { _ in
+            cycleActiveFolder(by: 1)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .previousFolderRequested)) { _ in
+            cycleActiveFolder(by: -1)
+        }
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didEnterFullScreenNotification)) { note in
             guard (note.object as? NSWindow) === NSApp.windows.first else { return }
             isFullScreen = true
@@ -157,6 +168,10 @@ struct ContentView: View {
             guard (note.object as? NSWindow) === NSApp.windows.first else { return }
             isFullScreen = false
         }
+    }
+
+    var body: some View {
+        notificationHandledLayout
         .onAppear {
             isFullScreen = NSApp.windows.first?.styleMask.contains(.fullScreen) ?? false
             createWelcomeNoteIfNeeded()
@@ -678,6 +693,34 @@ struct ContentView: View {
         query = ""
         selectedID = store.notes.first?.id
         focusedField = .search
+    }
+
+    /// Reuses the enable/disable checkboxes from Settings rather than a
+    /// separate transient "view filter" — cycling makes exactly one folder
+    /// enabled at a time and disables the rest, persisting like any other
+    /// checkbox change. If more than one folder is currently enabled (or the
+    /// currently-sole-enabled one isn't found), starts the cycle from the
+    /// first folder rather than trying to guess "next" from an ambiguous
+    /// starting point.
+    private func cycleActiveFolder(by direction: Int) {
+        let allDirectories = NotesDirectoryPreference.decode(notesDirectoryPathsRaw)
+        guard allDirectories.count > 1 else { return }
+        let disabled = NotesDirectoryPreference.decodeDisabled(disabledDirectoryPathsRaw)
+        let enabledDirectories = allDirectories.filter { !disabled.contains($0.path) }
+        let currentIndex: Int? = enabledDirectories.count == 1
+            ? allDirectories.firstIndex(where: { $0.path == enabledDirectories[0].path })
+            : nil
+
+        let newIndex: Int
+        if let currentIndex {
+            newIndex = (currentIndex + direction + allDirectories.count) % allDirectories.count
+        } else {
+            newIndex = direction > 0 ? 0 : allDirectories.count - 1
+        }
+
+        let target = allDirectories[newIndex]
+        let newDisabled = Set(allDirectories.map(\.path)).subtracting([target.path])
+        disabledDirectoryPathsRaw = NotesDirectoryPreference.encodeDisabled(newDisabled)
     }
 
     /// Blanks the title text rather than toggling titleVisibility — with a
