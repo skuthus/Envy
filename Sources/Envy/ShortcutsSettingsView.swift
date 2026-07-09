@@ -70,6 +70,6 @@ struct ShortcutsSettingsView: View {
             .disabled(ShortcutPreferences.loadAll(from: customShortcutsRaw).isEmpty)
         }
         .padding(20)
-        .frame(width: 560)
+        .frame(width: 500)
     }
 }

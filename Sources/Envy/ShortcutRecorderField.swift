@@ -11,10 +11,10 @@ struct ShortcutRecorderField: View {
         Button {
             isRecording = true
         } label: {
-            Text(isRecording ? "Press shortcut…" : binding.verboseDisplayString)
+            Text(isRecording ? "Press shortcut…" : binding.spacedDisplayString)
                 .font(.system(.callout, design: .monospaced))
                 .foregroundStyle(isRecording ? .secondary : .primary)
-                .frame(minWidth: 170, alignment: .center)
+                .frame(minWidth: 110, alignment: .center)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 6)
                 .background(
