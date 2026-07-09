@@ -799,19 +799,16 @@ struct ContentView: View {
             cachedWindowTitle = window.title.isEmpty ? "Envy" : window.title
         }
         window.titleVisibility = .visible
-        // The base app name still honors "Show app title in window bar",
-        // but a folder scope shows regardless of that setting — it's live
-        // state the user asked to be able to see, not decoration, so hiding
-        // the app name shouldn't also hide it. Appended to the base title
-        // rather than shown separately in the list — the title bar already
-        // says "what app/context am I in" for every other Mac app, so this
-        // reads naturally there instead of costing a dedicated row of
-        // chrome above the note list.
-        let base = showWindowTitle ? (cachedWindowTitle ?? "Envy") : ""
+        // A folder scope shows regardless of "Show app title in window
+        // bar" — it's live state the user asked to be able to see, not
+        // decoration. Shown *alone*, not appended after "Envy —": AppKit
+        // centers the title string as a whole, so prefixing it with a
+        // fixed "Envy —" pushed the actually-meaningful part (the scope
+        // name) off to the right of true center instead of centering it.
         if let scopeLabel = folderScopeLabel {
-            window.title = base.isEmpty ? scopeLabel : "\(base) — \(scopeLabel)"
+            window.title = scopeLabel
         } else {
-            window.title = base
+            window.title = showWindowTitle ? (cachedWindowTitle ?? "Envy") : ""
         }
     }
 }

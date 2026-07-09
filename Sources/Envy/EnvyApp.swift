@@ -137,21 +137,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         window.titlebarAppearsTransparent = false
         window.isOpaque = true
         window.backgroundColor = .windowBackgroundColor
-        // With fullSizeContentView but no toolbar, AppKit doesn't reliably
-        // vertically center the title text within the title bar strip — a
-        // known quirk. An empty toolbar (no items, no visible bar of its
-        // own) is the standard fix; showsBaselineSeparator off keeps it
-        // from drawing a stray divider line under the title.
-        if window.toolbar == nil {
-            let toolbar = NSToolbar()
-            toolbar.showsBaselineSeparator = false
-            window.toolbar = toolbar
-        }
-        // A bare/empty toolbar can default to macOS's "compact" style,
-        // which shows the title left-aligned next to where toolbar items
-        // would sit instead of centered — .unified forces the traditional
-        // centered title regardless of that default.
-        window.toolbarStyle = .unified
     }
 
     @MainActor
