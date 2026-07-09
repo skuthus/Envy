@@ -147,6 +147,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             toolbar.showsBaselineSeparator = false
             window.toolbar = toolbar
         }
+        // A bare/empty toolbar can default to macOS's "compact" style,
+        // which shows the title left-aligned next to where toolbar items
+        // would sit instead of centered — .unified forces the traditional
+        // centered title regardless of that default.
+        window.toolbarStyle = .unified
     }
 
     @MainActor
