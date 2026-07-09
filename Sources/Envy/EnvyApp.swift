@@ -6,6 +6,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var centerWindowMonitor: Any?
     private weak var mainWindow: NSWindow?
     private var keyObserver: Any?
+    private var statusItem: NSStatusItem?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
@@ -54,6 +55,71 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
         hotKey.register()
+
+        setUpStatusItem()
+    }
+
+    private func setUpStatusItem() {
+        let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+        if let button = item.button {
+            // A template image (not the full-color app icon) so it inverts
+            // correctly in dark menu bars and while highlighted, matching
+            // every other menu bar icon.
+            button.image = NSImage(systemSymbolName: "eye.fill", accessibilityDescription: "Envy")
+            button.image?.isTemplate = true
+            button.target = self
+            button.action = #selector(statusItemClicked(_:))
+            button.sendAction(on: [.leftMouseUp, .rightMouseUp])
+        }
+        statusItem = item
+    }
+
+    /// Left-click summons/hides the app exactly like the global hotkey;
+    /// right-click shows a small menu instead — the two need to be told
+    /// apart manually since a status item's .button.action alone doesn't
+    /// distinguish which mouse button was used.
+    @MainActor
+    @objc private func statusItemClicked(_ sender: Any?) {
+        guard let event = NSApp.currentEvent else { return }
+        if event.type == .rightMouseUp {
+            showStatusMenu()
+        } else {
+            toggleWindow()
+        }
+    }
+
+    private func showStatusMenu() {
+        guard let button = statusItem?.button else { return }
+        let menu = NSMenu()
+
+        let newNote = NSMenuItem(title: "New Note", action: #selector(newNoteFromStatusMenu), keyEquivalent: "")
+        newNote.target = self
+        menu.addItem(newNote)
+
+        menu.addItem(.separator())
+
+        let settings = NSMenuItem(title: "Settings…", action: #selector(openSettingsFromStatusMenu), keyEquivalent: "")
+        settings.target = self
+        menu.addItem(settings)
+
+        menu.addItem(NSMenuItem(title: "Quit Envy", action: #selector(NSApplication.terminate(_:)), keyEquivalent: ""))
+
+        menu.popUp(positioning: nil, at: NSPoint(x: 0, y: button.bounds.maxY + 4), in: button)
+    }
+
+    @objc private func newNoteFromStatusMenu() {
+        activateAndShowWindow()
+        NotificationCenter.default.post(name: .newNoteRequested, object: nil)
+    }
+
+    @objc private func openSettingsFromStatusMenu() {
+        NSApp.activate(ignoringOtherApps: true)
+        NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+    }
+
+    private func activateAndShowWindow() {
+        NSApp.activate(ignoringOtherApps: true)
+        NSApp.windows.first?.makeKeyAndOrderFront(nil)
     }
 
     private static func applyWindowChrome(to window: NSWindow) {
