@@ -790,17 +790,17 @@ struct ContentView: View {
             cachedWindowTitle = window.title.isEmpty ? "Envy" : window.title
         }
         window.titleVisibility = .visible
-        guard showWindowTitle else {
-            window.title = ""
-            return
-        }
-        let base = cachedWindowTitle ?? "Envy"
-        // Appended rather than shown separately in the list — the title bar
-        // already says "what app/context am I in" for every other Mac app,
-        // so scoped-to-one-folder state reads naturally there instead of
-        // costing a dedicated row of chrome above the note list.
+        // The base app name still honors "Show app title in window bar",
+        // but a folder scope shows regardless of that setting — it's live
+        // state the user asked to be able to see, not decoration, so hiding
+        // the app name shouldn't also hide it. Appended to the base title
+        // rather than shown separately in the list — the title bar already
+        // says "what app/context am I in" for every other Mac app, so this
+        // reads naturally there instead of costing a dedicated row of
+        // chrome above the note list.
+        let base = showWindowTitle ? (cachedWindowTitle ?? "Envy") : ""
         if let folderName = singleActiveFolderName {
-            window.title = "\(base) — \(folderName)"
+            window.title = base.isEmpty ? folderName : "\(base) — \(folderName)"
         } else {
             window.title = base
         }
