@@ -56,7 +56,7 @@ struct ShortcutsSettingsView: View {
                         }
                         .disabled(!isCustomized(action))
                     }
-                    .padding(.vertical, 8)
+                    .padding(.vertical, 2)
                 }
             } footer: {
                 Text("Click a shortcut, then press the new key combination. Escape cancels.")
