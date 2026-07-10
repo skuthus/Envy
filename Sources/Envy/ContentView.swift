@@ -45,7 +45,7 @@ struct ContentView: View {
     @State private var showLoadingIndicator = false
     @State private var loadingIndicatorTask: Task<Void, Never>?
     @FocusState private var focusedField: FocusField?
-    @AppStorage("layoutMode") private var layoutModeRaw = LayoutMode.horizontal.rawValue
+    @AppStorage("layoutMode") private var layoutModeRaw = LayoutMode.vertical.rawValue
     @AppStorage("theme") private var theme = Theme()
     @AppStorage("backgroundBlurStrength") private var backgroundBlurStrengthRaw = BlurStrength.strong.rawValue
     @AppStorage("showNotePreview") private var showNotePreview = false
