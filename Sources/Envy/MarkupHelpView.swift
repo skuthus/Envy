@@ -43,6 +43,13 @@ struct MarkupHelpView: View {
             Entry(syntax: "<https://…>", description: "Autolink — bare URLs are also detected and made clickable automatically"),
             Entry(syntax: "[text](#heading)", description: "Jump to a heading in this note — click, no modifier needed. Matches the heading's text lowercased with spaces turned into hyphens."),
         ]),
+        Group(title: "Footnotes", entries: [
+            Entry(syntax: "text[^1]", description: "Footnote reference — click it to jump straight to its definition"),
+            Entry(syntax: "[^1]: explanation", description: "The footnote's definition. Can live anywhere in the note, though the bottom is the usual spot."),
+        ]),
+        Group(title: "Tags", entries: [
+            Entry(syntax: "#tag", description: "Tag — rendered bold with a tinted background. Search \"tag:name\" to find every note tagged that way, including partial matches."),
+        ]),
         Group(title: "Emoji", entries: [
             Entry(syntax: ":smile:", description: "Replaced with 😄 as soon as you finish typing it — the note just contains the emoji itself"),
         ]),

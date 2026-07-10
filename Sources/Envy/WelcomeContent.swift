@@ -9,7 +9,7 @@ enum WelcomeContent {
     static let welcomeBody = """
     # 👋 Welcome to Envy
 
-    Envy is a fast, flat-file note-taking app inspired by Notational Velocity. Type in one search box to find or create any note. Every note is a plain `.md` file, so you can edit it with anything else you like too.
+    Envy is a fast, flat-file note-taking app. Type in one search box to find or create any note. Every note is a plain `.md` file, so you can edit it with anything else you like too.
 
     This note was created automatically the first time you launched Envy. Delete it whenever you're ready. It won't come back.
 
