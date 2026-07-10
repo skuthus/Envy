@@ -5,7 +5,7 @@ import VelocityCore
 
 struct GeneralSettingsView: View {
     @AppStorage("showNotePreview") private var showNotePreview = false
-    @AppStorage("showDateModified") private var showDateModified = false
+    @AppStorage("showDateModified") private var showDateModified = true
     @AppStorage("dateDisplayStyle") private var dateDisplayStyleRaw = DateDisplayStyle.smart.rawValue
     @AppStorage("requireModifierForLinkClick") private var requireModifierForLinkClick = true
     @AppStorage("showEditorTitleHeader") private var showEditorTitleHeader = true

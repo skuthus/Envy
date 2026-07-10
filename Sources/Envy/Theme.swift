@@ -42,6 +42,8 @@ struct Theme: Equatable {
     var codeBackgroundColor: CodableColor = CodableColor(
         nsColor: NSColor.textBackgroundColor.blended(withFraction: 0.08, of: .labelColor) ?? .clear
     )
+    var tagColor: CodableColor = CodableColor(nsColor: .systemGreen)
+    var tagBackgroundColor: CodableColor = CodableColor(nsColor: NSColor.systemGreen.withAlphaComponent(0.15))
     var highlightColor: CodableColor = CodableColor(nsColor: NSColor.systemYellow.withAlphaComponent(0.4))
     var selectionColor: CodableColor = CodableColor(nsColor: NSColor.controlAccentColor.withAlphaComponent(0.25))
     var focusHighlightColor: CodableColor = Theme.defaultFocusHighlightColor
@@ -75,6 +77,10 @@ struct Theme: Equatable {
     var resolvedLinkColor: NSColor { isCustom ? linkColor.nsColor : .linkColor }
     var resolvedCodeBackgroundColor: NSColor {
         isCustom ? codeBackgroundColor.nsColor : (NSColor.textBackgroundColor.blended(withFraction: 0.08, of: .labelColor) ?? .clear)
+    }
+    var resolvedTagColor: NSColor { isCustom ? tagColor.nsColor : .systemGreen }
+    var resolvedTagBackgroundColor: NSColor {
+        isCustom ? tagBackgroundColor.nsColor : NSColor.systemGreen.withAlphaComponent(0.15)
     }
     // Not gated by isCustom — search highlighting is independent of the theme toggle.
     var resolvedHighlightColor: NSColor { highlightColor.nsColor }
@@ -110,11 +116,23 @@ extension Theme: RawRepresentable {
         var focusHighlightThickness: Double?
         var fileListBackgroundColor: CodableColor?
         var fileListTextColor: CodableColor?
+        var tagColor: CodableColor?
+        var tagBackgroundColor: CodableColor?
     }
 
     init?(rawValue: String) {
         guard let data = rawValue.data(using: .utf8),
               let payload = try? JSONDecoder().decode(Payload.self, from: data) else { return nil }
+        // Each ?? fallback broken out into its own local rather than inline
+        // in the self.init(...) call below — with this many defaulted
+        // parameters, the type-checker times out trying to solve it all as
+        // one expression.
+        let highlightColor: CodableColor = payload.highlightColor ?? CodableColor(nsColor: NSColor.systemYellow.withAlphaComponent(0.4))
+        let selectionColor: CodableColor = payload.selectionColor ?? Theme.defaultSelectionColor
+        let focusHighlightColor: CodableColor = payload.focusHighlightColor ?? Theme.defaultFocusHighlightColor
+        let focusHighlightThickness: Double = payload.focusHighlightThickness ?? Theme.defaultFocusHighlightThickness
+        let tagColor: CodableColor = payload.tagColor ?? CodableColor(nsColor: .systemGreen)
+        let tagBackgroundColor: CodableColor = payload.tagBackgroundColor ?? CodableColor(nsColor: NSColor.systemGreen.withAlphaComponent(0.15))
         self.init(
             isCustom: payload.isCustom,
             fontName: payload.fontName,
@@ -124,10 +142,12 @@ extension Theme: RawRepresentable {
             markerColor: payload.markerColor,
             linkColor: payload.linkColor,
             codeBackgroundColor: payload.codeBackgroundColor,
-            highlightColor: payload.highlightColor ?? CodableColor(nsColor: NSColor.systemYellow.withAlphaComponent(0.4)),
-            selectionColor: payload.selectionColor ?? Theme.defaultSelectionColor,
-            focusHighlightColor: payload.focusHighlightColor ?? Theme.defaultFocusHighlightColor,
-            focusHighlightThickness: payload.focusHighlightThickness ?? Theme.defaultFocusHighlightThickness,
+            tagColor: tagColor,
+            tagBackgroundColor: tagBackgroundColor,
+            highlightColor: highlightColor,
+            selectionColor: selectionColor,
+            focusHighlightColor: focusHighlightColor,
+            focusHighlightThickness: focusHighlightThickness,
             fileListBackgroundColor: payload.fileListBackgroundColor,
             fileListTextColor: payload.fileListTextColor
         )
@@ -148,7 +168,9 @@ extension Theme: RawRepresentable {
             focusHighlightColor: focusHighlightColor,
             focusHighlightThickness: focusHighlightThickness,
             fileListBackgroundColor: fileListBackgroundColor,
-            fileListTextColor: fileListTextColor
+            fileListTextColor: fileListTextColor,
+            tagColor: tagColor,
+            tagBackgroundColor: tagBackgroundColor
         )
         guard let data = try? JSONEncoder().encode(payload),
               let string = String(data: data, encoding: .utf8) else { return "{}" }

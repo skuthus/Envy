@@ -85,7 +85,7 @@ enum WelcomeContent {
 
     ## 🏷️ Tags
 
-    Write `#work` anywhere in a note's text and Envy picks it up as a tag automatically, no separate tagging step needed.
+    Write `#work` anywhere in a note's text and Envy picks it up as a tag automatically, no separate tagging step needed. Tags render bold with a tinted background so they stand out from the rest of the text, like this: #work
 
     Search `tag:work` to see every note tagged that way — it's not case-sensitive, and partial names work too: `tag:techn` matches `#technology`.
 

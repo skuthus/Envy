@@ -49,7 +49,7 @@ struct ContentView: View {
     @AppStorage("theme") private var theme = Theme()
     @AppStorage("backgroundBlurStrength") private var backgroundBlurStrengthRaw = BlurStrength.strong.rawValue
     @AppStorage("showNotePreview") private var showNotePreview = false
-    @AppStorage("showDateModified") private var showDateModified = false
+    @AppStorage("showDateModified") private var showDateModified = true
     @AppStorage("dateDisplayStyle") private var dateDisplayStyleRaw = DateDisplayStyle.smart.rawValue
     @AppStorage("requireModifierForLinkClick") private var requireModifierForLinkClick = true
     @AppStorage("showEditorTitleHeader") private var showEditorTitleHeader = true

@@ -24,6 +24,11 @@ enum MarkdownStyler {
     private static let bareURLRegex = try! NSRegularExpression(pattern: #"(?<![(<])\bhttps?://[^\s<>()]+\b"#)
     private static let footnoteDefinitionRegex = try! NSRegularExpression(pattern: #"^\[\^([^\]]+)\]:[ \t]*"#, options: [.anchorsMatchLines])
     private static let footnoteReferenceRegex = try! NSRegularExpression(pattern: #"\[\^([^\]]+)\]"#)
+    // Matches Note.tagRegex in VelocityCore exactly (duplicated rather than
+    // shared since that one is private to its target) — excludes markdown
+    // headings, which require a space after "#", and mid-word/"##" false
+    // positives.
+    private static let hashtagRegex = try! NSRegularExpression(pattern: #"(?<![\w#])#[A-Za-z0-9_-]+"#)
 
     static func wikiLinkFullRanges(in text: String) -> [NSRange] {
         let full = NSRange(location: 0, length: (text as NSString).length)
@@ -250,6 +255,9 @@ enum MarkdownStyler {
         let linkColor = theme.resolvedLinkColor
         let codeBackground = theme.resolvedCodeBackgroundColor
         let monoFont = NSFont.monospacedSystemFont(ofSize: baseFont.pointSize, weight: .regular)
+        let tagColor = theme.resolvedTagColor
+        let tagBackground = theme.resolvedTagBackgroundColor
+        let tagFont = NSFontManager.shared.convert(baseFont, toHaveTrait: .boldFontMask)
 
         textStorage.beginEditing()
         textStorage.setAttributes([.font: baseFont, .foregroundColor: theme.resolvedTextColor], range: full)
@@ -266,6 +274,17 @@ enum MarkdownStyler {
             textStorage.addAttribute(.font, value: monoFont, range: match.range)
             textStorage.addAttribute(.backgroundColor, value: codeBackground, range: match.range)
             claimed.append(match.range)
+        }
+
+        // Bold + a tinted background chip, same technique as inline code
+        // spans above — deliberately not added to `claimed`, since nothing
+        // else in this function matches bare "#word" without a following
+        // space, so there's nothing for a hashtag to conflict with.
+        for match in hashtagRegex.matches(in: text, range: full) {
+            guard !isClaimed(match.range) else { continue }
+            textStorage.addAttribute(.font, value: tagFont, range: match.range)
+            textStorage.addAttribute(.foregroundColor, value: tagColor, range: match.range)
+            textStorage.addAttribute(.backgroundColor, value: tagBackground, range: match.range)
         }
 
         for match in codeRegex.matches(in: text, range: full) {

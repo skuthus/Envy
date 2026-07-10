@@ -168,6 +168,10 @@ struct ThemeSettingsView: View {
                         .disabled(!theme.isCustom)
                     colorSwatch("Code Background", selection: colorBinding(\.codeBackgroundColor))
                         .disabled(!theme.isCustom)
+                    colorSwatch("Tags", selection: colorBinding(\.tagColor))
+                        .disabled(!theme.isCustom)
+                    colorSwatch("Tag Background", selection: colorBinding(\.tagBackgroundColor))
+                        .disabled(!theme.isCustom)
                     colorSwatch("Search Highlight", selection: colorBinding(\.highlightColor))
                     colorSwatch(
                         "File List Highlight Color",
@@ -209,6 +213,8 @@ struct ThemeSettingsView: View {
         let markerColor = Color(nsColor: theme.resolvedMarkerColor)
         let linkColor = Color(nsColor: theme.resolvedLinkColor)
         let codeBackground = Color(nsColor: theme.resolvedCodeBackgroundColor)
+        let tagColor = Color(nsColor: theme.resolvedTagColor)
+        let tagBackground = Color(nsColor: theme.resolvedTagBackgroundColor)
 
         return VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 0) {
@@ -240,6 +246,14 @@ struct ThemeSettingsView: View {
                 Text("[[").foregroundStyle(markerColor)
                 Text("wiki link").underline().foregroundStyle(linkColor)
                 Text("]]").foregroundStyle(markerColor)
+            }
+            .font(font)
+
+            HStack(spacing: 0) {
+                Text("A ").foregroundStyle(textColor)
+                Text("#tag").bold().foregroundStyle(tagColor)
+                    .padding(.horizontal, 4)
+                    .background(tagBackground)
             }
             .font(font)
         }
