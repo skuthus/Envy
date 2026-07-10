@@ -18,6 +18,13 @@ ZIP_PATH="$DIST_DIR/Envy-$VERSION-macOS.zip"
 echo "==> Building Envy.app..."
 "$ROOT_DIR/Scripts/build-app.sh"
 
+if security find-identity -v -p codesigning | grep -q "Developer ID Application"; then
+  "$ROOT_DIR/Scripts/notarize.sh"
+else
+  echo "==> No Developer ID certificate found, skipping notarization."
+  echo "    (This zip will trigger Gatekeeper's 'unidentified developer' warning.)"
+fi
+
 echo "==> Zipping..."
 rm -f "$ZIP_PATH"
 ditto -c -k --sequesterRsrc --keepParent "$APP_BUNDLE" "$ZIP_PATH"

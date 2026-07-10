@@ -45,8 +45,16 @@ cp "$BINARY_PATH" "$APP_BUNDLE/Contents/MacOS/$APP_NAME"
 cp "$ROOT_DIR/build-resources/AppIcon.icns" "$APP_BUNDLE/Contents/Resources/AppIcon.icns"
 cp "$ROOT_DIR/Scripts/Info.plist" "$APP_BUNDLE/Contents/Info.plist"
 
-echo "==> Ad-hoc signing..."
-codesign --force --deep --sign - "$APP_BUNDLE"
+echo "==> Signing with Developer ID..."
+SIGNING_IDENTITY="$(security find-identity -v -p codesigning | grep "Developer ID Application" | head -1 | sed -E 's/.*"(.*)"/\1/')"
+if [ -z "$SIGNING_IDENTITY" ]; then
+  echo "No Developer ID Application certificate found — falling back to ad-hoc signing."
+  echo "(Run this after installing your Developer ID cert to get a distributable build.)"
+  codesign --force --deep --sign - "$APP_BUNDLE"
+else
+  echo "    Using: $SIGNING_IDENTITY"
+  codesign --force --deep --options runtime --timestamp --sign "$SIGNING_IDENTITY" "$APP_BUNDLE"
+fi
 
 echo "==> Done: $APP_BUNDLE"
 echo ""
