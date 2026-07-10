@@ -360,6 +360,17 @@ struct ContentView: View {
         }
     }
 
+    /// A fixed step lighter than the header's own opaque background,
+    /// blending toward white rather than picking an absolute light/dark
+    /// color — the same fractional blend reads as "a bit lighter" correctly
+    /// in both appearances, rather than needing a separate light-mode and
+    /// dark-mode constant.
+    private var searchFieldBackground: Color {
+        let base = NSColor.windowBackgroundColor
+        let lightened = base.blended(withFraction: 0.12, of: .white) ?? base
+        return Color(nsColor: lightened)
+    }
+
     private var listPane: some View {
         VStack(spacing: 0) {
             VStack(spacing: 0) {
@@ -644,6 +655,13 @@ struct ContentView: View {
                 .padding(.horizontal, 10)
                 .padding(.vertical, 6)
         }
+        // A plain .glassEffect alone reads as barely-there against the
+        // search/sort header's own opaque .windowBackgroundColor (see
+        // listPane below) — this fill sits behind the glass so the search
+        // field is reliably a touch lighter than its surroundings no matter
+        // the appearance, blur setting, or file-list color customization,
+        // none of which reach this deliberately opaque header area anyway.
+        .background(Capsule().fill(searchFieldBackground))
         .glassEffect(.regular, in: Capsule())
         .focusHighlight(
             isFocused: focusedField == .search,
