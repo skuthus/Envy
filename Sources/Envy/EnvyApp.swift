@@ -116,7 +116,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     private func hideIfAutoHideEnabled() {
         guard UserDefaults.standard.bool(forKey: "hideOnFocusLoss") else { return }
-        NSApp.hide(nil)
+        // orderOut on the window itself, not NSApp.hide(nil) — the latter is
+        // a full "Hide Application," which ties into Mission Control's
+        // per-Space "last active app" bookkeeping. With multiple displays
+        // each running their own Space, clicking back into the Space/display
+        // this window used to occupy could silently un-hide it again, since
+        // macOS treats that as restoring the Space's expected active app.
+        // orderOut only affects this window, sidestepping that entirely —
+        // the same reasoning windowShouldClose below already relies on.
+        mainWindow?.orderOut(nil)
     }
 
     private func applySummonHotKey() {
@@ -210,8 +218,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     @MainActor
     private func toggleWindow() {
         guard let window = NSApp.windows.first else { return }
-        if NSApp.isActive && window.isKeyWindow {
-            NSApp.hide(nil)
+        // window.isVisible rather than NSApp.isActive && window.isKeyWindow —
+        // this only needs to know whether the window itself is currently on
+        // screen, independent of the app's broader activation state, which
+        // matters now that hiding uses orderOut instead of NSApp.hide(nil)
+        // (see hideIfAutoHideEnabled for why).
+        if window.isVisible {
+            window.orderOut(nil)
         } else {
             NSApp.activate(ignoringOtherApps: true)
             window.makeKeyAndOrderFront(nil)
