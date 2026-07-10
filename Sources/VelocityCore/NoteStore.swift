@@ -477,6 +477,20 @@ public final class NoteStore: ObservableObject {
         return components
     }
 
+    // MARK: - Pinning
+
+    /// Moves every note whose id is in `pinnedIDs` to the front, preserving
+    /// relative order otherwise. Applied as the last step after search
+    /// filtering and column sorting, so pinned notes stay on top regardless
+    /// of sort — but a pinned note that the search doesn't match is still
+    /// excluded, since this only ever reorders whatever's already in `notes`.
+    public static func applyPinning(_ notes: [Note], pinnedIDs: Set<String>) -> [Note] {
+        guard !pinnedIDs.isEmpty else { return notes }
+        let pinned = notes.filter { pinnedIDs.contains($0.id) }
+        let unpinned = notes.filter { !pinnedIDs.contains($0.id) }
+        return pinned + unpinned
+    }
+
     // MARK: - Filenames
 
     private static func uniqueFilename(for title: String, in directory: URL) -> String {

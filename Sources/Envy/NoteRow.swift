@@ -8,10 +8,16 @@ struct NoteRow: View {
     var dateDisplayStyle: DateDisplayStyle
     var textColor: Color?
     var bold: Bool = false
+    var isPinned: Bool = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
             HStack {
+                if isPinned {
+                    Image(systemName: "pin.fill")
+                        .font(.caption2)
+                        .foregroundStyle(textColor ?? Color.secondary)
+                }
                 Text(note.title)
                     .font(.body)
                     .lineLimit(1)

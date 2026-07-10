@@ -68,6 +68,9 @@ struct ContentView: View {
     @AppStorage("plainTextMode") private var plainTextMode = false
     @AppStorage("fadeFocusHighlight") private var fadeFocusHighlight = false
     @AppStorage("boldFileListText") private var boldFileListText = false
+    // Newline-joined note ids (paths), matching the encoding NotesDirectoryPreference
+    // already uses for a list of paths in one AppStorage string.
+    @AppStorage("pinnedNotePaths") private var pinnedNotePathsRaw = ""
 
     private var layoutMode: LayoutMode {
         LayoutMode(rawValue: layoutModeRaw) ?? .horizontal
@@ -94,7 +97,35 @@ struct ContentView: View {
     }
 
     private var filteredNotes: [Note] {
-        sortedNotes(store.filtered(query: query))
+        NoteStore.applyPinning(sortedNotes(store.filtered(query: query)), pinnedIDs: pinnedNoteIDs)
+    }
+
+    private var pinnedNoteIDs: Set<String> {
+        Set(pinnedNotePathsRaw.split(separator: "\n").map(String.init))
+    }
+
+    private func isPinned(_ note: Note) -> Bool {
+        pinnedNoteIDs.contains(note.id)
+    }
+
+    private func togglePin(_ note: Note) {
+        var ids = pinnedNoteIDs
+        if ids.contains(note.id) {
+            ids.remove(note.id)
+        } else {
+            ids.insert(note.id)
+        }
+        pinnedNotePathsRaw = ids.joined(separator: "\n")
+    }
+
+    /// Called wherever a note's id changes out from under it (rename, move)
+    /// so a pin doesn't silently vanish just because the underlying path did.
+    private func carryPinnedStatus(from oldID: String, to newID: String) {
+        guard oldID != newID, pinnedNoteIDs.contains(oldID) else { return }
+        var ids = pinnedNoteIDs
+        ids.remove(oldID)
+        ids.insert(newID)
+        pinnedNotePathsRaw = ids.joined(separator: "\n")
     }
 
     /// True if any whitespace-separated word in the query is a recognized
@@ -203,6 +234,10 @@ struct ContentView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .restoreDeletedNoteRequested)) { _ in
             restoreLastDeleted()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .togglePinRequested)) { _ in
+            guard let selectedID, let note = store.notes.first(where: { $0.id == selectedID }) else { return }
+            togglePin(note)
         }
         .onReceive(NotificationCenter.default.publisher(for: .toggleLayoutRequested)) { _ in
             layoutModeRaw = (layoutMode == .horizontal ? LayoutMode.vertical : .horizontal).rawValue
@@ -355,7 +390,7 @@ struct ContentView: View {
                 ScrollView {
                     LazyVStack(spacing: 0) {
                         ForEach(filteredNotes) { note in
-                            NoteRow(note: note, showPreview: showNotePreview, showDateModified: showDateModified, dateDisplayStyle: dateDisplayStyle, textColor: theme.fileListTextColor?.color, bold: boldFileListText)
+                            NoteRow(note: note, showPreview: showNotePreview, showDateModified: showDateModified, dateDisplayStyle: dateDisplayStyle, textColor: theme.fileListTextColor?.color, bold: boldFileListText, isPinned: isPinned(note))
                                 .padding(.vertical, listDensity.rowVerticalPadding)
                                 .padding(.horizontal, 8)
                                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -807,6 +842,9 @@ struct ContentView: View {
 
     @ViewBuilder
     private func singleContextMenuItems(for note: Note) -> some View {
+        Button(isPinned(note) ? "Unpin Note" : "Pin Note") {
+            togglePin(note)
+        }
         Button("Rename") {
             renameText = note.title
             renamingNote = note
@@ -862,7 +900,8 @@ struct ContentView: View {
     /// selection can't carry over meaningfully — just clear it.
     private func bulkMove(to directory: URL) {
         for note in selectedNotes() {
-            store.move(note, to: directory)
+            let moved = store.move(note, to: directory)
+            carryPinnedStatus(from: note.id, to: moved.id)
         }
         multiSelectedIDs.removeAll()
         selectedID = nil
@@ -889,6 +928,7 @@ struct ContentView: View {
 
     private func moveNote(_ note: Note, to directory: URL) {
         let moved = store.move(note, to: directory)
+        carryPinnedStatus(from: note.id, to: moved.id)
         if selectedID == note.id {
             selectedID = moved.id
         }
@@ -896,6 +936,7 @@ struct ContentView: View {
 
     private func renameNote(_ note: Note, to newTitle: String) {
         let renamed = store.rename(note, to: newTitle)
+        carryPinnedStatus(from: note.id, to: renamed.id)
         if selectedID == note.id {
             selectedID = renamed.id
         }

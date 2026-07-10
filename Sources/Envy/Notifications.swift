@@ -17,4 +17,5 @@ extension Notification.Name {
     static let restoreDeletedNoteRequested = Notification.Name("restoreDeletedNoteRequested")
     static let focusNextAreaRequested = Notification.Name("focusNextAreaRequested")
     static let focusPreviousAreaRequested = Notification.Name("focusPreviousAreaRequested")
+    static let togglePinRequested = Notification.Name("togglePinRequested")
 }

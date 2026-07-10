@@ -97,6 +97,7 @@ enum ShortcutAction: String, CaseIterable, Identifiable {
     case restoreDeletedNote
     case focusNextArea
     case focusPreviousArea
+    case togglePin
 
     var id: String { rawValue }
 
@@ -118,6 +119,7 @@ enum ShortcutAction: String, CaseIterable, Identifiable {
         case .restoreDeletedNote: "Restore Deleted Note"
         case .focusNextArea: "Focus Next Area (Search / List / Editor)"
         case .focusPreviousArea: "Focus Previous Area (Search / List / Editor)"
+        case .togglePin: "Pin/Unpin Note"
         }
     }
 
@@ -158,6 +160,8 @@ enum ShortcutAction: String, CaseIterable, Identifiable {
             ShortcutBinding(character: String(KeyEquivalent.downArrow.character), keyCode: kVK_DownArrow, modifiers: SwiftUI.EventModifiers.option.rawValue)
         case .focusPreviousArea:
             ShortcutBinding(character: String(KeyEquivalent.upArrow.character), keyCode: kVK_UpArrow, modifiers: SwiftUI.EventModifiers.option.rawValue)
+        case .togglePin:
+            ShortcutBinding(character: "p", keyCode: kVK_ANSI_P, modifiers: SwiftUI.EventModifiers([.command, .option]).rawValue)
         }
     }
 }

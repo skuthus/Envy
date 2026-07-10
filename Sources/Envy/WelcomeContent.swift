@@ -18,6 +18,7 @@ enum WelcomeContent {
     - Type in the search box to filter your notes as you type.
     - Search several words at once, like `dog bone leash`, and Envy finds notes containing all of them anywhere in the text, even scattered across different lines.
     - Click **Name** or **Date** above the list to sort by it. Click the same one again to reverse the direction.
+    - Right-click a note (or press **⌥⌘P**) to pin it. Pinned notes stay at the top of the list regardless of sort, marked with a small pin icon. A search that doesn't match a pinned note still hides it, same as any other note.
     - Press **↩** to open the highlighted note. If nothing matches, pressing **↩** creates a new note with that title instead.
     - Use **↑** and **↓** to move the highlighted note without leaving the search box.
     - **⌥↓** and **⌥↑** move keyboard focus between the search box, the note list, and the editor.

@@ -365,6 +365,29 @@ struct SelfCheck {
             check("external in-place edit is picked up without manual reload", picked)
         }
 
+        // applyPinningMovesOnlyPinnedNotesToFrontPreservingOrder
+        do {
+            let a = Note(id: "a", url: URL(fileURLWithPath: "/a.md"), content: "", modifiedDate: Date())
+            let b = Note(id: "b", url: URL(fileURLWithPath: "/b.md"), content: "", modifiedDate: Date())
+            let c = Note(id: "c", url: URL(fileURLWithPath: "/c.md"), content: "", modifiedDate: Date())
+            let d = Note(id: "d", url: URL(fileURLWithPath: "/d.md"), content: "", modifiedDate: Date())
+
+            let noPins = NoteStore.applyPinning([a, b, c, d], pinnedIDs: [])
+            check("no pinned ids leaves order untouched", noPins.map(\.id) == ["a", "b", "c", "d"])
+
+            let onePinned = NoteStore.applyPinning([a, b, c, d], pinnedIDs: ["c"])
+            check("a single pinned note moves to the front", onePinned.map(\.id) == ["c", "a", "b", "d"])
+
+            let twoPinned = NoteStore.applyPinning([a, b, c, d], pinnedIDs: ["d", "b"])
+            check("multiple pinned notes keep their relative order at the front", twoPinned.map(\.id) == ["b", "d", "a", "c"])
+
+            // A pinned note absent from the input (already filtered out by a
+            // search that doesn't match it) simply has nothing to move —
+            // pinning never reintroduces a note the search excluded.
+            let filteredOut = NoteStore.applyPinning([a, d], pinnedIDs: ["c", "d"])
+            check("a pinned note excluded by search filtering stays excluded", filteredOut.map(\.id) == ["d", "a"])
+        }
+
         print("")
         if failures.isEmpty {
             print("All checks passed.")
