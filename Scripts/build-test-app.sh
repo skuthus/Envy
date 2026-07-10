@@ -1,22 +1,25 @@
 #!/bin/bash
-# Builds Envy.app — a real, double-clickable macOS app bundle — from the
-# SwiftPM package. Re-run this any time you want to rebuild after code changes.
+# Builds EnvyTest.app — a separately-named, separately-bundle-ID copy of Envy
+# for local testing, so it can run side by side with the real installed
+# Envy.app without colliding in /Applications, in `open -a`/Launch Services
+# name resolution, or in UserDefaults (com.skylerschoos.envy.test is a
+# distinct preferences domain, so pointing EnvyTest at a scratch notes folder
+# never touches the real app's real folder configuration).
 #
-# Usage: Scripts/build-app.sh
+# Usage: Scripts/build-test-app.sh
 
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
-APP_NAME="Envy"
-BUNDLE_ID="com.skylerschoos.envy"
+APP_NAME="EnvyTest"
 DIST_DIR="$ROOT_DIR/dist"
 APP_BUNDLE="$DIST_DIR/$APP_NAME.app"
 
 echo "==> Building release binary..."
-swift build -c release --product "$APP_NAME"
-BINARY_PATH="$(swift build -c release --product "$APP_NAME" --show-bin-path)/$APP_NAME"
+swift build -c release --product "Envy"
+BINARY_PATH="$(swift build -c release --product "Envy" --show-bin-path)/Envy"
 
 echo "==> Regenerating app icon..."
 swift build -c release --product IconGenerator
@@ -43,7 +46,7 @@ rm -rf "$APP_BUNDLE"
 mkdir -p "$APP_BUNDLE/Contents/MacOS" "$APP_BUNDLE/Contents/Resources"
 cp "$BINARY_PATH" "$APP_BUNDLE/Contents/MacOS/$APP_NAME"
 cp "$ROOT_DIR/build-resources/AppIcon.icns" "$APP_BUNDLE/Contents/Resources/AppIcon.icns"
-cp "$ROOT_DIR/Scripts/Info.plist" "$APP_BUNDLE/Contents/Info.plist"
+cp "$ROOT_DIR/Scripts/Info-Test.plist" "$APP_BUNDLE/Contents/Info.plist"
 
 echo "==> Signing with Developer ID..."
 SIGNING_IDENTITY="$(security find-identity -v -p codesigning | grep "Developer ID Application" | head -1 | sed -E 's/.*"(.*)"/\1/')"
@@ -56,10 +59,7 @@ SIGNING_IDENTITY="$(security find-identity -v -p codesigning | grep "Developer I
 for attempt in 1 2 3; do
   xattr -cr "$APP_BUNDLE"
   if [ -z "$SIGNING_IDENTITY" ]; then
-    if [ "$attempt" = 1 ]; then
-      echo "No Developer ID Application certificate found — falling back to ad-hoc signing."
-      echo "(Run this after installing your Developer ID cert to get a distributable build.)"
-    fi
+    if [ "$attempt" = 1 ]; then echo "No Developer ID Application certificate found — falling back to ad-hoc signing."; fi
     codesign --force --deep --sign - "$APP_BUNDLE" && break
   else
     if [ "$attempt" = 1 ]; then echo "    Using: $SIGNING_IDENTITY"; fi
@@ -73,7 +73,13 @@ for attempt in 1 2 3; do
   sleep 1
 done
 
-echo "==> Done: $APP_BUNDLE"
+echo "==> Installing to /Applications/$APP_NAME.app..."
+pkill -x "$APP_NAME" 2>/dev/null || true
+sleep 0.5
+rm -rf "/Applications/$APP_NAME.app"
+cp -R "$APP_BUNDLE" /Applications/
+
+echo "==> Done: /Applications/$APP_NAME.app"
 echo ""
-echo "Run it locally:        open \"$APP_BUNDLE\""
-echo "Install to Applications: cp -R \"$APP_BUNDLE\" /Applications/"
+echo "Run it:    open -a $APP_NAME"
+echo "Its own prefs domain: com.skylerschoos.envy.test (safe to repoint at a scratch folder)"

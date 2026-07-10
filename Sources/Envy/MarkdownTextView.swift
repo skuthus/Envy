@@ -69,6 +69,19 @@ struct MarkdownTextView: NSViewRepresentable {
     var searchQuery: String
     var fontZoom: CGFloat = 0
     var plainTextMode: Bool = false
+    /// Bumped by NoteEditorView only when `text` changed because the note was
+    /// edited externally (not from this view's own typing), since `text` is
+    /// otherwise treated as a lagging echo — see the note on updateNSView.
+    var externalReloadToken: Int = 0
+    /// The range an external edit actually changed, to briefly flash once
+    /// highlightTrigger fires. Read only at the moment the trigger changes,
+    /// so it doesn't matter that NoteEditorView clears it back to nil shortly
+    /// after — see the note there for why.
+    var highlightRange: NSRange?
+    /// Bumped by NoteEditorView once it's confirmed the user can actually see
+    /// the app (immediately if already active, or on the next
+    /// didBecomeActiveNotification otherwise).
+    var highlightTrigger: Int = 0
 
     func makeCoordinator() -> Coordinator {
         Coordinator(self)
@@ -128,6 +141,8 @@ struct MarkdownTextView: NSViewRepresentable {
         context.coordinator.lastSearchQuery = searchQuery
         context.coordinator.lastFontZoom = fontZoom
         context.coordinator.lastPlainTextMode = plainTextMode
+        context.coordinator.lastExternalReloadToken = externalReloadToken
+        context.coordinator.lastHighlightTrigger = highlightTrigger
         return scrollView
     }
 
@@ -151,7 +166,23 @@ struct MarkdownTextView: NSViewRepresentable {
 
         applyTheme(theme, to: textView, scrollView: scrollView)
 
-        if context.coordinator.lastTheme != theme
+        // An external change (another app editing this note's file, then
+        // NoteEditorView pulling the fresh content in) — replace the text
+        // view's content directly rather than waiting for the user to switch
+        // notes and back. Guarded by the token rather than a plain `text !=
+        // textView.string` check, since that comparison is exactly what the
+        // note atop this function warns against reintroducing.
+        var justReplacedText = false
+        if context.coordinator.lastExternalReloadToken != externalReloadToken {
+            context.coordinator.lastExternalReloadToken = externalReloadToken
+            let cursor = textView.selectedRange()
+            textView.string = text
+            let clampedLocation = min(cursor.location, (text as NSString).length)
+            textView.setSelectedRange(NSRange(location: clampedLocation, length: 0))
+            justReplacedText = true
+        }
+
+        if justReplacedText || context.coordinator.lastTheme != theme
             || context.coordinator.lastSearchQuery != searchQuery
             || context.coordinator.lastFontZoom != fontZoom
             || context.coordinator.lastPlainTextMode != plainTextMode {
@@ -174,6 +205,15 @@ struct MarkdownTextView: NSViewRepresentable {
             context.coordinator.lastSearchQuery = searchQuery
             context.coordinator.lastFontZoom = fontZoom
             context.coordinator.lastPlainTextMode = plainTextMode
+        }
+
+        if context.coordinator.lastHighlightTrigger != highlightTrigger {
+            context.coordinator.lastHighlightTrigger = highlightTrigger
+            if let highlightRange, let textStorage = textView.textStorage,
+               highlightRange.length > 0,
+               highlightRange.location + highlightRange.length <= textStorage.length {
+                context.coordinator.flashHighlight(range: highlightRange, in: textView)
+            }
         }
 
         // Focus is handled by .focusable() + .focused(_:equals: .editor) on
@@ -213,6 +253,7 @@ struct MarkdownTextView: NSViewRepresentable {
         ]
     }
 
+    @MainActor
     final class Coordinator: NSObject, NSTextViewDelegate {
         var parent: MarkdownTextView
         weak var textView: HoverAwareTextView?
@@ -221,12 +262,19 @@ struct MarkdownTextView: NSViewRepresentable {
         var lastSearchQuery: String = ""
         var lastFontZoom: CGFloat = 0
         var lastPlainTextMode: Bool = false
+        var lastExternalReloadToken: Int = 0
+        var lastHighlightTrigger: Int = 0
+        private var highlightFadeTask: Task<Void, Never>?
 
         private var cachedText: String = ""
         private var cachedWikiLinkRanges: [NSRange] = []
         private var isHandlingTextChange = false
-        private var boldObserver: NSObjectProtocol?
-        private var italicObserver: NSObjectProtocol?
+        // NSObjectProtocol isn't Sendable, which the compiler otherwise flags
+        // on the nonisolated deinit below (deinit is always nonisolated, even
+        // for a @MainActor class) — safe in practice, matching the same
+        // pattern/reasoning as NoteStore's eventStream property.
+        nonisolated(unsafe) private var boldObserver: NSObjectProtocol?
+        nonisolated(unsafe) private var italicObserver: NSObjectProtocol?
 
         init(_ parent: MarkdownTextView) {
             self.parent = parent
@@ -430,6 +478,38 @@ struct MarkdownTextView: NSViewRepresentable {
                 cursorSelection: MarkdownTextView.currentSelection(of: textView),
                 fontSizeAdjustment: parent.fontZoom
             )
+        }
+
+        /// Briefly flags an externally-changed range so the user notices it
+        /// without having to spot the diff themselves. Green, distinct from
+        /// the (yellow-ish) search-match highlight, so the two don't read as
+        /// the same kind of thing. Steps the alpha down manually rather than
+        /// a single delayed cut — text attributes aren't Core Animation
+        /// properties, so there's nothing to animate implicitly — then
+        /// reverts with a normal restyle pass rather than just stripping the
+        /// attribute, so a flash landing over (say) a code span's own
+        /// background doesn't leave it wrong afterward.
+        func flashHighlight(range: NSRange, in textView: NSTextView) {
+            guard let textStorage = textView.textStorage else { return }
+            highlightFadeTask?.cancel()
+            let peakAlpha = 0.4
+            textStorage.addAttribute(.backgroundColor, value: NSColor.systemGreen.withAlphaComponent(peakAlpha), range: range)
+            highlightFadeTask = Task { [weak self, weak textView] in
+                try? await Task.sleep(for: .milliseconds(120))
+                guard !Task.isCancelled, let textView else { return }
+
+                let steps = 6
+                for step in 1...steps {
+                    guard !Task.isCancelled, let textStorage = textView.textStorage,
+                          range.location + range.length <= textStorage.length else { break }
+                    let alpha = peakAlpha * (1 - Double(step) / Double(steps))
+                    textStorage.addAttribute(.backgroundColor, value: NSColor.systemGreen.withAlphaComponent(alpha), range: range)
+                    try? await Task.sleep(for: .milliseconds(35))
+                }
+
+                guard !Task.isCancelled, let self else { return }
+                self.restyle(textView)
+            }
         }
 
         func textView(_ textView: NSTextView, clickedOnLink link: Any, at charIndex: Int) -> Bool {

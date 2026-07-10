@@ -1,5 +1,6 @@
 import Foundation
 import Combine
+import CoreServices
 
 @MainActor
 public final class NoteStore: ObservableObject {
@@ -7,24 +8,34 @@ public final class NoteStore: ObservableObject {
     @Published public private(set) var noteDirectories: [URL] = []
     @Published public private(set) var isLoading = false
 
-    private var monitors: [URL: (source: DispatchSourceFileSystemObject, fd: CInt)] = [:]
+    // FSEventStreamRef (an OpaquePointer) isn't Sendable, which the compiler
+    // otherwise flags on the nonisolated deinit below — safe in practice since
+    // every mutation happens on the main actor, and deinit only runs once
+    // nothing else can be concurrently touching it.
+    nonisolated(unsafe) private var eventStream: FSEventStreamRef?
     private var suppressReloadUntil: Date = .distantPast
     private var reloadGeneration = 0
 
     public init(directories: [URL]? = nil) {
         let dirs = (directories?.isEmpty == false) ? directories! : [Self.defaultDirectory()]
-        self.noteDirectories = dirs
         for dir in dirs {
             try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         }
+        // Resolved once here (after creation, so resolution has something to
+        // resolve against) so every note's id/url and the FSEvents watch below
+        // consistently agree on one path form — see the note on
+        // startWatchingAll for why a mismatch there is a real problem, not
+        // just a cosmetic one.
+        self.noteDirectories = dirs.map { $0.resolvingSymlinksInPath() }
         reload()
         startWatchingAll()
     }
 
     deinit {
-        for (_, monitor) in monitors {
-            monitor.source.cancel()
-            close(monitor.fd)
+        if let eventStream {
+            FSEventStreamStop(eventStream)
+            FSEventStreamInvalidate(eventStream)
+            FSEventStreamRelease(eventStream)
         }
     }
 
@@ -43,12 +54,13 @@ public final class NoteStore: ObservableObject {
     /// have to be torn down just to look at a different set of notes.
     public func setDirectories(_ directories: [URL]) {
         let normalized = directories.isEmpty ? [Self.defaultDirectory()] : directories
-        guard normalized != noteDirectories else { return }
-        stopWatchingAll()
-        noteDirectories = normalized
         for dir in normalized {
             try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         }
+        let resolved = normalized.map { $0.resolvingSymlinksInPath() }
+        guard resolved != noteDirectories else { return }
+        stopWatchingAll()
+        noteDirectories = resolved
         reload()
         startWatchingAll()
     }
@@ -103,32 +115,60 @@ public final class NoteStore: ObservableObject {
 
     // MARK: - Watching for external changes
 
+    /// Uses FSEvents (not a plain DispatchSourceFileSystemObject watching each
+    /// directory's own file descriptor) specifically because the latter only
+    /// reports a directory's *entry list* changing — a file being added,
+    /// removed, or renamed within it — and stays silent when an existing
+    /// file's content is overwritten in place (confirmed with a standalone
+    /// test: a plain `open`+`write`+`close` from another process produced no
+    /// event at all, while a write-to-temp-then-rename-over-original did).
+    /// Since another app editing one of these notes in place is exactly the
+    /// case this needs to catch, FSEvents' kFSEventStreamCreateFlagFileEvents
+    /// mode is required — it reports individual file modifications, not just
+    /// directory-entry churn.
     private func startWatchingAll() {
-        for directory in noteDirectories {
-            let fd = open(directory.path, O_EVTONLY)
-            guard fd >= 0 else { continue }
+        guard !noteDirectories.isEmpty else { return }
+        // noteDirectories is already resolved (see init/setDirectories) — both
+        // so FSEvents watches the real underlying path (a path that traverses
+        // a symlink, like anything under /tmp or /var, silently fails to
+        // watch correctly otherwise) and so every note's id/url agrees with
+        // what a later reload() reports for the same file, symlink or not.
+        let paths = noteDirectories.map(\.path) as CFArray
+        var context = FSEventStreamContext(
+            version: 0,
+            info: Unmanaged.passUnretained(self).toOpaque(),
+            retain: nil,
+            release: nil,
+            copyDescription: nil
+        )
+        guard let stream = FSEventStreamCreate(
+            kCFAllocatorDefault,
+            { _, info, _, _, _, _ in
+                guard let info else { return }
+                let store = Unmanaged<NoteStore>.fromOpaque(info).takeUnretainedValue()
+                Task { @MainActor in
+                    if Date() < store.suppressReloadUntil { return }
+                    store.reload()
+                }
+            },
+            &context,
+            paths,
+            FSEventStreamEventId(kFSEventStreamEventIdSinceNow),
+            0.3,
+            FSEventStreamCreateFlags(kFSEventStreamCreateFlagFileEvents | kFSEventStreamCreateFlagNoDefer)
+        ) else { return }
 
-            let source = DispatchSource.makeFileSystemObjectSource(
-                fileDescriptor: fd,
-                eventMask: [.write, .extend, .rename, .delete],
-                queue: .main
-            )
-            source.setEventHandler { [weak self] in
-                guard let self else { return }
-                if Date() < self.suppressReloadUntil { return }
-                self.reload()
-            }
-            source.resume()
-            monitors[directory] = (source, fd)
-        }
+        FSEventStreamSetDispatchQueue(stream, .main)
+        FSEventStreamStart(stream)
+        eventStream = stream
     }
 
     private func stopWatchingAll() {
-        for (_, monitor) in monitors {
-            monitor.source.cancel()
-            close(monitor.fd)
-        }
-        monitors.removeAll()
+        guard let eventStream else { return }
+        FSEventStreamStop(eventStream)
+        FSEventStreamInvalidate(eventStream)
+        FSEventStreamRelease(eventStream)
+        self.eventStream = nil
     }
 
     /// Internal writes trigger the same FS events as external changes; suppress

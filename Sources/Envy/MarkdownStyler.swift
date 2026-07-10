@@ -30,6 +30,33 @@ enum MarkdownStyler {
         return wikiLinkRegex.matches(in: text, range: full).map(\.range)
     }
 
+    /// The range within `newText` that actually differs from `oldText`, found
+    /// via longest-common-prefix/-suffix rather than a full diff algorithm —
+    /// cheap, and exactly right for the common case this feeds (a small
+    /// external edit to a note), where the change is one localized run of
+    /// characters. A near-total rewrite just degenerates to "highlight
+    /// everything," which is still a reasonable fallback.
+    static func changedRange(from oldText: String, to newText: String) -> NSRange {
+        let old = oldText as NSString
+        let new = newText as NSString
+        let minLength = min(old.length, new.length)
+
+        var prefixLength = 0
+        while prefixLength < minLength, old.character(at: prefixLength) == new.character(at: prefixLength) {
+            prefixLength += 1
+        }
+
+        var suffixLength = 0
+        let maxSuffix = minLength - prefixLength
+        while suffixLength < maxSuffix,
+              old.character(at: old.length - 1 - suffixLength) == new.character(at: new.length - 1 - suffixLength) {
+            suffixLength += 1
+        }
+
+        let changedLength = max(new.length - prefixLength - suffixLength, 0)
+        return NSRange(location: prefixLength, length: changedLength)
+    }
+
     /// Each task-list checkbox's "[x]"/"[ ]" range, split into the glyph
     /// range (just "[", where the ☐/☑ substitution actually renders — used
     /// to compute an on-screen hit rect for clicking) and the toggle range

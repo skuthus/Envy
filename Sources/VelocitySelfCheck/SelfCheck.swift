@@ -331,6 +331,40 @@ struct SelfCheck {
             check("date:week matches a just-created note", store.filtered(query: "date:week").contains { $0.id == note.id })
         }
 
+        // externalInPlaceEditIsPickedUpWithoutManualReload
+        do {
+            let store = await makeTempStore()
+            let note = store.create(title: "Externally Edited")
+            // Past the 0.5s window markInternalWrite() suppresses reloads for
+            // after our own create() above — otherwise the "external" write
+            // below lands inside that window and gets legitimately ignored,
+            // same as it would for a real internal write racing itself.
+            try? await Task.sleep(for: .milliseconds(600))
+
+            // Simulates another app (Obsidian, TextEdit, etc.) editing the
+            // same file directly on disk — bypassing NoteStore entirely,
+            // unlike store.save(). A plain in-place write like this is
+            // exactly what the old directory-entry-only watcher missed.
+            try? "Changed by another app.".write(to: note.url, atomically: false, encoding: .utf8)
+
+            // Matched by filename/content rather than note.id: temp
+            // directories live under /var, which resolvingSymlinksInPath()
+            // deliberately leaves unresolved (a documented special case for
+            // /tmp and /var), while FileManager's own directory enumeration
+            // reports the real /private/var path underneath — a mismatch
+            // specific to this test's use of the shared temp directory, not
+            // something a real notes folder under ~/Documents would hit.
+            var picked = false
+            for _ in 0..<100 {
+                try? await Task.sleep(for: .milliseconds(20))
+                if store.notes.contains(where: { $0.url.lastPathComponent == note.url.lastPathComponent && $0.content == "Changed by another app." }) {
+                    picked = true
+                    break
+                }
+            }
+            check("external in-place edit is picked up without manual reload", picked)
+        }
+
         print("")
         if failures.isEmpty {
             print("All checks passed.")
