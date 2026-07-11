@@ -7,6 +7,7 @@ Also published at [envynote.app/changelog.html](https://envynote.app/changelog.h
 - Markdown pairs now auto-close as you type: `[[`, `**`, `*`, `` ` ``, `~~`, and the `(url)` half of a `[text](url)` link all get their closing half inserted automatically, with typing through an existing closer instead of duplicating it.
 - Typing inside an open `[[` now offers a live inline suggestion for a matching existing note, ranked by which one you edited most recently — Tab accepts it, right-arrow dismisses it.
 - Backlinks: the footer now shows a count of notes linking to the one you're viewing, expandable into a clickable list that opens upward from the footer. Toggle with ⌘⇧B (remappable in Settings → Shortcuts) or the new "Show backlinks in footer" setting.
+- In-app updates: Envy can now check for and install new versions itself, via a "Check for Updates…" menu item, instead of requiring a manual download from the site.
 - Fixed Envy silently reappearing after being hidden, on multi-monitor setups where each display runs its own Space. Hiding now orders the window out directly instead of using a full "Hide Application," which was tying into Mission Control's per-Space "last active app" bookkeeping.
 
 ## 1.0.0 — July 10, 2026
