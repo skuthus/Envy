@@ -23,6 +23,7 @@ enum NoteSortField: String {
 
 struct ContentView: View {
     @Environment(\.openSettings) private var openSettings
+    @Environment(\.openWindow) private var openWindow
     @StateObject private var store = NoteStore(directories: NotesDirectoryPreference.loadEnabled())
     @State private var query = ""
     @State private var selectedID: String?
@@ -57,6 +58,7 @@ struct ContentView: View {
     @AppStorage(NotesDirectoryPreference.storageKey) private var notesDirectoryPathsRaw = ""
     @AppStorage(NotesDirectoryPreference.disabledStorageKey) private var disabledDirectoryPathsRaw = ""
     @AppStorage("hasCreatedWelcomeNote") private var hasCreatedWelcomeNote = false
+    @AppStorage("lastSeenWhatsNewVersion") private var lastSeenWhatsNewVersion = ""
     @AppStorage("moveFocusToEditorOnEnter") private var moveFocusToEditorOnEnter = true
     @AppStorage("listDensity") private var listDensityRaw = ListDensity.compact.rawValue
     @AppStorage("noteSortField") private var sortFieldRaw = NoteSortField.date.rawValue
@@ -281,7 +283,22 @@ struct ContentView: View {
         notificationHandledLayout
         .onAppear {
             isFullScreen = NSApp.windows.first?.styleMask.contains(.fullScreen) ?? false
+            // Captured before createWelcomeNoteIfNeeded() flips it to true —
+            // that's the signal for "already had notes before this launch,"
+            // which is what actually distinguishes an existing user picking
+            // up a real update from a brand-new install (whose
+            // lastSeenWhatsNewVersion is empty too, but for a different
+            // reason: it's simply never been set).
+            let wasExistingUser = hasCreatedWelcomeNote
             createWelcomeNoteIfNeeded()
+            if wasExistingUser {
+                showWhatsNewIfUpdated()
+            } else {
+                // The welcome note already introduces everything to a
+                // brand-new user — just record today's version as the
+                // baseline so a future real update is what triggers this.
+                lastSeenWhatsNewVersion = currentAppVersion
+            }
             selectDefaultIfNeeded()
             focusedField = .search
             applyWindowTitleVisibility()
@@ -856,6 +873,28 @@ struct ContentView: View {
         store.save(welcomeWithBody)
 
         selectedID = welcome.id
+    }
+
+    private var currentAppVersion: String {
+        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? ""
+    }
+
+    private func showWhatsNewIfUpdated() {
+        let version = currentAppVersion
+        guard !version.isEmpty, version != lastSeenWhatsNewVersion else { return }
+        lastSeenWhatsNewVersion = version
+        // This fires from the main window's own onAppear, which can race
+        // with AppDelegate's launch-time makeKeyAndOrderFront on that same
+        // main window (applicationDidFinishLaunching is a separate AppKit
+        // callback with no guaranteed ordering against SwiftUI's view
+        // lifecycle) — without the delay and explicit refocus below, the
+        // new window can end up opened behind the main one instead of
+        // in front of it.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            openWindow(id: "whatsnew")
+            NSApp.activate(ignoringOtherApps: true)
+            NSApp.windows.first(where: { $0.title == "What's New" })?.makeKeyAndOrderFront(nil)
+        }
     }
 
     private func navigateToNote(titled title: String) {

@@ -395,6 +395,11 @@ struct EnvyApp: App {
         }
         .windowResizability(.contentSize)
 
+        Window("What's New", id: "whatsnew") {
+            WhatsNewView()
+        }
+        .windowResizability(.contentSize)
+
         Settings {
             SettingsView()
         }
