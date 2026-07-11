@@ -41,6 +41,7 @@ struct ContentView: View {
     @State private var cachedWindowTitle: String?
     @State private var editorWordCount = 0
     @State private var editorCharacterCount = 0
+    @State private var backlinksExpanded = false
     @State private var isFullScreen = false
     @State private var showLoadingIndicator = false
     @State private var loadingIndicatorTask: Task<Void, Never>?
@@ -68,6 +69,7 @@ struct ContentView: View {
     @AppStorage("plainTextMode") private var plainTextMode = false
     @AppStorage("fadeFocusHighlight") private var fadeFocusHighlight = false
     @AppStorage("boldFileListText") private var boldFileListText = false
+    @AppStorage("showBacklinks") private var showBacklinks = true
     // Newline-joined note ids (paths), matching the encoding NotesDirectoryPreference
     // already uses for a list of paths in one AppStorage string.
     @AppStorage("pinnedNotePaths") private var pinnedNotePathsRaw = ""
@@ -98,6 +100,23 @@ struct ContentView: View {
 
     private var filteredNotes: [Note] {
         NoteStore.applyPinning(sortedNotes(store.filtered(query: query)), pinnedIDs: pinnedNoteIDs)
+    }
+
+    /// Notes whose content links to the open note, newest-edited first — a
+    /// plain scan over store.notes (already all in memory), same idea as
+    /// tag lookups. This is a computed property rather than @State because
+    /// ContentView's body only re-evaluates on note-switch or a store
+    /// change (a debounced save landing) — never per keystroke, since the
+    /// text being typed lives entirely in NoteEditorView's own @State and
+    /// doesn't bubble up here until it's saved.
+    private var currentBacklinkNotes: [Note] {
+        guard showBacklinks, let selectedID,
+              let currentTitle = store.notes.first(where: { $0.id == selectedID })?.title
+        else { return [] }
+        let lowered = currentTitle.lowercased()
+        return store.notes
+            .filter { $0.id != selectedID && $0.wikiLinks.contains(lowered) }
+            .sorted { $0.modifiedDate > $1.modifiedDate }
     }
 
     private var pinnedNoteIDs: Set<String> {
@@ -242,27 +261,16 @@ struct ContentView: View {
         .onReceive(NotificationCenter.default.publisher(for: .toggleLayoutRequested)) { _ in
             layoutModeRaw = (layoutMode == .horizontal ? LayoutMode.vertical : .horizontal).rawValue
         }
-        .onReceive(NotificationCenter.default.publisher(for: .zoomInRequested)) { _ in
-            editorFontZoom = min(60, editorFontZoom + 1)
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .zoomOutRequested)) { _ in
-            editorFontZoom = max(-8, editorFontZoom - 1)
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .zoomResetRequested)) { _ in
-            editorFontZoom = 0
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .openSettingsRequested)) { _ in
-            openSettings()
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .nextFolderRequested)) { _ in
-            cycleActiveFolder(by: 1)
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .previousFolderRequested)) { _ in
-            cycleActiveFolder(by: -1)
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .togglePlainTextModeRequested)) { _ in
-            plainTextMode.toggle()
-        }
+        .modifier(EditorViewNotifications(
+            zoomIn: { editorFontZoom = min(60, editorFontZoom + 1) },
+            zoomOut: { editorFontZoom = max(-8, editorFontZoom - 1) },
+            zoomReset: { editorFontZoom = 0 },
+            openSettings: { openSettings() },
+            nextFolder: { cycleActiveFolder(by: 1) },
+            previousFolder: { cycleActiveFolder(by: -1) },
+            togglePlainTextMode: { plainTextMode.toggle() },
+            toggleBacklinks: { withAnimation(.easeInOut(duration: 0.15)) { backlinksExpanded.toggle() } }
+        ))
         .modifier(FocusAndFullScreenNotifications(
             cycleFocus: cycleFocus,
             isFullScreen: $isFullScreen
@@ -515,6 +523,13 @@ struct ContentView: View {
             // visible — clock included — even when no note is selected and
             // NoteEditorView isn't in the view hierarchy at all.
             Divider()
+            // Sits directly above the footer bar (rather than the bar
+            // growing to contain it) so expanding the list grows the panel
+            // upward into the editor instead of pushing the footer down.
+            if backlinksExpanded && !currentBacklinkNotes.isEmpty {
+                backlinksExpandedList
+                Divider()
+            }
             editorFooter
         }
         // Opaque, not the window's translucent backdrop — in horizontal
@@ -533,7 +548,12 @@ struct ContentView: View {
     }
 
     private var editorFooter: some View {
-        HStack {
+        ZStack {
+            // The clock is centered on the whole bar via this overlay
+            // rather than sitting between two Spacers in the HStack below —
+            // a Spacer-based center only looks centered when both sides
+            // happen to be the same width, and the right side now varies
+            // (backlinks toggle present or not).
             if showFooterClock && (!showFooterClockOnlyWhenFullScreen || isFullScreen) {
                 // TimelineView instead of a plain Text so the clock actually
                 // ticks forward — a static Text computed once in body would
@@ -544,15 +564,59 @@ struct ContentView: View {
                         .font(.caption2)
                 }
             }
-            Spacer()
-            if selectedID != nil {
-                Text("\(editorWordCount) words, \(editorCharacterCount) characters")
-                    .foregroundStyle(.secondary)
-                    .font(.caption2)
+            HStack {
+                if selectedID != nil, showBacklinks, !currentBacklinkNotes.isEmpty {
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.15)) { backlinksExpanded.toggle() }
+                    } label: {
+                        HStack(spacing: 4) {
+                            // Points where the panel will move on the next
+                            // tap — up to expand (the list grows upward),
+                            // down to collapse back.
+                            Image(systemName: backlinksExpanded ? "chevron.down" : "chevron.up")
+                                .font(.caption2)
+                            Text("\(currentBacklinkNotes.count) Backlink\(currentBacklinkNotes.count == 1 ? "" : "s")")
+                                .font(.caption2)
+                        }
+                        .foregroundStyle(.secondary)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                }
+                Spacer()
+                if selectedID != nil {
+                    Text("\(editorWordCount) words, \(editorCharacterCount) characters")
+                        .foregroundStyle(.secondary)
+                        .font(.caption2)
+                }
+            }
+        }
+        // A touch more than the usual 10pt — this bar runs edge-to-edge at
+        // the bottom of the window, where the screen/window corner
+        // curvature can clip content sitting right at 10pt.
+        .padding(.horizontal, 16)
+        .padding(.vertical, 4)
+        .background(.bar)
+    }
+
+    private var backlinksExpandedList: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            ForEach(currentBacklinkNotes) { linked in
+                Button {
+                    navigateToNote(titled: linked.title)
+                } label: {
+                    Text(linked.title)
+                        .font(.body)
+                        .foregroundStyle(Color(nsColor: theme.resolvedLinkColor))
+                        .lineLimit(1)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
             }
         }
         .padding(.horizontal, 10)
-        .padding(.vertical, 4)
+        .padding(.vertical, 8)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .background(.bar)
     }
 
@@ -1044,6 +1108,35 @@ struct ContentView: View {
 /// has repeatedly hit "unable to type-check in reasonable time" as more were
 /// added, and splitting into a separate modifier lets the compiler solve this
 /// batch independently of the rest.
+/// Split out of notificationHandledLayout for the same reason
+/// FocusAndFullScreenNotifications is its own modifier below — one
+/// .onReceive chain covering every editor-view toggle/adjustment notification
+/// got long enough to blow the type checker's budget ("unable to type-check
+/// this expression in reasonable time") once backlinks joined zoom, settings,
+/// folder cycling, and plain-text mode.
+private struct EditorViewNotifications: ViewModifier {
+    let zoomIn: () -> Void
+    let zoomOut: () -> Void
+    let zoomReset: () -> Void
+    let openSettings: () -> Void
+    let nextFolder: () -> Void
+    let previousFolder: () -> Void
+    let togglePlainTextMode: () -> Void
+    let toggleBacklinks: () -> Void
+
+    func body(content: Content) -> some View {
+        content
+            .onReceive(NotificationCenter.default.publisher(for: .zoomInRequested)) { _ in zoomIn() }
+            .onReceive(NotificationCenter.default.publisher(for: .zoomOutRequested)) { _ in zoomOut() }
+            .onReceive(NotificationCenter.default.publisher(for: .zoomResetRequested)) { _ in zoomReset() }
+            .onReceive(NotificationCenter.default.publisher(for: .openSettingsRequested)) { _ in openSettings() }
+            .onReceive(NotificationCenter.default.publisher(for: .nextFolderRequested)) { _ in nextFolder() }
+            .onReceive(NotificationCenter.default.publisher(for: .previousFolderRequested)) { _ in previousFolder() }
+            .onReceive(NotificationCenter.default.publisher(for: .togglePlainTextModeRequested)) { _ in togglePlainTextMode() }
+            .onReceive(NotificationCenter.default.publisher(for: .toggleBacklinksRequested)) { _ in toggleBacklinks() }
+    }
+}
+
 private struct FocusAndFullScreenNotifications: ViewModifier {
     let cycleFocus: (Int) -> Void
     @Binding var isFullScreen: Bool

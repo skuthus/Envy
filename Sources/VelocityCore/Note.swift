@@ -39,4 +39,22 @@ public struct Note: Identifiable, Equatable, Sendable {
     }
 
     private static let tagRegex = try! NSRegularExpression(pattern: #"(?<![\w#])#([A-Za-z0-9_-]+)"#)
+
+    /// Titles of every note this one links to via `[[Title]]`, lowercased
+    /// for case-insensitive lookups — same convention as
+    /// NoteStore.exactTitleMatch(for:), which is what actually resolves a
+    /// wiki-link on click, so a link matches its target here exactly when
+    /// it would there. Computed on demand from content, same as tags,
+    /// rather than a maintained index. Trimmed since a title typed inside
+    /// "[[ ]]" can pick up incidental leading/trailing whitespace.
+    public var wikiLinks: Set<String> {
+        let matches = Note.wikiLinkRegex.matches(in: content, range: NSRange(content.startIndex..., in: content))
+        return Set(matches.compactMap { match in
+            guard let range = Range(match.range(at: 1), in: content) else { return nil }
+            let title = content[range].trimmingCharacters(in: .whitespaces).lowercased()
+            return title.isEmpty ? nil : title
+        })
+    }
+
+    private static let wikiLinkRegex = try! NSRegularExpression(pattern: #"\[\[([^\[\]]+)\]\]"#)
 }

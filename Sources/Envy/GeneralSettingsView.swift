@@ -17,6 +17,7 @@ struct GeneralSettingsView: View {
     @AppStorage("footerClockDateFormat") private var footerClockDateFormatRaw = ClockDateFormat.short.rawValue
     @AppStorage("showFooterClockOnlyWhenFullScreen") private var showFooterClockOnlyWhenFullScreen = false
     @AppStorage("plainTextMode") private var plainTextMode = false
+    @AppStorage("showBacklinks") private var showBacklinks = true
     @AppStorage("hideOnFocusLoss") private var hideOnFocusLoss = false
     @State private var showingMarkupHelp = false
     @State private var openAtLogin = SMAppService.mainApp.status == .enabled
@@ -156,6 +157,7 @@ struct GeneralSettingsView: View {
                 Toggle("Show title bar above note", isOn: $showEditorTitleHeader)
                 Toggle("Require ⌘-click to open note links", isOn: $requireModifierForLinkClick)
                 Toggle("Plain-text mode (ignore markdown formatting)", isOn: $plainTextMode)
+                Toggle("Show backlinks in footer", isOn: $showBacklinks)
             }
 
             Section("Footer Clock") {

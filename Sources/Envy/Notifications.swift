@@ -18,4 +18,5 @@ extension Notification.Name {
     static let focusNextAreaRequested = Notification.Name("focusNextAreaRequested")
     static let focusPreviousAreaRequested = Notification.Name("focusPreviousAreaRequested")
     static let togglePinRequested = Notification.Name("togglePinRequested")
+    static let toggleBacklinksRequested = Notification.Name("toggleBacklinksRequested")
 }

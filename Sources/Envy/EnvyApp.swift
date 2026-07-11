@@ -303,6 +303,11 @@ struct EnvyApp: App {
                     NotificationCenter.default.post(name: .togglePlainTextModeRequested, object: nil)
                 }
                 .keyboardShortcut(binding(for: .togglePlainTextMode).keyEquivalent, modifiers: binding(for: .togglePlainTextMode).eventModifiers)
+
+                Button("Toggle Backlinks") {
+                    NotificationCenter.default.post(name: .toggleBacklinksRequested, object: nil)
+                }
+                .keyboardShortcut(binding(for: .toggleBacklinks).keyEquivalent, modifiers: binding(for: .toggleBacklinks).eventModifiers)
             }
             CommandMenu("Font") {
                 Button("Bold") {

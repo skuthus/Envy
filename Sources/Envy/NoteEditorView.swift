@@ -104,7 +104,9 @@ struct NoteEditorView: View {
             .focusable()
             .focused(focusedField, equals: .editor)
         }
-        .onAppear { onStatsChange(wordCount, characterCount) }
+        .onAppear {
+            onStatsChange(wordCount, characterCount)
+        }
         .onChange(of: content) { _, newValue in
             scheduleSave(newValue)
             onStatsChange(wordCount, characterCount)

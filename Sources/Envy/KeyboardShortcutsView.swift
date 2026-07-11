@@ -53,6 +53,7 @@ struct KeyboardShortcutsView: View {
                 Entry(action: .centerWindow, description: "Center the window on screen"),
                 Entry(action: .toggleLayout, description: "Toggle horizontal / vertical layout"),
                 Entry(action: .togglePlainTextMode, description: "Toggle plain-text mode (ignores all markdown formatting)"),
+                Entry(action: .toggleBacklinks, description: "Show or hide the backlinks list in the footer"),
             ]),
             Group(title: "Folders", entries: [
                 Entry(action: .nextFolder, description: "Show only the next folder's notes"),
