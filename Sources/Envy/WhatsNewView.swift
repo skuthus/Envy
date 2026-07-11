@@ -27,12 +27,12 @@ struct WhatsNewView: View {
             }
 
             VStack(spacing: 10) {
-                Image(systemName: "arrow.triangle.2.circlepath.circle.fill")
+                Image(systemName: "arrow.uturn.backward.circle.fill")
                     .font(.system(size: 44))
                     .foregroundStyle(EnvyLogoView.irisColor)
-                Text("Envy can now update itself")
+                Text("Envy remembers where you left off")
                     .font(.title3.bold())
-                Text("New versions install right from the app — no more downloading a fresh copy from the site. Check anytime from the Envy menu.")
+                Text("Summoning Envy now keeps focus wherever it was before you hid the app, instead of always jumping to the search box. Change this anytime in Settings → General.")
                     .font(.body)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
@@ -50,13 +50,6 @@ struct WhatsNewView: View {
             .background(EnvyLogoView.irisColor.opacity(0.1))
             .clipShape(RoundedRectangle(cornerRadius: 12))
 
-            VStack(spacing: 8) {
-                whatsNewRow("Backlinks", "See which notes link to the one you're viewing, right in the footer.")
-                whatsNewRow("Auto-closing brackets", "[[, **, *, and more close themselves as you type.")
-                whatsNewRow("Wiki-link suggestions", "Matching note titles autocomplete inline as you type a [[link.")
-            }
-            .frame(maxWidth: .infinity)
-
             Button("Continue") {
                 dismiss()
             }
@@ -65,18 +58,5 @@ struct WhatsNewView: View {
         }
         .padding(28)
         .frame(width: 440)
-    }
-
-    private func whatsNewRow(_ title: String, _ description: String) -> some View {
-        var line = AttributedString("\(title) — \(description)")
-        if let range = line.range(of: title) {
-            line[range].font = .callout.weight(.medium)
-        }
-        return Text(line)
-            .font(.callout)
-            .foregroundStyle(.secondary)
-            .multilineTextAlignment(.center)
-            .fixedSize(horizontal: false, vertical: true)
-            .frame(maxWidth: .infinity)
     }
 }
