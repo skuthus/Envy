@@ -2,6 +2,8 @@
 
 A fast, frictionless note-taking app for macOS. One search box, instant results, and notes stored as plain `.md` files you can grep, sync, or edit with anything else you like.
 
+Built by [Skyler Schoos](https://github.com/skuthus), with [Claude Code](https://claude.com/claude-code).
+
 ## Download
 
 Get the latest signed, notarized build at **[envynote.app](https://envynote.app)** — click "Download for Mac" for a ready-to-run `.dmg`. Envy updates itself after that (Envy menu → "Check for Updates…"), so there's no need to come back here for new versions.
@@ -63,3 +65,7 @@ Every shortcut below can be remapped in Settings → Shortcuts.
 ## License
 
 Proprietary. All rights reserved. See [LICENSE](LICENSE).
+
+## A Note on AI Usage
+
+Envy is built with substantial help from [Claude Code](https://claude.com/claude-code). Architecture, feature decisions, and design direction are the maintainer's; a large share of the implementation, debugging, and this documentation were done in collaboration with Claude. Commits aren't individually tagged by author for this reason — the credit above covers it.
