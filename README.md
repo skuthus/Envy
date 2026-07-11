@@ -1,6 +1,6 @@
 # Envy
 
-A fast, flat-file note-taking app for macOS. One search box, instant results, and notes stored as plain `.md` files you can grep, sync, or edit with anything else you like.
+A fast, frictionless note-taking app for macOS. One search box, instant results, and notes stored as plain `.md` files you can grep, sync, or edit with anything else you like.
 
 ## Download
 
