@@ -7,13 +7,19 @@ let package = Package(
     platforms: [
         .macOS(.v26)
     ],
+    dependencies: [
+        .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.6.4")
+    ],
     targets: [
         .target(
             name: "VelocityCore"
         ),
         .executableTarget(
             name: "Envy",
-            dependencies: ["VelocityCore"]
+            dependencies: [
+                "VelocityCore",
+                .product(name: "Sparkle", package: "Sparkle")
+            ]
         ),
         .executableTarget(
             name: "VelocitySelfCheck",

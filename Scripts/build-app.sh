@@ -8,6 +8,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
+source "$ROOT_DIR/Scripts/embed-sparkle.sh"
 
 APP_NAME="Envy"
 BUNDLE_ID="com.skylerschoos.envy"
@@ -38,40 +39,44 @@ sips -z 512 512 "$SRC" --out "$ICONSET/icon_512x512.png" > /dev/null
 cp "$SRC" "$ICONSET/icon_512x512@2x.png"
 iconutil -c icns "$ICONSET" -o "$ROOT_DIR/build-resources/AppIcon.icns"
 
+# Assembled and signed under /tmp, not $DIST_DIR — this project folder lives
+# under ~/Documents, which macOS's "iCloud Drive: Desktop & Documents"
+# syncing backs even though the path looks purely local. bird/fileproviderd
+# continuously re-tag bundle-type directories (.app/.framework/.xpc) as they
+# sync, which made codesign's "resource fork, Finder information, or similar
+# detritus not allowed" a near-constant failure once Sparkle.framework's ~150
+# files were added — not a one-time race that a few retries could win, but an
+# ongoing background process. /tmp isn't iCloud-synced, so signing there
+# sidesteps the problem entirely instead of fighting it.
+BUILD_TMP="$(mktemp -d)"
+trap 'rm -rf "$BUILD_TMP"' EXIT
+TMP_APP_BUNDLE="$BUILD_TMP/$APP_NAME.app"
+
 echo "==> Assembling $APP_NAME.app..."
-rm -rf "$APP_BUNDLE"
-mkdir -p "$APP_BUNDLE/Contents/MacOS" "$APP_BUNDLE/Contents/Resources"
-cp "$BINARY_PATH" "$APP_BUNDLE/Contents/MacOS/$APP_NAME"
-cp "$ROOT_DIR/build-resources/AppIcon.icns" "$APP_BUNDLE/Contents/Resources/AppIcon.icns"
-cp "$ROOT_DIR/Scripts/Info.plist" "$APP_BUNDLE/Contents/Info.plist"
+mkdir -p "$TMP_APP_BUNDLE/Contents/MacOS" "$TMP_APP_BUNDLE/Contents/Resources"
+cp "$BINARY_PATH" "$TMP_APP_BUNDLE/Contents/MacOS/$APP_NAME"
+cp "$ROOT_DIR/build-resources/AppIcon.icns" "$TMP_APP_BUNDLE/Contents/Resources/AppIcon.icns"
+cp "$ROOT_DIR/Scripts/Info.plist" "$TMP_APP_BUNDLE/Contents/Info.plist"
+
+SIGNING_IDENTITY="$(security find-identity -v -p codesigning | grep "Developer ID Application" | head -1 | sed -E 's/.*"(.*)"/\1/')"
+
+echo "==> Embedding Sparkle.framework..."
+embed_sparkle "$TMP_APP_BUNDLE" "$APP_NAME" "$SIGNING_IDENTITY"
 
 echo "==> Signing with Developer ID..."
-SIGNING_IDENTITY="$(security find-identity -v -p codesigning | grep "Developer ID Application" | head -1 | sed -E 's/.*"(.*)"/\1/')"
-# Stray extended attributes (a resource fork, Finder info, etc.) on any file
-# inside the bundle make codesign fail outright — seen intermittently here,
-# likely a race with something (Gatekeeper/Spotlight) touching the
-# freshly-written icon PNGs. xattr -cr alone doesn't reliably dodge it since
-# the attribute can reappear after clearing but before codesign reads the
-# file, so retry a few times rather than failing the whole build over it.
-for attempt in 1 2 3; do
-  xattr -cr "$APP_BUNDLE"
-  if [ -z "$SIGNING_IDENTITY" ]; then
-    if [ "$attempt" = 1 ]; then
-      echo "No Developer ID Application certificate found — falling back to ad-hoc signing."
-      echo "(Run this after installing your Developer ID cert to get a distributable build.)"
-    fi
-    codesign --force --deep --sign - "$APP_BUNDLE" && break
-  else
-    if [ "$attempt" = 1 ]; then echo "    Using: $SIGNING_IDENTITY"; fi
-    codesign --force --deep --options runtime --timestamp --sign "$SIGNING_IDENTITY" "$APP_BUNDLE" && break
-  fi
-  if [ "$attempt" = 3 ]; then
-    echo "codesign failed after 3 attempts." >&2
-    exit 1
-  fi
-  echo "    codesign attempt $attempt failed (stray extended attributes), retrying..."
-  sleep 1
-done
+if [ -z "$SIGNING_IDENTITY" ]; then
+  echo "No Developer ID Application certificate found — falling back to ad-hoc signing."
+  echo "(Run this after installing your Developer ID cert to get a distributable build.)"
+  sign_with_retry "$TMP_APP_BUNDLE" --force --deep --sign -
+else
+  echo "    Using: $SIGNING_IDENTITY"
+  sign_with_retry "$TMP_APP_BUNDLE" --force --deep --options runtime --timestamp --sign "$SIGNING_IDENTITY"
+fi
+
+echo "==> Copying signed build to $DIST_DIR..."
+mkdir -p "$DIST_DIR"
+rm -rf "$APP_BUNDLE"
+cp -R "$TMP_APP_BUNDLE" "$APP_BUNDLE"
 
 echo "==> Done: $APP_BUNDLE"
 echo ""

@@ -4,6 +4,10 @@
 # this mounts as a normal macOS disk image with a shortcut to /Applications,
 # the standard "drag it over there" install experience.
 #
+# Also updates the Sparkle appcast (EnvyWebsite/assets/updates/appcast.xml)
+# so already-installed copies of Envy can discover this release — see
+# Scripts/README (or the comments below) for what that step needs.
+#
 # Usage: Scripts/make-dmg.sh
 
 set -euo pipefail
@@ -15,6 +19,8 @@ DIST_DIR="$ROOT_DIR/dist"
 APP_BUNDLE="$DIST_DIR/Envy.app"
 DMG_PATH="$DIST_DIR/Envy.dmg"
 STAGING_DIR="$DIST_DIR/dmg-staging"
+UPDATES_DIR="$ROOT_DIR/../EnvyWebsite/assets/updates"
+GENERATE_APPCAST="$ROOT_DIR/.build/artifacts/sparkle/Sparkle/bin/generate_appcast"
 
 echo "==> Building Envy.app..."
 "$ROOT_DIR/Scripts/build-app.sh"
@@ -43,3 +49,20 @@ rm -rf "$STAGING_DIR"
 # notarize.sh above) covers that.
 
 echo "==> Done: $DMG_PATH"
+
+if [ -x "$GENERATE_APPCAST" ] && [ -d "$(dirname "$UPDATES_DIR")/.." ]; then
+  VERSION="$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$ROOT_DIR/Scripts/Info.plist")"
+  echo "==> Updating Sparkle appcast for version $VERSION..."
+  mkdir -p "$UPDATES_DIR"
+  # generate_appcast keeps every past release's archive around (it needs
+  # them to build delta updates and a full version history) — only the
+  # website's main "Download for Mac" button points at the always-latest
+  # dist/Envy.dmg copied elsewhere; this versioned copy is purely for
+  # Sparkle's own feed.
+  cp "$DMG_PATH" "$UPDATES_DIR/Envy-$VERSION.dmg"
+  "$GENERATE_APPCAST" "$UPDATES_DIR"
+  echo "==> appcast.xml updated: $UPDATES_DIR/appcast.xml"
+  echo "    (deploy EnvyWebsite, e.g. via netlify deploy, for this to take effect)"
+else
+  echo "==> Skipping appcast update (generate_appcast or ../EnvyWebsite not found)."
+fi

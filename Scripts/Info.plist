@@ -28,5 +28,9 @@
 	<true/>
 	<key>NSHumanReadableCopyright</key>
 	<string>© 2026 Skyler Schoos</string>
+	<key>SUFeedURL</key>
+	<string>https://envynote.app/assets/updates/appcast.xml</string>
+	<key>SUPublicEDKey</key>
+	<string>jdhL5MEnBaTkKVj4eO2nZLk+jQlGd35pC4fGGJsJdmY=</string>
 </dict>
 </plist>
