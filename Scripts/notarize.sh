@@ -14,23 +14,40 @@ cd "$ROOT_DIR"
 PROFILE="${1:-envy-notary}"
 DIST_DIR="$ROOT_DIR/dist"
 APP_BUNDLE="$DIST_DIR/Envy.app"
-SUBMIT_ZIP="$DIST_DIR/Envy-notarize-submit.zip"
 
 if [ ! -d "$APP_BUNDLE" ]; then
   echo "error: $APP_BUNDLE not found. Run Scripts/build-app.sh first." >&2
   exit 1
 fi
 
-echo "==> Zipping $APP_BUNDLE for submission..."
-rm -f "$SUBMIT_ZIP"
-ditto -c -k --keepParent "$APP_BUNDLE" "$SUBMIT_ZIP"
+# Submission + staple both happen on a /tmp copy, not $APP_BUNDLE directly —
+# this project folder lives under iCloud Drive's Desktop & Documents sync,
+# and notarization's multi-minute wait is long enough for the synced copy to
+# drift from what was actually submitted (seen once already: stapler kept
+# failing with "record not found" because the on-disk cdhash no longer
+# matched the notarized cdhash). /tmp isn't synced, so the file submitted is
+# guaranteed to be the exact same bytes stapled a few minutes later.
+WORK_DIR="$(mktemp -d)"
+trap 'rm -rf "$WORK_DIR"' EXIT
+WORK_APP="$WORK_DIR/Envy.app"
+SUBMIT_ZIP="$WORK_DIR/Envy-notarize-submit.zip"
+cp -R "$APP_BUNDLE" "$WORK_APP"
+
+echo "==> Zipping Envy.app for submission..."
+ditto -c -k --keepParent "$WORK_APP" "$SUBMIT_ZIP"
 
 echo "==> Submitting to Apple notary service (this can take a few minutes)..."
 xcrun notarytool submit "$SUBMIT_ZIP" --keychain-profile "$PROFILE" --wait
 
-echo "==> Stapling ticket to $APP_BUNDLE..."
-xcrun stapler staple "$APP_BUNDLE"
+echo "==> Stapling ticket..."
+xcrun stapler staple "$WORK_APP"
 
-rm -f "$SUBMIT_ZIP"
+echo "==> Copying stapled build back to $APP_BUNDLE..."
+rm -rf "$APP_BUNDLE"
+cp -R "$WORK_APP" "$APP_BUNDLE"
+xattr -cr "$APP_BUNDLE"
+
+echo "==> Verifying..."
+spctl -a -vv "$APP_BUNDLE"
 
 echo "==> Done. $APP_BUNDLE is signed, notarized, and stapled."
