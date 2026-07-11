@@ -68,4 +68,6 @@ Proprietary. All rights reserved. See [LICENSE](LICENSE).
 
 ## A Note on AI Usage
 
-Envy is built with substantial help from [Claude Code](https://claude.com/claude-code). Architecture, feature decisions, and design direction are the maintainer's; a large share of the implementation, debugging, and this documentation were done in collaboration with Claude. Commits aren't individually tagged by author for this reason — the credit above covers it.
+*Envy is built with help from Claude Code. Architecture, feature decisions, and design direction are the maintainer's; a large share of the implementation, debugging, and this documentation were done in collaboration with Claude.*
+
+Guys, I am not a programmer or engineer by trade so this is my only option. I just wanna make cool stuff that I use every day. If you really don't like AI usage, don't use my apps. I promise that I work really hard to make them great, anyway.
