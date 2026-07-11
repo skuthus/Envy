@@ -21,9 +21,10 @@ struct AboutView: View {
             Text(titleText)
                 .font(.title.bold())
 
-            Text("A fast, flat-file note-taking app.")
+            Text("A flat-file, frictionless note-taking application.")
                 .font(.callout)
                 .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
 
             Text(versionText)
                 .font(.caption)
