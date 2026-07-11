@@ -2,6 +2,12 @@
 
 A fast, flat-file note-taking app for macOS. One search box, instant results, and notes stored as plain `.md` files you can grep, sync, or edit with anything else you like.
 
+## Download
+
+Get the latest signed, notarized build at **[envynote.app](https://envynote.app)** — click "Download for Mac" for a ready-to-run `.dmg`. Envy updates itself after that (Envy menu → "Check for Updates…"), so there's no need to come back here for new versions.
+
+This repository is published for source transparency. The code is proprietary (see [License](#license)) — Envy isn't intended to be built or packaged by anyone but its maintainer, so there are deliberately no build instructions here.
+
 ## Features
 
 - **Instant search-driven workflow** — type to filter notes as you type; press Return to open the top match or create a new note from your search text if nothing matches.
@@ -19,38 +25,6 @@ A fast, flat-file note-taking app for macOS. One search box, instant results, an
 - **Global hotkey** — `⌥⌘↩` shows or hides Envy from anywhere, even when another app is focused.
 - **Themes & appearance** — customizable fonts and colors (including per-syntax-element colors), adjustable window blur, note list density, and independent System/Light/Dark mode.
 - **Open at login** — optional toggle to launch Envy automatically when you log in.
-
-## Requirements
-
-- macOS 14 or later
-- Xcode Command Line Tools (Swift 6 toolchain) — a full Xcode install is not required
-
-## Building & Running
-
-Envy is a Swift Package Manager project; there is no Xcode project file.
-
-```sh
-swift build
-swift run Envy
-```
-
-### Packaging as a `.app`
-
-```sh
-Scripts/build-app.sh
-```
-
-Builds a release binary, generates the app icon, assembles `dist/Envy.app`, and signs it with a Developer ID certificate if one is installed (falls back to ad-hoc signing otherwise).
-
-### Signing, notarizing, and distributing
-
-```sh
-Scripts/notarize.sh   # submits dist/Envy.app to Apple and staples the ticket
-Scripts/make-zip.sh   # build-app.sh + notarize.sh, then zips dist/Envy.app
-Scripts/make-dmg.sh   # build-app.sh + notarize.sh, then packages dist/Envy.dmg
-```
-
-`make-dmg.sh` is the one actually used for distribution — it produces a normal macOS disk image with a shortcut to `/Applications`, ready to hand to someone else. Requires a Developer ID Application certificate and a stored `notarytool` keychain profile (see `Scripts/notarize.sh`).
 
 ## Notes Storage
 
@@ -85,9 +59,6 @@ Every shortcut below can be remapped in Settings → Shortcuts.
 - `Sources/Envy` — the SwiftUI app
 - `Sources/IconGenerator` — standalone tool that renders the app icon
 - `Sources/VelocitySelfCheck` — a manual assertion-based check suite (used in place of Swift Testing, which doesn't run reliably without a full Xcode install)
-- `Scripts/build-app.sh` — packages the release `.app` bundle
-- `Scripts/build-test-app.sh` — packages a separately bundle-ID'd `EnvyTest.app` for local testing, isolated from the real app's preferences
-- `Scripts/notarize.sh` / `Scripts/make-zip.sh` / `Scripts/make-dmg.sh` — signing, notarization, and packaging for distribution
 
 ## License
 
