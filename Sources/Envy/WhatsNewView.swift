@@ -7,6 +7,7 @@ import SwiftUI
 /// release still gets a line, just a quieter one underneath.
 struct WhatsNewView: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.openURL) private var openURL
 
     private var versionText: String {
         Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? ""
@@ -55,6 +56,16 @@ struct WhatsNewView: View {
             }
             .keyboardShortcut(.defaultAction)
             .controlSize(.large)
+
+            // This window only ever calls out the latest version's own
+            // highlight — anyone who skipped a few releases has no other way
+            // to see what else changed in between.
+            Button("Haven't updated in a while? See what you've missed here!") {
+                openURL(URL(string: "https://envynote.app/changelog.html")!)
+            }
+            .buttonStyle(.plain)
+            .font(.caption)
+            .foregroundStyle(.secondary)
         }
         .padding(28)
         .frame(width: 440)
