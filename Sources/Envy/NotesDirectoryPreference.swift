@@ -1,5 +1,5 @@
 import Foundation
-import VelocityCore
+import EnvyCore
 
 /// Persists the list of note folders as newline-joined paths under a single
 /// AppStorage-friendly String key (avoids the Codable/RawRepresentable

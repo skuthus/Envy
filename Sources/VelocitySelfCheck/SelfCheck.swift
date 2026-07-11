@@ -1,5 +1,5 @@
 import Foundation
-@testable import VelocityCore
+@testable import EnvyCore
 
 @main
 struct SelfCheck {

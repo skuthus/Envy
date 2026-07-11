@@ -1,6 +1,6 @@
 import SwiftUI
 import AppKit
-import VelocityCore
+import EnvyCore
 
 enum LayoutMode: String {
     case horizontal

@@ -1,6 +1,6 @@
 import SwiftUI
 import AppKit
-import VelocityCore
+import EnvyCore
 
 struct NoteEditorView: View {
     @ObservedObject var store: NoteStore

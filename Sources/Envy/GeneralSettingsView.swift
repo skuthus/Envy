@@ -1,7 +1,7 @@
 import SwiftUI
 import AppKit
 import ServiceManagement
-import VelocityCore
+import EnvyCore
 
 struct GeneralSettingsView: View {
     @AppStorage("showNotePreview") private var showNotePreview = false

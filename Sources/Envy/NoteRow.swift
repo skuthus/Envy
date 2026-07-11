@@ -1,5 +1,5 @@
 import SwiftUI
-import VelocityCore
+import EnvyCore
 
 struct NoteRow: View {
     let note: Note

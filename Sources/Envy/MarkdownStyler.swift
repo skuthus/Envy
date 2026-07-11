@@ -24,7 +24,7 @@ enum MarkdownStyler {
     private static let bareURLRegex = try! NSRegularExpression(pattern: #"(?<![(<])\bhttps?://[^\s<>()]+\b"#)
     private static let footnoteDefinitionRegex = try! NSRegularExpression(pattern: #"^\[\^([^\]]+)\]:[ \t]*"#, options: [.anchorsMatchLines])
     private static let footnoteReferenceRegex = try! NSRegularExpression(pattern: #"\[\^([^\]]+)\]"#)
-    // Matches Note.tagRegex in VelocityCore exactly (duplicated rather than
+    // Matches Note.tagRegex in EnvyCore exactly (duplicated rather than
     // shared since that one is private to its target) — excludes markdown
     // headings, which require a space after "#", and mid-word/"##" false
     // positives.

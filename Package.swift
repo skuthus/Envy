@@ -12,18 +12,18 @@ let package = Package(
     ],
     targets: [
         .target(
-            name: "VelocityCore"
+            name: "EnvyCore"
         ),
         .executableTarget(
             name: "Envy",
             dependencies: [
-                "VelocityCore",
+                "EnvyCore",
                 .product(name: "Sparkle", package: "Sparkle")
             ]
         ),
         .executableTarget(
             name: "VelocitySelfCheck",
-            dependencies: ["VelocityCore"]
+            dependencies: ["EnvyCore"]
         ),
         .executableTarget(
             name: "IconGenerator"
