@@ -25,6 +25,10 @@ struct AboutView: View {
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
+                // Without this, Text truncates with an ellipsis instead of
+                // wrapping to a second line in this fixed-width window —
+                // same fix as WhatsNewView's own text needed.
+                .fixedSize(horizontal: false, vertical: true)
 
             Text(versionText)
                 .font(.caption)
