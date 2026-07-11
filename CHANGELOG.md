@@ -2,6 +2,10 @@
 
 Also published at [envynote.app/changelog.html](https://envynote.app/changelog.html).
 
+## 1.0.2 — July 10, 2026
+
+- Summoning Envy now keeps focus wherever it was before you hid the app, instead of always jumping to the search box. Toggle "Keep focus where it was when summoned" in Settings → General to go back to the old always-search behavior.
+
 ## 1.0.1 — July 10, 2026
 
 **The big one: Envy can now update itself.** New versions install right from the app — "Check for Updates…" in the Envy menu — no more downloading a fresh copy from the site by hand.

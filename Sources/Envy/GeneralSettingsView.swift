@@ -19,6 +19,7 @@ struct GeneralSettingsView: View {
     @AppStorage("plainTextMode") private var plainTextMode = false
     @AppStorage("showBacklinks") private var showBacklinks = true
     @AppStorage("hideOnFocusLoss") private var hideOnFocusLoss = false
+    @AppStorage("restoreFocusOnSummon") private var restoreFocusOnSummon = true
     @State private var showingMarkupHelp = false
     @State private var openAtLogin = SMAppService.mainApp.status == .enabled
 
@@ -77,6 +78,7 @@ struct GeneralSettingsView: View {
                     set: { setOpenAtLogin($0) }
                 ))
                 Toggle("Hide Envy when clicking outside the app", isOn: $hideOnFocusLoss)
+                Toggle("Keep focus where it was when summoned", isOn: $restoreFocusOnSummon)
             }
 
             Section("Storage") {

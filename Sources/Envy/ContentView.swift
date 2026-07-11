@@ -72,6 +72,7 @@ struct ContentView: View {
     @AppStorage("fadeFocusHighlight") private var fadeFocusHighlight = false
     @AppStorage("boldFileListText") private var boldFileListText = false
     @AppStorage("showBacklinks") private var showBacklinks = true
+    @AppStorage("restoreFocusOnSummon") private var restoreFocusOnSummon = true
     // Newline-joined note ids (paths), matching the encoding NotesDirectoryPreference
     // already uses for a list of paths in one AppStorage string.
     @AppStorage("pinnedNotePaths") private var pinnedNotePathsRaw = ""
@@ -248,7 +249,13 @@ struct ContentView: View {
             createBlankNote()
         }
         .onReceive(NotificationCenter.default.publisher(for: .summonRequested)) { _ in
-            focusedField = .search
+            // The window is hidden via orderOut (not torn down) between
+            // summons, so focusedField already holds whatever was focused
+            // before hiding — restoreFocusOnSummon just means "don't
+            // override that," nothing extra to track.
+            if !restoreFocusOnSummon {
+                focusedField = .search
+            }
         }
         .onReceive(NotificationCenter.default.publisher(for: .deleteSelectedRequested)) { _ in
             deleteSelected()
