@@ -60,7 +60,11 @@ if [ -x "$GENERATE_APPCAST" ] && [ -d "$(dirname "$UPDATES_DIR")/.." ]; then
   # dist/Envy.dmg copied elsewhere; this versioned copy is purely for
   # Sparkle's own feed.
   cp "$DMG_PATH" "$UPDATES_DIR/Envy-$VERSION.dmg"
-  "$GENERATE_APPCAST" "$UPDATES_DIR"
+  # Without --download-url-prefix, generate_appcast assumes the archives
+  # directory is served from the site's root, producing enclosure URLs like
+  # https://envynote.app/Envy-1.0.1.dmg — wrong, since these dmgs actually
+  # live under assets/updates/.
+  "$GENERATE_APPCAST" --download-url-prefix "https://envynote.app/assets/updates/" "$UPDATES_DIR"
   echo "==> appcast.xml updated: $UPDATES_DIR/appcast.xml"
   echo "    (deploy EnvyWebsite, e.g. via netlify deploy, for this to take effect)"
 else
