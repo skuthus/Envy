@@ -61,6 +61,14 @@ final class HoverAwareTextView: NSTextView {
     }
 }
 
+/// The inline ghost-text suggestion shown after an open "[[" — purely a
+/// visual overlay, never part of the real text storage, so it needs no
+/// cleanup/undo bookkeeping of its own. Overrides hitTest so it never steals
+/// clicks meant for the text view underneath it.
+private final class WikiLinkGhostLabel: NSTextField {
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+}
+
 struct MarkdownTextView: NSViewRepresentable {
     @Binding var text: String
     var onNavigate: (String) -> Void
@@ -69,6 +77,12 @@ struct MarkdownTextView: NSViewRepresentable {
     var searchQuery: String
     var fontZoom: CGFloat = 0
     var plainTextMode: Bool = false
+    /// Existing note titles, offered as an inline ghost-text completion while
+    /// typing inside an open "[[" — same prefix-match rule as the search
+    /// box's own suggestion. Expected ordered most-recently-modified first,
+    /// so a tie between several matching titles favors whichever note was
+    /// touched most recently.
+    var noteTitles: [String] = []
     /// Bumped by NoteEditorView only when `text` changed because the note was
     /// edited externally (not from this view's own typing), since `text` is
     /// otherwise treated as a lagging echo — see the note on updateNSView.
@@ -269,6 +283,29 @@ struct MarkdownTextView: NSViewRepresentable {
         private var cachedText: String = ""
         private var cachedWikiLinkRanges: [NSRange] = []
         private var isHandlingTextChange = false
+        /// Set by shouldChangeText(in:replacementString:) when the in-flight
+        /// edit is a single plain character typed at the cursor (as opposed
+        /// to a paste, a deletion, or a programmatic edit) and consumed by
+        /// textDidChange right after — the handoff that lets auto-closing
+        /// react to "the user just typed this" without needing to diff text
+        /// before/after itself.
+        private var pendingAutoCloseTrigger: (character: String, location: Int)?
+        /// Set by shouldChangeText(in:replacementString:) when the in-flight
+        /// edit is a plain single-character backspace, capturing which
+        /// character was actually deleted — consumed by textDidChange right
+        /// after so a backspace that deletes an opener can also remove its
+        /// now-empty closer sitting right at the cursor.
+        private var pendingBackspaceTrigger: (deletedCharacter: String, location: Int)?
+        /// Lazily-created overlay for the wiki-link ghost suggestion — a
+        /// subview of the text view itself so it scrolls along with content,
+        /// never touched by restyle() since it's not part of textStorage.
+        private var wikiLinkGhostLabel: WikiLinkGhostLabel?
+        /// The suggested remainder text currently on screen, and the cursor
+        /// location it was computed for. Accepting only applies if the
+        /// cursor still matches — Tab/Right-arrow otherwise fall through to
+        /// their normal behavior.
+        private var wikiLinkGhostRemainder: String?
+        private var wikiLinkGhostAnchor: Int?
         // NSObjectProtocol isn't Sendable, which the compiler otherwise flags
         // on the nonisolated deinit below (deinit is always nonisolated, even
         // for a @MainActor class) — safe in practice, matching the same
@@ -298,6 +335,43 @@ struct MarkdownTextView: NSViewRepresentable {
             if let italicObserver { NotificationCenter.default.removeObserver(italicObserver) }
         }
 
+        /// Intercepts single-character insertions before they land, purely to
+        /// detect two things the post-hoc textDidChange pass can't see on its
+        /// own: (1) a managed closer typed right where one already sits, so
+        /// it can "type through" it instead of duplicating it, and (2) which
+        /// exact character was just typed and where, handed off via
+        /// pendingAutoCloseTrigger for the actual auto-close logic in
+        /// textDidChange. Anything that isn't a plain single-char insert
+        /// (paste, deletion, replacing a selection) is left alone entirely.
+        func textView(_ textView: NSTextView, shouldChangeTextIn affectedCharRange: NSRange, replacementString: String?) -> Bool {
+            guard !parent.plainTextMode else {
+                pendingAutoCloseTrigger = nil
+                pendingBackspaceTrigger = nil
+                return true
+            }
+            let nsText = textView.string as NSString
+            if (replacementString?.isEmpty ?? true), affectedCharRange.length == 1 {
+                pendingAutoCloseTrigger = nil
+                let deletedCharacter = nsText.substring(with: affectedCharRange)
+                pendingBackspaceTrigger = (deletedCharacter, affectedCharRange.location)
+                return true
+            }
+            pendingBackspaceTrigger = nil
+            guard let replacementString, replacementString.count == 1, affectedCharRange.length == 0 else {
+                pendingAutoCloseTrigger = nil
+                return true
+            }
+            if Self.managedCloserCharacters.contains(replacementString),
+               affectedCharRange.location < nsText.length,
+               nsText.substring(with: NSRange(location: affectedCharRange.location, length: 1)) == replacementString {
+                pendingAutoCloseTrigger = nil
+                textView.setSelectedRange(NSRange(location: affectedCharRange.location + 1, length: 0))
+                return false
+            }
+            pendingAutoCloseTrigger = (replacementString, affectedCharRange.location)
+            return true
+        }
+
         func textDidChange(_ notification: Notification) {
             guard let textView = notification.object as? NSTextView else { return }
             isHandlingTextChange = true
@@ -307,6 +381,14 @@ struct MarkdownTextView: NSViewRepresentable {
             // auto-renumbering are still "the app noticing markdown" in a
             // way a plain editor shouldn't do.
             if !parent.plainTextMode {
+                if let trigger = pendingAutoCloseTrigger {
+                    pendingAutoCloseTrigger = nil
+                    autoCloseIfNeeded(typed: trigger.character, insertedAt: trigger.location, in: textView)
+                }
+                if let trigger = pendingBackspaceTrigger {
+                    pendingBackspaceTrigger = nil
+                    collapseMatchingCloseIfNeeded(afterDeletingOpener: trigger.deletedCharacter, at: trigger.location, in: textView)
+                }
                 expandEmojiShortcodeIfNeeded(in: textView)
             }
             parent.text = textView.string
@@ -314,6 +396,127 @@ struct MarkdownTextView: NSViewRepresentable {
             if !parent.plainTextMode {
                 renumberOrderedListIfNeeded(in: textView)
             }
+            updateWikiLinkGhostSuggestion(in: textView)
+        }
+
+        private static let managedCloserCharacters: Set<String> = ["]", ")", "`", "*", "~"]
+
+        /// Auto-closes markdown pairs immediately after the character that
+        /// opens them: "[[" completes to "[[|]]", a lone backtick or
+        /// asterisk gets its mirror right away, "~~" completes once the
+        /// second tilde lands (a single "~" means nothing in Envy's
+        /// markdown), and "(" auto-closes only right after "]", completing
+        /// a "[text](url)" link. Driven entirely by pattern-matching the
+        /// text around the cursor after the fact rather than tracking which
+        /// characters were auto-inserted, so it stays correct even if the
+        /// user deletes or retypes around a pair by hand.
+        @MainActor
+        private func autoCloseIfNeeded(typed: String, insertedAt location: Int, in textView: NSTextView) {
+            let nsText = textView.string as NSString
+            let cursor = location + 1
+
+            func char(at index: Int) -> String? {
+                guard index >= 0, index < nsText.length else { return nil }
+                return nsText.substring(with: NSRange(location: index, length: 1))
+            }
+            func insert(_ text: String, at insertLocation: Int) {
+                let range = NSRange(location: insertLocation, length: 0)
+                guard textView.shouldChangeText(in: range, replacementString: text) else { return }
+                textView.textStorage?.replaceCharacters(in: range, with: text)
+                textView.setSelectedRange(NSRange(location: insertLocation, length: 0))
+                textView.didChangeText()
+            }
+            // Normalizes a just-typed second opener (the "[" in "[[", or the
+            // "~" in "~~") against whatever already follows the cursor: a
+            // complete closing pair sitting right there is left as-is, a
+            // single closer gets upgraded to a full pair, and nothing there
+            // gets a fresh pair inserted.
+            func closeSecondOpener(with closer: String) {
+                let doubled = closer + closer
+                if char(at: cursor) == closer && char(at: cursor + 1) == closer { return }
+                if char(at: cursor) == closer {
+                    // Replace the single existing closer with the full
+                    // doubled pair in one edit, rather than inserting
+                    // alongside it — inserting just the extra closer
+                    // character would be a single-char edit matching that
+                    // same closer, which shouldChangeTextIn's "type through
+                    // it" skip-over logic would treat as the user retyping
+                    // an existing character and swallow entirely.
+                    let range = NSRange(location: cursor, length: 1)
+                    guard textView.shouldChangeText(in: range, replacementString: doubled) else { return }
+                    textView.textStorage?.replaceCharacters(in: range, with: doubled)
+                    textView.setSelectedRange(NSRange(location: cursor, length: 0))
+                    textView.didChangeText()
+                } else {
+                    insert(doubled, at: cursor)
+                }
+            }
+
+            switch typed {
+            case "`":
+                // Suppress on the 3rd backtick in a row — completing a
+                // ```fenced block```, not opening a new inline-code pair.
+                guard !(char(at: location - 1) == "`" && char(at: location - 2) == "`") else { return }
+                insert("`", at: cursor)
+
+            case "*":
+                // Suppress at the start of a line (this "*" is more likely a
+                // bullet-list marker than the start of *italic*).
+                let lineStart = nsText.lineRange(for: NSRange(location: location, length: 0)).location
+                let prefix = nsText.substring(with: NSRange(location: lineStart, length: location - lineStart))
+                guard !prefix.allSatisfy({ $0 == " " || $0 == "\t" }) else { return }
+                // Suppress on the 3rd asterisk in a row — completing
+                // ***bold italic***, not opening a new pair.
+                guard !(char(at: location - 1) == "*" && char(at: location - 2) == "*") else { return }
+                insert("*", at: cursor)
+
+            case "[":
+                if char(at: location - 1) == "[" {
+                    closeSecondOpener(with: "]")
+                } else {
+                    // A single "[" is valid on its own, for [text](url).
+                    insert("]", at: cursor)
+                }
+
+            case "~":
+                // A single "~" has no meaning in Envy's markdown, so it's
+                // left alone until a second one actually forms "~~".
+                guard char(at: location - 1) == "~" else { return }
+                closeSecondOpener(with: "~")
+
+            case "(":
+                // Only auto-closes right after "]", completing [text](...).
+                guard char(at: location - 1) == "]" else { return }
+                insert(")", at: cursor)
+
+            default:
+                break
+            }
+        }
+
+        /// Only reacts when the character the user's backspace actually
+        /// deleted was itself a "[" — never fires while backspacing through
+        /// a link's title text, only once the title is already empty and
+        /// the "[[" itself starts getting deleted. When that "[" leaves a
+        /// "]" sitting immediately at the cursor (its own now-empty match),
+        /// removes that "]" too. Peels one layer per backspace: from an
+        /// emptied "[[|]]", the first backspace deletes the inner "[" (via
+        /// AppKit's own normal delete) and this removes the inner "]",
+        /// landing on "[|]"; the next backspace repeats the same thing for
+        /// the outer pair, landing on nothing.
+        @MainActor
+        private func collapseMatchingCloseIfNeeded(afterDeletingOpener deletedCharacter: String, at location: Int, in textView: NSTextView) {
+            guard deletedCharacter == "[" else { return }
+            let nsText = textView.string as NSString
+            let closeRange = NSRange(location: location, length: 1)
+            guard closeRange.location + closeRange.length <= nsText.length,
+                  nsText.substring(with: closeRange) == "]"
+            else { return }
+            guard textView.shouldChangeText(in: closeRange, replacementString: "") else { return }
+            textView.textStorage?.replaceCharacters(in: closeRange, with: "")
+            textView.setSelectedRange(NSRange(location: location, length: 0))
+            textView.didChangeText()
+            hideWikiLinkGhost()
         }
 
         private static let emojiShortcodeRegex = try! NSRegularExpression(pattern: #":([a-zA-Z0-9_+\-]{1,32}):$"#)
@@ -417,6 +620,29 @@ struct MarkdownTextView: NSViewRepresentable {
         /// Return on a blank item exits the list rather than adding another
         /// empty one.
         func textView(_ textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
+            if !parent.plainTextMode {
+                let isTab = commandSelector == #selector(NSResponder.insertTab(_:))
+                let isRight = commandSelector == #selector(NSResponder.moveRight(_:))
+                // Right-arrow dismisses an active suggestion without touching
+                // the typed text or moving the cursor, rather than accepting
+                // it — needed whenever the intended title is itself a prefix
+                // of an existing one (typing "work" toward a new note while
+                // "workout log" already exists). Tab remains the only way to
+                // accept.
+                if isRight, wikiLinkGhostRemainder != nil {
+                    hideWikiLinkGhost()
+                    return true
+                }
+                if isTab, acceptWikiLinkGhostSuggestionIfActive(in: textView) {
+                    return true
+                }
+                // No suggestion to accept — Tab still closes/completes an
+                // in-progress wiki-link by jumping past its "]]", rather than
+                // inserting a literal tab character into the note.
+                if isTab, jumpPastWikiLinkCloseIfInside(in: textView) {
+                    return true
+                }
+            }
             guard commandSelector == #selector(NSResponder.insertNewline(_:)), !parent.plainTextMode else { return false }
             return continueListIfNeeded(in: textView)
         }
@@ -455,6 +681,7 @@ struct MarkdownTextView: NSViewRepresentable {
             // restyles using the current cursor position.
             guard !isHandlingTextChange, let textView = notification.object as? NSTextView else { return }
             restyle(textView)
+            updateWikiLinkGhostSuggestion(in: textView)
         }
 
         /// Re-applies styling using the view's own live content and current
@@ -781,6 +1008,159 @@ struct MarkdownTextView: NSViewRepresentable {
             cachedText = text
             cachedWikiLinkRanges = ranges
             return ranges
+        }
+
+        /// Shows or hides the wiki-link ghost suggestion based on the current
+        /// cursor position: active only with an empty selection sitting
+        /// somewhere after an unclosed "[[" on the current line, with at
+        /// least one character typed since it. Matching mirrors the search
+        /// box's own suggestionNote/suggestionRemainder logic exactly —
+        /// case-insensitive prefix match, first hit wins.
+        @MainActor
+        private func updateWikiLinkGhostSuggestion(in textView: NSTextView) {
+            let selection = textView.selectedRange()
+            guard !parent.plainTextMode, selection.length == 0 else {
+                hideWikiLinkGhost()
+                return
+            }
+            let nsText = textView.string as NSString
+            let cursor = selection.location
+            let lineRange = nsText.lineRange(for: NSRange(location: cursor, length: 0))
+            let searchRange = NSRange(location: lineRange.location, length: cursor - lineRange.location)
+            let lastOpen = nsText.range(of: "[[", options: .backwards, range: searchRange)
+            guard lastOpen.location != NSNotFound else {
+                hideWikiLinkGhost()
+                return
+            }
+            let afterOpen = lastOpen.location + lastOpen.length
+            let closedBetween = nsText.range(of: "]]", options: [], range: NSRange(location: afterOpen, length: cursor - afterOpen))
+            guard closedBetween.location == NSNotFound else {
+                hideWikiLinkGhost()
+                return
+            }
+            let query = nsText.substring(with: NSRange(location: afterOpen, length: cursor - afterOpen))
+            guard !query.isEmpty, !query.contains("["), !query.contains("]") else {
+                hideWikiLinkGhost()
+                return
+            }
+            let lowered = query.lowercased()
+            guard let match = parent.noteTitles.first(where: { $0.lowercased().hasPrefix(lowered) && $0.count > query.count }) else {
+                hideWikiLinkGhost()
+                return
+            }
+            let remainder = String(match.dropFirst(query.count))
+            showWikiLinkGhost(remainder: remainder, atCursor: cursor, in: textView)
+        }
+
+        /// Positions the ghost label right after the last typed character,
+        /// using the same glyph-rect math as checkboxHitRects()/
+        /// footnoteHitRects() to convert a character range to an on-screen
+        /// point.
+        @MainActor
+        private func showWikiLinkGhost(remainder: String, atCursor cursor: Int, in textView: NSTextView) {
+            guard cursor > 0, let layoutManager = textView.layoutManager, let textContainer = textView.textContainer else {
+                hideWikiLinkGhost()
+                return
+            }
+            let charRange = NSRange(location: cursor - 1, length: 1)
+            let glyphRange = layoutManager.glyphRange(forCharacterRange: charRange, actualCharacterRange: nil)
+            var rect = layoutManager.boundingRect(forGlyphRange: glyphRange, in: textContainer)
+            let origin = textView.textContainerOrigin
+            rect.origin.x += origin.x
+            rect.origin.y += origin.y
+
+            let label: WikiLinkGhostLabel
+            if let existing = wikiLinkGhostLabel {
+                label = existing
+            } else {
+                label = WikiLinkGhostLabel()
+                label.isEditable = false
+                label.isSelectable = false
+                label.isBezeled = false
+                label.isBordered = false
+                label.drawsBackground = false
+                label.lineBreakMode = .byClipping
+                label.cell?.usesSingleLineMode = true
+                textView.addSubview(label)
+                wikiLinkGhostLabel = label
+            }
+            label.font = textView.font
+            label.textColor = parent.theme.resolvedMarkerColor
+            label.stringValue = remainder
+            label.sizeToFit()
+            label.frame.origin = NSPoint(x: rect.maxX, y: rect.minY)
+            label.isHidden = false
+
+            // The ghost renders as a floating overlay right where the real
+            // "]]" already sits on screen — without this, the two visually
+            // collide, the closing brackets bleeding right through the
+            // suggestion text. Hiding the brackets' ink (not their layout
+            // width, so nothing after them reflows) clears that space; a
+            // normal restyle() puts them back the moment the ghost goes away.
+            let nsText = textView.string as NSString
+            let closeRange = NSRange(location: cursor, length: 2)
+            if closeRange.location + closeRange.length <= nsText.length, nsText.substring(with: closeRange) == "]]" {
+                textView.textStorage?.addAttribute(.foregroundColor, value: NSColor.clear, range: closeRange)
+            }
+
+            wikiLinkGhostRemainder = remainder
+            wikiLinkGhostAnchor = cursor
+        }
+
+        @MainActor
+        private func hideWikiLinkGhost() {
+            let hadActiveGhost = wikiLinkGhostRemainder != nil
+            wikiLinkGhostLabel?.isHidden = true
+            wikiLinkGhostRemainder = nil
+            wikiLinkGhostAnchor = nil
+            // Restores the real "]]" ink hidden by showWikiLinkGhost() —
+            // needed here specifically for the dismiss-via-right-arrow path,
+            // which doesn't otherwise trigger a restyle on its own.
+            if hadActiveGhost, let textView { restyle(textView) }
+        }
+
+        /// Commits the currently-shown ghost suggestion into real text, only
+        /// if the cursor hasn't moved since it was computed — Tab/Right-arrow
+        /// otherwise fall through to their normal behavior.
+        @MainActor
+        private func acceptWikiLinkGhostSuggestionIfActive(in textView: NSTextView) -> Bool {
+            guard let remainder = wikiLinkGhostRemainder,
+                  let anchor = wikiLinkGhostAnchor,
+                  textView.selectedRange() == NSRange(location: anchor, length: 0)
+            else { return false }
+            let range = NSRange(location: anchor, length: 0)
+            guard textView.shouldChangeText(in: range, replacementString: remainder) else { return false }
+            textView.textStorage?.replaceCharacters(in: range, with: remainder)
+            textView.setSelectedRange(NSRange(location: anchor + (remainder as NSString).length, length: 0))
+            textView.didChangeText()
+            hideWikiLinkGhost()
+            return true
+        }
+
+        /// Jumps the cursor past the nearest "]]" ahead of it, if the cursor
+        /// currently sits inside an unclosed "[[" on the current line — lets
+        /// Tab close out a wiki-link with no matching suggestion (an exact
+        /// title, a brand-new note title, or just no match at all) the same
+        /// way accepting a suggestion does when one is showing.
+        @MainActor
+        private func jumpPastWikiLinkCloseIfInside(in textView: NSTextView) -> Bool {
+            let selection = textView.selectedRange()
+            guard selection.length == 0 else { return false }
+            let nsText = textView.string as NSString
+            let cursor = selection.location
+            let lineRange = nsText.lineRange(for: NSRange(location: cursor, length: 0))
+            let backSearchRange = NSRange(location: lineRange.location, length: cursor - lineRange.location)
+            let lastOpen = nsText.range(of: "[[", options: .backwards, range: backSearchRange)
+            guard lastOpen.location != NSNotFound else { return false }
+            let afterOpen = lastOpen.location + lastOpen.length
+            let closedBeforeCursor = nsText.range(of: "]]", options: [], range: NSRange(location: afterOpen, length: cursor - afterOpen))
+            guard closedBeforeCursor.location == NSNotFound else { return false }
+            let lineEnd = lineRange.location + lineRange.length
+            let close = nsText.range(of: "]]", options: [], range: NSRange(location: cursor, length: lineEnd - cursor))
+            guard close.location != NSNotFound else { return false }
+            textView.setSelectedRange(NSRange(location: close.location + close.length, length: 0))
+            hideWikiLinkGhost()
+            return true
         }
     }
 }

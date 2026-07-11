@@ -96,6 +96,7 @@ struct NoteEditorView: View {
                 searchQuery: searchQuery,
                 fontZoom: fontZoom,
                 plainTextMode: plainTextMode,
+                noteTitles: store.notes.sorted { $0.modifiedDate > $1.modifiedDate }.map(\.title),
                 externalReloadToken: externalReloadToken,
                 highlightRange: pendingHighlightRange,
                 highlightTrigger: highlightTrigger

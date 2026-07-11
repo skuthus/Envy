@@ -540,7 +540,12 @@ enum MarkdownStyler {
             let title = (text as NSString).substring(with: titleRange)
             let encoded = title.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? title
 
-            if match.range == revealedLinkRange {
+            // Revealed on mouse hover (revealedLinkRange) same as before, and
+            // now also while the cursor is actually inside the link — a
+            // wiki-link being actively typed has no mouse anywhere near it,
+            // so without this the brackets would collapse the instant a
+            // keystroke restyles the text.
+            if match.range == revealedLinkRange || touches(match.range, cursorSelection) {
                 textStorage.addAttribute(.foregroundColor, value: markerColor, range: bracketOpen)
                 textStorage.addAttribute(.foregroundColor, value: markerColor, range: bracketClose)
             } else {
