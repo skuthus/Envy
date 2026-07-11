@@ -3,6 +3,15 @@ import SwiftUI
 struct AboutView: View {
     @State private var showingMarkupHelp = false
     @State private var showingKeyboardShortcuts = false
+    @Environment(\.openURL) private var openURL
+
+    // Reads from the bundle rather than a hardcoded string, so this can't
+    // drift out of sync with Info.plist the way the "Version 1.0.0" literal
+    // here used to.
+    private var versionText: String {
+        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "—"
+        return "Version \(version)"
+    }
 
     var body: some View {
         VStack(spacing: 10) {
@@ -16,7 +25,7 @@ struct AboutView: View {
                 .font(.callout)
                 .foregroundStyle(.secondary)
 
-            Text("Version 1.0.0")
+            Text(versionText)
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
@@ -36,6 +45,9 @@ struct AboutView: View {
                 }
                 Button("View Keyboard Shortcuts…") {
                     showingKeyboardShortcuts = true
+                }
+                Button("View Changelog…") {
+                    openURL(URL(string: "https://envynote.app/changelog.html")!)
                 }
             }
             .padding(.top, 8)
