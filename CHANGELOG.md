@@ -4,6 +4,10 @@ Also published at [envynote.app/changelog.html](https://envynote.app/changelog.h
 
 ## 1.1.1 — unreleased
 
+**A pinnable menu bar note.** Right-click the eyecon for "Pin to Menu Bar" on any note (or "New Pinned Note" / "New Pinned Note from Template" to create one on the spot), then set Settings → General → "Clicking the menu bar icon" to "Show Pinned Note" — a click now shows that note in a small, resizable, editable popup instead of opening the full app. Good for a running to-do list or a reminder you want one click away.
+
+- The popup is a real, user-resizable window (remembers its size across launches), with its own pin button to keep it open and floating above other windows instead of closing on the next outside click, and its own font zoom (⌘+/⌘-/⌘0) independent of the main editor's.
+- Its title is editable right there in the popup, same rename behavior (and collision handling) as renaming any other note.
 - Settings → General has a new "Show tags in title bar" toggle (off by default) — a note's `#tags` show as chips next to its title. Click one to search `tag:whatever` without losing your place — the note you clicked from stays open.
 - Task-list checkboxes no longer need a leading `-` — `[ ]`/`[x]` at the start of any line is now a live, clickable checkbox on its own, not just as part of a `- [ ]` list item. (`- [ ]` still works exactly as before, and still gets the bulleted-list treatment.)
 - `[ ]`/`[x]` typed inside inline code (`` `[ ]` ``) stays literal text instead of turning into a checkbox, matching how every other markdown marker already behaves inside a code span.
