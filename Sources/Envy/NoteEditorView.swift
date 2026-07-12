@@ -8,6 +8,7 @@ struct NoteEditorView: View {
     var focusedField: FocusState<FocusField?>.Binding
     var onNavigate: (String) -> Void
     var onRename: (String) -> Void
+    var onTagSearch: (String) -> Void
     var theme: Theme
     var requireModifierForLinkClick: Bool
     var searchQuery: String
@@ -52,6 +53,7 @@ struct NoteEditorView: View {
         focusedField: FocusState<FocusField?>.Binding,
         onNavigate: @escaping (String) -> Void,
         onRename: @escaping (String) -> Void,
+        onTagSearch: @escaping (String) -> Void,
         theme: Theme,
         requireModifierForLinkClick: Bool,
         searchQuery: String,
@@ -66,6 +68,7 @@ struct NoteEditorView: View {
         self.focusedField = focusedField
         self.onNavigate = onNavigate
         self.onRename = onRename
+        self.onTagSearch = onTagSearch
         self.theme = theme
         self.requireModifierForLinkClick = requireModifierForLinkClick
         self.searchQuery = searchQuery
@@ -184,6 +187,8 @@ struct NoteEditorView: View {
                             .padding(.vertical, 2)
                             .background(Color(nsColor: theme.resolvedTagBackgroundColor))
                             .clipShape(Capsule())
+                            .contentShape(Capsule())
+                            .onTapGesture { onTagSearch(tag) }
                     }
                 }
                 // A long content edit can add/remove tags on every keystroke

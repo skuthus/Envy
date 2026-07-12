@@ -692,6 +692,7 @@ struct ContentView: View {
                         focusedField: $focusedField,
                         onNavigate: navigateToNote,
                         onRename: { newTitle in renameSelectedNote(to: newTitle) },
+                        onTagSearch: searchByTag,
                         theme: theme,
                         requireModifierForLinkClick: requireModifierForLinkClick,
                         searchQuery: query,
@@ -1168,6 +1169,17 @@ struct ContentView: View {
         editingTemplate = nil
         selectedID = target.id
         query = ""
+    }
+
+    /// Clicking a tag chip in the editor's title bar — searches for it like
+    /// typing "tag:whatever" would, without disturbing the currently open
+    /// note. reconcileSelection() (already run from query's own .onChange)
+    /// only clears selectedID if it's no longer in the filtered results;
+    /// since this note itself has the tag being searched, it's always still
+    /// in that list, so it stays selected with no extra handling needed here.
+    private func searchByTag(_ tag: String) {
+        query = "tag:\(tag)"
+        focusedField = .search
     }
 
     /// "template:xyz" creates from whichever template is highlighted (arrow
