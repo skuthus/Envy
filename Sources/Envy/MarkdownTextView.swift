@@ -673,6 +673,7 @@ struct MarkdownTextView: NSViewRepresentable {
         func textView(_ textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
             if !parent.plainTextMode {
                 let isTab = commandSelector == #selector(NSResponder.insertTab(_:))
+                let isBacktab = commandSelector == #selector(NSResponder.insertBacktab(_:))
                 let isRight = commandSelector == #selector(NSResponder.moveRight(_:))
                 // Right-arrow dismisses an active suggestion without touching
                 // the typed text or moving the cursor, rather than accepting
@@ -693,9 +694,66 @@ struct MarkdownTextView: NSViewRepresentable {
                 if isTab, jumpPastWikiLinkCloseIfInside(in: textView) {
                     return true
                 }
+                // Neither a ghost suggestion nor an open wiki-link — on a
+                // list item (bullet, numbered, or task), Tab/Shift-Tab nest
+                // the line a level deeper/shallower instead of inserting a
+                // literal tab character. This is what makes a checkbox
+                // pressed Return under another one into a sub-task: the new
+                // (still-empty) line is already a task-list item the moment
+                // it's created, so Tab right after just needs to indent it.
+                if isTab, indentListLineIfNeeded(in: textView) {
+                    return true
+                }
+                if isBacktab, outdentListLineIfNeeded(in: textView) {
+                    return true
+                }
             }
             guard commandSelector == #selector(NSResponder.insertNewline(_:)), !parent.plainTextMode else { return false }
             return continueListIfNeeded(in: textView)
+        }
+
+        /// One level of list nesting, in spaces rather than a literal tab
+        /// character — more portable across other editors/renderers a
+        /// plain-text note might end up opened in, where a raw tab's
+        /// effective indent width isn't consistently interpreted.
+        private static let listIndentUnit = "    "
+
+        @MainActor
+        private func indentListLineIfNeeded(in textView: NSTextView) -> Bool {
+            let selectedRange = textView.selectedRange()
+            let nsText = textView.string as NSString
+            let lineRange = nsText.lineRange(for: NSRange(location: selectedRange.location, length: 0))
+            let line = nsText.substring(with: lineRange)
+            guard MarkdownStyler.isListLine(line) else { return false }
+
+            let insertion = Self.listIndentUnit
+            let insertRange = NSRange(location: lineRange.location, length: 0)
+            guard textView.shouldChangeText(in: insertRange, replacementString: insertion) else { return false }
+            textView.textStorage?.replaceCharacters(in: insertRange, with: insertion)
+            let shift = (insertion as NSString).length
+            textView.setSelectedRange(NSRange(location: selectedRange.location + shift, length: selectedRange.length))
+            textView.didChangeText()
+            return true
+        }
+
+        @MainActor
+        private func outdentListLineIfNeeded(in textView: NSTextView) -> Bool {
+            let selectedRange = textView.selectedRange()
+            let nsText = textView.string as NSString
+            let lineRange = nsText.lineRange(for: NSRange(location: selectedRange.location, length: 0))
+            let line = nsText.substring(with: lineRange)
+            guard MarkdownStyler.isListLine(line) else { return false }
+
+            let leadingWhitespaceCount = line.prefix(while: { $0 == " " || $0 == "\t" }).count
+            guard leadingWhitespaceCount > 0 else { return true }  // already at the top level — consume the key anyway rather than falling through to default Shift-Tab handling
+            let removeCount = min(leadingWhitespaceCount, (Self.listIndentUnit as NSString).length)
+            let removeRange = NSRange(location: lineRange.location, length: removeCount)
+            guard textView.shouldChangeText(in: removeRange, replacementString: "") else { return false }
+            textView.textStorage?.replaceCharacters(in: removeRange, with: "")
+            let newLocation = max(lineRange.location, selectedRange.location - removeCount)
+            textView.setSelectedRange(NSRange(location: newLocation, length: max(0, selectedRange.length - removeCount)))
+            textView.didChangeText()
+            return true
         }
 
         @MainActor

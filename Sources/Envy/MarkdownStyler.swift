@@ -129,6 +129,17 @@ enum MarkdownStyler {
         return orderedListRegex.firstMatch(in: line, range: full) != nil
     }
 
+    /// Whether `line` is any kind of list item (bullet, numbered, or task) —
+    /// used to decide whether Tab/Shift-Tab should indent/outdent the whole
+    /// line (nesting it a level deeper or shallower) instead of doing
+    /// nothing special.
+    static func isListLine(_ line: String) -> Bool {
+        let full = NSRange(location: 0, length: (line as NSString).length)
+        return taskListRegex.firstMatch(in: line, range: full) != nil
+            || unorderedListRegex.firstMatch(in: line, range: full) != nil
+            || orderedListRegex.firstMatch(in: line, range: full) != nil
+    }
+
     /// The digits-only range of a numbered-list line's number (absolute,
     /// given `lineStart`), its integer value, and its separator character —
     /// used by the renumbering pass to surgically replace just the digits.
