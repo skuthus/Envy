@@ -56,6 +56,7 @@ struct ContentView: View {
     @AppStorage("dateDisplayStyle") private var dateDisplayStyleRaw = DateDisplayStyle.smart.rawValue
     @AppStorage("requireModifierForLinkClick") private var requireModifierForLinkClick = true
     @AppStorage("showEditorTitleHeader") private var showEditorTitleHeader = true
+    @AppStorage("showTagsInTitleBar") private var showTagsInTitleBar = false
     @AppStorage(NotesDirectoryPreference.storageKey) private var notesDirectoryPathsRaw = ""
     @AppStorage(NotesDirectoryPreference.disabledStorageKey) private var disabledDirectoryPathsRaw = ""
     @AppStorage("hasCreatedWelcomeNote") private var hasCreatedWelcomeNote = false
@@ -695,6 +696,7 @@ struct ContentView: View {
                         requireModifierForLinkClick: requireModifierForLinkClick,
                         searchQuery: query,
                         showTitleHeader: showEditorTitleHeader,
+                        showTagsInTitleBar: showTagsInTitleBar,
                         fontZoom: CGFloat(editorFontZoom),
                         plainTextMode: plainTextMode,
                         onStatsChange: { words, characters in

@@ -12,6 +12,7 @@ struct NoteEditorView: View {
     var requireModifierForLinkClick: Bool
     var searchQuery: String
     var showTitleHeader: Bool
+    var showTagsInTitleBar: Bool
     var fontZoom: CGFloat
     var plainTextMode: Bool
     var onStatsChange: (Int, Int) -> Void
@@ -55,6 +56,7 @@ struct NoteEditorView: View {
         requireModifierForLinkClick: Bool,
         searchQuery: String,
         showTitleHeader: Bool,
+        showTagsInTitleBar: Bool,
         fontZoom: CGFloat,
         plainTextMode: Bool,
         onStatsChange: @escaping (Int, Int) -> Void
@@ -68,6 +70,7 @@ struct NoteEditorView: View {
         self.requireModifierForLinkClick = requireModifierForLinkClick
         self.searchQuery = searchQuery
         self.showTitleHeader = showTitleHeader
+        self.showTagsInTitleBar = showTagsInTitleBar
         self.fontZoom = fontZoom
         self.plainTextMode = plainTextMode
         self.onStatsChange = onStatsChange
@@ -171,6 +174,23 @@ struct NoteEditorView: View {
                     if !focused { commitRename() }
                 }
             Spacer()
+            if showTagsInTitleBar, let note, !note.tags.isEmpty {
+                HStack(spacing: 6) {
+                    ForEach(note.tags.sorted(), id: \.self) { tag in
+                        Text("#\(tag)")
+                            .font(.caption.bold())
+                            .foregroundStyle(Color(nsColor: theme.resolvedTagColor))
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Color(nsColor: theme.resolvedTagBackgroundColor))
+                            .clipShape(Capsule())
+                    }
+                }
+                // A long content edit can add/remove tags on every keystroke
+                // (each debounced save updates `note`) — animating that
+                // would make the title bar visibly jitter while typing.
+                .transaction { $0.animation = nil }
+            }
         }
         .padding(.horizontal)
         .padding(.vertical, 8)

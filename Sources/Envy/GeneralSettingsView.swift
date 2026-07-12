@@ -9,6 +9,7 @@ struct GeneralSettingsView: View {
     @AppStorage("dateDisplayStyle") private var dateDisplayStyleRaw = DateDisplayStyle.smart.rawValue
     @AppStorage("requireModifierForLinkClick") private var requireModifierForLinkClick = true
     @AppStorage("showEditorTitleHeader") private var showEditorTitleHeader = true
+    @AppStorage("showTagsInTitleBar") private var showTagsInTitleBar = false
     @AppStorage(NotesDirectoryPreference.storageKey) private var notesDirectoryPathsRaw = ""
     @AppStorage(NotesDirectoryPreference.disabledStorageKey) private var disabledDirectoryPathsRaw = ""
     @AppStorage("moveFocusToEditorOnEnter") private var moveFocusToEditorOnEnter = true
@@ -201,6 +202,8 @@ struct GeneralSettingsView: View {
 
             Section("Editor") {
                 Toggle("Show title bar above note", isOn: $showEditorTitleHeader)
+                Toggle("Show tags in title bar", isOn: $showTagsInTitleBar)
+                    .disabled(!showEditorTitleHeader)
                 Toggle("Require ⌘-click to open note links", isOn: $requireModifierForLinkClick)
                 Toggle("Plain-text mode (ignore markdown formatting)", isOn: $plainTextMode)
                 Toggle("Show backlinks in footer", isOn: $showBacklinks)
