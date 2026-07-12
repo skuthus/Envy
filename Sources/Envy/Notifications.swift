@@ -20,4 +20,8 @@ extension Notification.Name {
     static let focusPreviousAreaRequested = Notification.Name("focusPreviousAreaRequested")
     static let togglePinRequested = Notification.Name("togglePinRequested")
     static let toggleBacklinksRequested = Notification.Name("toggleBacklinksRequested")
+    /// Posted with a note's file URL as `object` — from the pinned-note menu
+    /// bar popover's "open in Envy" button, so the main window opens
+    /// straight to that same note instead of whatever was last selected.
+    static let externalNoteOpenRequested = Notification.Name("externalNoteOpenRequested")
 }

@@ -1,6 +1,7 @@
 import SwiftUI
 import AppKit
 import Sparkle
+import EnvyCore
 
 final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private let hotKey = GlobalHotKey()
@@ -15,6 +16,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var blinkTimer: Timer?
     private var appliedVisibility: AppVisibility?
     private var windowStateObservers: [Any] = []
+    private var pinnedNotePanel: NSPanel?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Applied inline here rather than via applyAppVisibility() below —
@@ -378,20 +380,152 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         return image
     }
 
-    /// Left-click summons/hides the app exactly like the global hotkey;
-    /// right-click shows a small menu instead — the two need to be told
-    /// apart manually since a status item's .button.action alone doesn't
-    /// distinguish which mouse button was used.
+    /// Left-click summons/hides the app exactly like the global hotkey (or,
+    /// with "Show Pinned Note" selected in Settings and a note actually
+    /// pinned, shows that note in a small panel instead); right-click
+    /// shows a small menu — the two need to be told apart manually since a
+    /// status item's .button.action alone doesn't distinguish which mouse
+    /// button was used.
     @MainActor
     @objc private func statusItemClicked(_ sender: Any?) {
         guard let event = NSApp.currentEvent else { return }
         if event.type == .rightMouseUp {
             showStatusMenu()
+        } else if shouldShowPinnedNotePopover, let pinnedNoteURL {
+            togglePinnedNotePanel(for: pinnedNoteURL)
         } else {
             toggleWindow()
         }
     }
 
+    // Read straight from UserDefaults rather than @AppStorage — AppDelegate
+    // is a plain NSObject, not a SwiftUI view, so @AppStorage has nothing to
+    // invalidate/re-render here; a direct read of whatever's current at
+    // click time is all this needs.
+    private var shouldShowPinnedNotePopover: Bool {
+        UserDefaults.standard.string(forKey: "menuBarClickAction") == MenuBarClickAction.showPinnedNote.rawValue
+    }
+
+    /// nil if nothing's pinned, or if the pinned path no longer exists on
+    /// disk (renamed, moved, deleted since being pinned) — falls back to
+    /// the normal toggleWindow() behavior in either case rather than
+    /// popping up an empty/broken panel.
+    private var pinnedNoteURL: URL? {
+        let path = UserDefaults.standard.string(forKey: "menuBarPinnedNotePath") ?? ""
+        guard !path.isEmpty, FileManager.default.fileExists(atPath: path) else { return nil }
+        return URL(fileURLWithPath: path)
+    }
+
+    private static let pinnedPanelWidthKey = "menuBarPopoverWidth"
+    private static let pinnedPanelHeightKey = "menuBarPopoverHeight"
+    private static let defaultPinnedPanelSize = NSSize(width: 320, height: 400)
+
+    /// A plain NSPopover doesn't support user drag-to-resize at all — no
+    /// resize handle, no edge dragging, that's just not something the class
+    /// offers. A borderless, resizable NSPanel does, at the cost of having
+    /// to hand-roll what NSPopover gave for free: positioning near the
+    /// status item, and dismissing on any outside click (done here via
+    /// windowDidResignKey rather than juggling global/local event monitors —
+    /// simpler, and resigning key already covers "clicked elsewhere in Envy"
+    /// and "clicked another app" uniformly).
+    @MainActor
+    private func togglePinnedNotePanel(for url: URL) {
+        if let panel = pinnedNotePanel, panel.isVisible {
+            panel.close()
+            return
+        }
+        showPinnedNotePanel(for: url)
+    }
+
+    /// Unlike togglePinnedNotePanel above, always shows the panel rather
+    /// than closing it if already open for something else — used right
+    /// after creating a brand new pinned note (from the status menu), where
+    /// the intent is unambiguous: show me what I just made, not toggle
+    /// whatever might already be open.
+    @MainActor
+    private func showPinnedNotePanel(for url: URL) {
+        pinnedNotePanel?.close()
+        guard let button = statusItem?.button, let buttonWindow = button.window else { return }
+
+        let width = UserDefaults.standard.double(forKey: Self.pinnedPanelWidthKey)
+        let height = UserDefaults.standard.double(forKey: Self.pinnedPanelHeightKey)
+        let size = NSSize(
+            width: width > 0 ? width : Self.defaultPinnedPanelSize.width,
+            height: height > 0 ? height : Self.defaultPinnedPanelSize.height
+        )
+
+        let panel = NSPanel(
+            contentRect: NSRect(origin: .zero, size: size),
+            styleMask: [.titled, .resizable, .nonactivatingPanel, .fullSizeContentView],
+            backing: .buffered,
+            defer: false
+        )
+        panel.titlebarAppearsTransparent = true
+        panel.titleVisibility = .hidden
+        panel.standardWindowButton(.closeButton)?.isHidden = true
+        panel.standardWindowButton(.miniaturizeButton)?.isHidden = true
+        panel.standardWindowButton(.zoomButton)?.isHidden = true
+        panel.isFloatingPanel = true
+        panel.level = .floating
+        panel.hidesOnDeactivate = false
+        panel.isReleasedWhenClosed = false
+        panel.delegate = self
+        panel.minSize = NSSize(width: 200, height: 150)
+        panel.contentViewController = NSHostingController(rootView: PinnedNotePopoverView(
+            url: url,
+            onOpenInApp: { [weak self] in
+                self?.pinnedNotePanel?.close()
+                self?.activateAndShowWindow()
+                NotificationCenter.default.post(name: .externalNoteOpenRequested, object: url)
+            }
+        ))
+
+        // Positioned like the old popover's preferredEdge: .minY — centered
+        // under the status item button, clamped so it can't run off the
+        // right/left/bottom edge of the screen the button's actually on
+        // (menu bar items sit close to the screen edge often enough that
+        // this isn't just a theoretical concern).
+        let buttonFrameOnScreen = buttonWindow.convertToScreen(button.convert(button.bounds, to: nil))
+        var origin = NSPoint(x: buttonFrameOnScreen.midX - size.width / 2, y: buttonFrameOnScreen.minY - size.height - 4)
+        if let screenFrame = buttonWindow.screen?.visibleFrame {
+            origin.x = min(max(origin.x, screenFrame.minX), screenFrame.maxX - size.width)
+            origin.y = max(origin.y, screenFrame.minY)
+        }
+        panel.setFrame(NSRect(origin: origin, size: size), display: true)
+
+        panel.makeKeyAndOrderFront(nil)
+        pinnedNotePanel = panel
+    }
+
+    /// Auto-dismisses the pinned-note panel on any outside click — the
+    /// hand-rolled replacement for NSPopover's own .transient behavior.
+    /// Guarded to only act on the panel itself since AppDelegate is also
+    /// the main window's delegate, and this method is new (not overriding
+    /// anything the main window relied on), but better safe than sorry.
+    /// Skipped entirely while the panel's own pin button is on — that's the
+    /// whole point of it, staying open (and, via .floating level set when
+    /// the panel was created, on top of other windows) instead of closing
+    /// the moment focus moves elsewhere. Still closeable any time by
+    /// clicking the menu bar icon again, pinned or not.
+    func windowDidResignKey(_ notification: Notification) {
+        guard let window = notification.object as? NSWindow, window === pinnedNotePanel else { return }
+        guard !UserDefaults.standard.bool(forKey: "menuBarPopoverPinnedOpen") else { return }
+        window.close()
+    }
+
+    /// Persists the user's chosen size so the panel reopens at whatever
+    /// size they last left it, rather than always resetting back to the
+    /// default 320x400. windowDidEndLiveResize (fires once, after a resize
+    /// drag finishes) rather than windowDidResize (fires continuously
+    /// during the drag) — no reason to hit UserDefaults dozens of times for
+    /// one resize gesture.
+    func windowDidEndLiveResize(_ notification: Notification) {
+        guard let window = notification.object as? NSWindow, window === pinnedNotePanel else { return }
+        UserDefaults.standard.set(window.frame.width, forKey: Self.pinnedPanelWidthKey)
+        UserDefaults.standard.set(window.frame.height, forKey: Self.pinnedPanelHeightKey)
+    }
+
+    @MainActor
     private func showStatusMenu() {
         guard let button = statusItem?.button else { return }
         let menu = NSMenu()
@@ -399,6 +533,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let newNote = NSMenuItem(title: "New Note", action: #selector(newNoteFromStatusMenu), keyEquivalent: "")
         newNote.target = self
         menu.addItem(newNote)
+
+        let newPinnedNote = NSMenuItem(title: "New Pinned Note", action: #selector(newPinnedNoteFromStatusMenu), keyEquivalent: "")
+        newPinnedNote.target = self
+        menu.addItem(newPinnedNote)
+
+        let templateParent = NSMenuItem(title: "New Pinned Note from Template", action: nil, keyEquivalent: "")
+        templateParent.submenu = templateSubmenu()
+        menu.addItem(templateParent)
 
         menu.addItem(.separator())
 
@@ -414,6 +556,71 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     @objc private func newNoteFromStatusMenu() {
         activateAndShowWindow()
         NotificationCenter.default.post(name: .newNoteRequested, object: nil)
+    }
+
+    /// A NoteStore scoped to whatever folders are actually configured, used
+    /// and discarded within a single menu action — reuses the exact same
+    /// unique-filename and template-substitution logic the main app relies
+    /// on (rather than re-implementing either here) without needing a
+    /// second *live*, ongoing NoteStore instance: its FSEvents watcher tears
+    /// itself down via deinit the moment this goes out of scope. Safe to
+    /// use immediately after construction (not needing to wait for its own
+    /// async initial reload) since both create(title:) and
+    /// create(title:fromTemplate:dateText:) check the filesystem directly
+    /// for filename uniqueness, not the (possibly still-loading) in-memory
+    /// notes array.
+    @MainActor
+    private func makeScratchNoteStore() -> NoteStore {
+        NoteStore(directories: NotesDirectoryPreference.loadEnabled())
+    }
+
+    @MainActor
+    @objc private func newPinnedNoteFromStatusMenu() {
+        let note = makeScratchNoteStore().create(title: "Untitled")
+        pinToMenuBarAndShow(note)
+    }
+
+    @MainActor
+    private func templateSubmenu() -> NSMenu {
+        let submenu = NSMenu()
+        let includeAllFolders = UserDefaults.standard.string(forKey: "templatesScope") == TemplatesScope.perFolder.rawValue
+        let templates = makeScratchNoteStore().templates(includeAllFolders: includeAllFolders)
+        if templates.isEmpty {
+            let empty = NSMenuItem(title: "No Templates", action: nil, keyEquivalent: "")
+            empty.isEnabled = false
+            submenu.addItem(empty)
+        } else {
+            for template in templates {
+                let item = NSMenuItem(title: template.name, action: #selector(newPinnedNoteFromTemplateMenuItem(_:)), keyEquivalent: "")
+                item.target = self
+                item.representedObject = template
+                submenu.addItem(item)
+            }
+        }
+        return submenu
+    }
+
+    @MainActor
+    @objc private func newPinnedNoteFromTemplateMenuItem(_ sender: NSMenuItem) {
+        guard let template = sender.representedObject as? NoteTemplate else { return }
+        let pattern = UserDefaults.standard.string(forKey: "templateDateFormatPattern") ?? TemplateDateFormat.defaultPattern
+        let dateText = TemplateDateFormat.string(from: Date(), pattern: pattern)
+        let note = makeScratchNoteStore().create(title: template.name, fromTemplate: template, dateText: dateText)
+        pinToMenuBarAndShow(note)
+    }
+
+    /// Shared tail end of both "New Pinned Note" and "…from Template" —
+    /// pins the just-created note (replacing whatever was pinned before,
+    /// same one-slot behavior as pinning from the note list's own context
+    /// menu), switches "Clicking the menu bar icon" over to "Show Pinned
+    /// Note" so the note just created is actually reachable that way
+    /// afterward, and shows it immediately so there's no extra click
+    /// between "make a pinned note" and "start typing in it."
+    @MainActor
+    private func pinToMenuBarAndShow(_ note: Note) {
+        UserDefaults.standard.set(note.id, forKey: "menuBarPinnedNotePath")
+        UserDefaults.standard.set(MenuBarClickAction.showPinnedNote.rawValue, forKey: "menuBarClickAction")
+        showPinnedNotePanel(for: note.url)
     }
 
     @objc private func openSettingsFromStatusMenu() {

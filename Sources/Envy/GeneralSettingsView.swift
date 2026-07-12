@@ -22,6 +22,8 @@ struct GeneralSettingsView: View {
     @AppStorage("hideOnFocusLoss") private var hideOnFocusLoss = false
     @AppStorage("restoreFocusOnSummon") private var restoreFocusOnSummon = true
     @AppStorage("appVisibility") private var appVisibilityRaw = AppVisibility.both.rawValue
+    @AppStorage("menuBarClickAction") private var menuBarClickActionRaw = MenuBarClickAction.toggleWindow.rawValue
+    @AppStorage("menuBarPinnedNotePath") private var menuBarPinnedNotePath = ""
     @AppStorage("templatesScope") private var templatesScopeRaw = TemplatesScope.global.rawValue
     @AppStorage("templateDateFormatPattern") private var templateDateFormatPattern = TemplateDateFormat.defaultPattern
     @State private var showingMarkupHelp = false
@@ -53,6 +55,20 @@ struct GeneralSettingsView: View {
             get: { AppVisibility(rawValue: appVisibilityRaw) ?? .both },
             set: { appVisibilityRaw = $0.rawValue }
         )
+    }
+
+    private var menuBarClickAction: Binding<MenuBarClickAction> {
+        Binding(
+            get: { MenuBarClickAction(rawValue: menuBarClickActionRaw) ?? .toggleWindow },
+            set: { menuBarClickActionRaw = $0.rawValue }
+        )
+    }
+
+    /// Just the filename, not the full path — matches how a note's title
+    /// is derived everywhere else (Note.title strips directory + extension).
+    private var menuBarPinnedNoteTitle: String? {
+        guard !menuBarPinnedNotePath.isEmpty else { return nil }
+        return URL(fileURLWithPath: menuBarPinnedNotePath).deletingPathExtension().lastPathComponent
     }
 
     private var directories: [URL] {
@@ -100,6 +116,20 @@ struct GeneralSettingsView: View {
                 Picker("Show Envy in", selection: appVisibility) {
                     ForEach(AppVisibility.allCases) { visibility in
                         Text(visibility.label).tag(visibility)
+                    }
+                }
+                Picker("Clicking the menu bar icon", selection: menuBarClickAction) {
+                    ForEach(MenuBarClickAction.allCases) { action in
+                        Text(action.label).tag(action)
+                    }
+                }
+                if menuBarClickAction.wrappedValue == .showPinnedNote {
+                    if let menuBarPinnedNoteTitle {
+                        Text("Pinned: \(menuBarPinnedNoteTitle)")
+                            .foregroundStyle(.secondary)
+                    } else {
+                        Text("No note pinned yet — right-click a note and choose \"Pin to Menu Bar.\"")
+                            .foregroundStyle(.secondary)
                     }
                 }
             }

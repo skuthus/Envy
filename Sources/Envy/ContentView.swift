@@ -83,6 +83,10 @@ struct ContentView: View {
     // Newline-joined note ids (paths), matching the encoding NotesDirectoryPreference
     // already uses for a list of paths in one AppStorage string.
     @AppStorage("pinnedNotePaths") private var pinnedNotePathsRaw = ""
+    // Read directly off UserDefaults by EnvyApp's AppDelegate too (an
+    // NSObject, not a SwiftUI view, so it can't use @AppStorage) when
+    // deciding what a menu bar click should do — same key, same value.
+    @AppStorage("menuBarPinnedNotePath") private var menuBarPinnedNotePath = ""
 
     private var layoutMode: LayoutMode {
         LayoutMode(rawValue: layoutModeRaw) ?? .horizontal
@@ -195,6 +199,21 @@ struct ContentView: View {
         ids.remove(oldID)
         ids.insert(newID)
         pinnedNotePathsRaw = ids.joined(separator: "\n")
+        if menuBarPinnedNotePath == oldID {
+            menuBarPinnedNotePath = newID
+        }
+    }
+
+    private func isMenuBarPinned(_ note: Note) -> Bool {
+        menuBarPinnedNotePath == note.id
+    }
+
+    /// Only one note can be pinned to the menu bar at a time — pinning a
+    /// second one replaces the first, same "there's only one slot" idea as
+    /// AeroSpace's own scratchpad concept, not an ever-growing list like the
+    /// regular note-list pinning above.
+    private func toggleMenuBarPin(_ note: Note) {
+        menuBarPinnedNotePath = isMenuBarPinned(note) ? "" : note.id
     }
 
     /// True if any whitespace-separated word in the query is a recognized
@@ -316,6 +335,12 @@ struct ContentView: View {
         .background(backgroundView.ignoresSafeArea())
         .onReceive(NotificationCenter.default.publisher(for: .newNoteRequested)) { _ in
             createBlankNote()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .externalNoteOpenRequested)) { notification in
+            guard let url = notification.object as? URL else { return }
+            editingTemplate = nil
+            selectedID = url.path
+            query = ""
         }
         .onReceive(NotificationCenter.default.publisher(for: .newFromTemplateRequested)) { _ in
             query = "template:"
@@ -1340,6 +1365,9 @@ struct ContentView: View {
     private func singleContextMenuItems(for note: Note) -> some View {
         Button(isPinned(note) ? "Unpin Note" : "Pin Note") {
             togglePin(note)
+        }
+        Button(isMenuBarPinned(note) ? "Unpin from Menu Bar" : "Pin to Menu Bar") {
+            toggleMenuBarPin(note)
         }
         Button("Rename") {
             renameText = note.title
