@@ -73,6 +73,11 @@ struct ContentView: View {
     @AppStorage("boldFileListText") private var boldFileListText = false
     @AppStorage("showBacklinks") private var showBacklinks = true
     @AppStorage("restoreFocusOnSummon") private var restoreFocusOnSummon = true
+    @AppStorage("templatesScope") private var templatesScopeRaw = TemplatesScope.global.rawValue
+    @AppStorage("templateDateFormatPattern") private var templateDateFormatPattern = TemplateDateFormat.defaultPattern
+    @AppStorage("hasSeededSampleTemplates") private var hasSeededSampleTemplates = false
+    @State private var editingTemplate: NoteTemplate?
+    @State private var highlightedTemplateID: String?
     // Newline-joined note ids (paths), matching the encoding NotesDirectoryPreference
     // already uses for a list of paths in one AppStorage string.
     @AppStorage("pinnedNotePaths") private var pinnedNotePathsRaw = ""
@@ -99,6 +104,20 @@ struct ContentView: View {
 
     private var backgroundBlurStrength: BlurStrength {
         BlurStrength(rawValue: backgroundBlurStrengthRaw) ?? .strong
+    }
+
+    private var templatesScope: TemplatesScope {
+        TemplatesScope(rawValue: templatesScopeRaw) ?? .global
+    }
+
+    private var availableTemplates: [NoteTemplate] {
+        store.templates(includeAllFolders: templatesScope == .perFolder)
+    }
+
+    /// The text {{date}} in a template (title or body) actually gets
+    /// substituted with — computed fresh each use so it's always today.
+    private var templateDateText: String {
+        TemplateDateFormat.string(from: Date(), pattern: templateDateFormatPattern)
     }
 
     private var filteredNotes: [Note] {
@@ -165,7 +184,29 @@ struct ContentView: View {
     /// shouldn't offer (or fall back to) creating a note literally named
     /// after the whole query when one's present.
     private var isSearchOperatorQuery: Bool {
-        containsSearchOperator
+        containsSearchOperator || isTemplateQuery
+    }
+
+    /// "template:xyz" — like tag:/date:, but a create action rather than a
+    /// filter, so unlike them it only counts when it's the query's first
+    /// word (not combinable mid-query) and drives creating a note from a
+    /// template instead of filtering existing ones.
+    private var templateNameFragment: String? {
+        let trimmed = query.trimmingCharacters(in: .whitespaces)
+        guard trimmed.lowercased().hasPrefix("template:") else { return nil }
+        return String(trimmed.dropFirst("template:".count))
+    }
+
+    private var isTemplateQuery: Bool { templateNameFragment != nil }
+
+    /// Templates whose name contains the typed fragment — an empty
+    /// fragment (just "template:" typed so far) matches everything, same
+    /// as tag:/date: showing everything until you narrow it.
+    private var matchingTemplatesForQuery: [NoteTemplate] {
+        guard let fragment = templateNameFragment else { return [] }
+        let needle = fragment.trimmingCharacters(in: .whitespaces).lowercased()
+        guard !needle.isEmpty else { return availableTemplates }
+        return availableTemplates.filter { $0.name.lowercased().contains(needle) }
     }
 
     /// The typed query with every recognized operator word dimmed slightly,
@@ -189,7 +230,7 @@ struct ContentView: View {
                 while end < query.endIndex, query[end] != " " { end = query.index(after: end) }
                 let word = query[index..<end]
                 let lowered = word.lowercased()
-                let isOperator = lowered.hasPrefix("tag:") || lowered.hasPrefix("date:")
+                let isOperator = lowered.hasPrefix("tag:") || lowered.hasPrefix("date:") || lowered.hasPrefix("template:")
                 result = result + Text(word).foregroundColor(isOperator ? Color.primary.opacity(0.8) : .primary)
                 index = end
             }
@@ -248,6 +289,10 @@ struct ContentView: View {
         .onReceive(NotificationCenter.default.publisher(for: .newNoteRequested)) { _ in
             createBlankNote()
         }
+        .onReceive(NotificationCenter.default.publisher(for: .newFromTemplateRequested)) { _ in
+            query = "template:"
+            focusedField = .search
+        }
         .onReceive(NotificationCenter.default.publisher(for: .summonRequested)) { _ in
             // The window is hidden via orderOut (not torn down) between
             // summons, so focusedField already holds whatever was focused
@@ -298,6 +343,7 @@ struct ContentView: View {
             // reason: it's simply never been set).
             let wasExistingUser = hasCreatedWelcomeNote
             createWelcomeNoteIfNeeded()
+            seedSampleTemplatesIfNeeded()
             if wasExistingUser {
                 showWhatsNewIfUpdated()
             } else {
@@ -403,6 +449,62 @@ struct ContentView: View {
         return Color(nsColor: lightened)
     }
 
+    /// Shown in place of the note list while "template:" is typed — click a
+    /// row (or press Return, which picks the first) to create a note from
+    /// it, same "type and act on it" shape as a plain search.
+    @ViewBuilder
+    private var matchingTemplateRows: some View {
+        ForEach(matchingTemplatesForQuery) { template in
+            HStack(spacing: 8) {
+                Image(systemName: "doc.badge.plus")
+                    .foregroundStyle(.secondary)
+                Text(template.name)
+                Spacer()
+            }
+            .padding(.vertical, listDensity.rowVerticalPadding)
+            .padding(.horizontal, 8)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(highlightedTemplateID == template.id ? Color(nsColor: theme.resolvedSelectionColor) : Color.clear)
+            )
+            .contentShape(Rectangle())
+            .onTapGesture {
+                highlightedTemplateID = template.id
+                createFromTemplate(template, title: template.name)
+            }
+            .contextMenu {
+                Button("Edit Template") {
+                    editingTemplate = template
+                }
+                Button("Reveal in Finder") {
+                    NSWorkspace.shared.activateFileViewerSelecting([template.url])
+                }
+                Button("Move Back to Notes List") {
+                    convertTemplateToNote(template)
+                }
+                Button("Delete", role: .destructive) {
+                    deleteTemplate(template)
+                }
+            }
+        }
+        if matchingTemplatesForQuery.isEmpty {
+            if let fragment = templateNameFragment?.trimmingCharacters(in: .whitespaces), !fragment.isEmpty {
+                Text("Press \u{23CE} to create template \"\(fragment)\"")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+            } else {
+                Text("No templates yet — type a name to create one.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+            }
+        }
+    }
+
     private var listPane: some View {
         VStack(spacing: 0) {
             VStack(spacing: 0) {
@@ -432,33 +534,37 @@ struct ContentView: View {
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(spacing: 0) {
-                        ForEach(filteredNotes) { note in
-                            NoteRow(note: note, showPreview: showNotePreview, showDateModified: showDateModified, dateDisplayStyle: dateDisplayStyle, textColor: theme.fileListTextColor?.color, bold: boldFileListText, isPinned: isPinned(note))
-                                .padding(.vertical, listDensity.rowVerticalPadding)
-                                .padding(.horizontal, 8)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .background(
-                                    RoundedRectangle(cornerRadius: 6, style: .continuous)
-                                        .fill(isSelected(note) ? Color(nsColor: theme.resolvedSelectionColor) : Color.clear)
-                                )
-                                .contentShape(Rectangle())
-                                .onTapGesture {
-                                    if NSEvent.modifierFlags.contains(.shift) {
-                                        selectRange(to: note)
-                                    } else if NSEvent.modifierFlags.contains(.command) {
-                                        toggleMultiSelect(note)
-                                    } else {
-                                        selectSingle(note)
+                        if isTemplateQuery {
+                            matchingTemplateRows
+                        } else {
+                            ForEach(filteredNotes) { note in
+                                NoteRow(note: note, showPreview: showNotePreview, showDateModified: showDateModified, dateDisplayStyle: dateDisplayStyle, textColor: theme.fileListTextColor?.color, bold: boldFileListText, isPinned: isPinned(note))
+                                    .padding(.vertical, listDensity.rowVerticalPadding)
+                                    .padding(.horizontal, 8)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .background(
+                                        RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                            .fill(isSelected(note) ? Color(nsColor: theme.resolvedSelectionColor) : Color.clear)
+                                    )
+                                    .contentShape(Rectangle())
+                                    .onTapGesture {
+                                        if NSEvent.modifierFlags.contains(.shift) {
+                                            selectRange(to: note)
+                                        } else if NSEvent.modifierFlags.contains(.command) {
+                                            toggleMultiSelect(note)
+                                        } else {
+                                            selectSingle(note)
+                                        }
                                     }
-                                }
-                                .contextMenu {
-                                    if fullSelection.count > 1 && fullSelection.contains(note.id) {
-                                        bulkContextMenuItems
-                                    } else {
-                                        singleContextMenuItems(for: note)
+                                    .contextMenu {
+                                        if fullSelection.count > 1 && fullSelection.contains(note.id) {
+                                            bulkContextMenuItems
+                                        } else {
+                                            singleContextMenuItems(for: note)
+                                        }
                                     }
-                                }
-                                .id(note.id)
+                                    .id(note.id)
+                            }
                         }
                     }
                     .padding(.horizontal, 4)
@@ -479,9 +585,18 @@ struct ContentView: View {
                 // fade entirely and just sits there permanently.
                 .focusEffectDisabled()
                 .focused($focusedField, equals: .list)
-                .onKeyPress(.downArrow) { moveSelection(1); return .handled }
-                .onKeyPress(.upArrow) { moveSelection(-1); return .handled }
-                .onKeyPress(.return) { focusedField = .editor; return .handled }
+                .onKeyPress(.downArrow) {
+                    if isTemplateQuery { moveTemplateSelection(1) } else { moveSelection(1) }
+                    return .handled
+                }
+                .onKeyPress(.upArrow) {
+                    if isTemplateQuery { moveTemplateSelection(-1) } else { moveSelection(-1) }
+                    return .handled
+                }
+                .onKeyPress(.return) {
+                    if isTemplateQuery { actOnHighlightedTemplate() } else { focusedField = .editor }
+                    return .handled
+                }
                 .focusHighlight(
                     isFocused: focusedField == .list,
                     fadeOut: fadeFocusHighlight,
@@ -507,7 +622,21 @@ struct ContentView: View {
     private var editorPane: some View {
         VStack(spacing: 0) {
             Group {
-                if let selectedID, store.notes.contains(where: { $0.id == selectedID }) {
+                if let editingTemplate {
+                    TemplateEditorView(
+                        store: store,
+                        template: editingTemplate,
+                        theme: theme,
+                        requireModifierForLinkClick: requireModifierForLinkClick,
+                        showTitleHeader: showEditorTitleHeader,
+                        fontZoom: CGFloat(editorFontZoom),
+                        plainTextMode: plainTextMode,
+                        noteTitles: store.notes.sorted { $0.modifiedDate > $1.modifiedDate }.map(\.title),
+                        focusedField: $focusedField,
+                        onDone: { self.editingTemplate = nil }
+                    )
+                    .id(editingTemplate.id)
+                } else if let selectedID, store.notes.contains(where: { $0.id == selectedID }) {
                     NoteEditorView(
                         store: store,
                         noteID: selectedID,
@@ -550,7 +679,7 @@ struct ContentView: View {
             // Sits directly above the footer bar (rather than the bar
             // growing to contain it) so expanding the list grows the panel
             // upward into the editor instead of pushing the footer down.
-            if backlinksExpanded && !currentBacklinkNotes.isEmpty {
+            if backlinksExpanded && !currentBacklinkNotes.isEmpty && editingTemplate == nil {
                 backlinksExpandedList
                 Divider()
             }
@@ -743,6 +872,25 @@ struct ContentView: View {
                 .padding(.horizontal, 10)
                 .padding(.vertical, 6)
         }
+        .focused($focusedField, equals: .search)
+        .onKeyPress(.downArrow) {
+            if isTemplateQuery { moveTemplateSelection(1) } else { moveSelection(1) }
+            return .handled
+        }
+        .onKeyPress(.upArrow) {
+            if isTemplateQuery { moveTemplateSelection(-1) } else { moveSelection(-1) }
+            return .handled
+        }
+        .onKeyPress(.rightArrow) {
+            guard let suggestionNote else { return .ignored }
+            query = suggestionNote.title
+            return .handled
+        }
+        .onSubmit { handleEnter() }
+        .onChange(of: query) { _, _ in
+            reconcileSelection()
+            reconcileTemplateHighlight()
+        }
         // A plain .glassEffect alone reads as barely-there against the
         // search/sort header's own opaque .windowBackgroundColor (see
         // listPane below) — this fill sits behind the glass so the search
@@ -760,16 +908,6 @@ struct ContentView: View {
         )
         .padding(.horizontal, 10)
         .padding(.top, 10)
-        .focused($focusedField, equals: .search)
-        .onKeyPress(.downArrow) { moveSelection(1); return .handled }
-        .onKeyPress(.upArrow) { moveSelection(-1); return .handled }
-        .onKeyPress(.rightArrow) {
-            guard let suggestionNote else { return .ignored }
-            query = suggestionNote.title
-            return .handled
-        }
-        .onSubmit { handleEnter() }
-        .onChange(of: query) { _, _ in reconcileSelection() }
     }
 
     /// Cycles keyboard focus through search → list → editor (and back around),
@@ -787,6 +925,7 @@ struct ContentView: View {
     }
 
     private func moveSelection(_ delta: Int) {
+        editingTemplate = nil
         multiSelectedIDs.removeAll()
         let list = filteredNotes
         guard !list.isEmpty else { return }
@@ -804,6 +943,31 @@ struct ContentView: View {
         selectedID = list.first?.id
     }
 
+    private func moveTemplateSelection(_ delta: Int) {
+        let list = matchingTemplatesForQuery
+        guard !list.isEmpty else { return }
+        if let currentID = highlightedTemplateID, let idx = list.firstIndex(where: { $0.id == currentID }) {
+            let newIdx = max(0, min(list.count - 1, idx + delta))
+            highlightedTemplateID = list[newIdx].id
+        } else {
+            highlightedTemplateID = delta > 0 ? list.first?.id : list.last?.id
+        }
+    }
+
+    /// Same shape as reconcileSelection(), but for the highlighted template
+    /// — clears it outright once the query stops being a "template:" one,
+    /// and re-settles it onto the first match whenever the narrowing
+    /// fragment leaves the previously highlighted template out.
+    private func reconcileTemplateHighlight() {
+        guard isTemplateQuery else {
+            highlightedTemplateID = nil
+            return
+        }
+        let list = matchingTemplatesForQuery
+        if let highlightedTemplateID, list.contains(where: { $0.id == highlightedTemplateID }) { return }
+        highlightedTemplateID = list.first?.id
+    }
+
     private var fullSelection: Set<String> {
         multiSelectedIDs.union(selectedID.map { [$0] } ?? [])
     }
@@ -813,6 +977,7 @@ struct ContentView: View {
     }
 
     private func selectSingle(_ note: Note) {
+        editingTemplate = nil
         selectedID = note.id
         multiSelectedIDs.removeAll()
         selectionAnchorID = note.id
@@ -832,6 +997,7 @@ struct ContentView: View {
             return
         }
         let range = anchorIndex < targetIndex ? anchorIndex...targetIndex : targetIndex...anchorIndex
+        editingTemplate = nil
         selectedID = note.id
         multiSelectedIDs = Set(list[range].map(\.id)).subtracting([note.id])
     }
@@ -841,6 +1007,7 @@ struct ContentView: View {
     /// if one exists, since selectedID always drives the editor pane and
     /// must stay in sync with "is anything selected at all".
     private func toggleMultiSelect(_ note: Note) {
+        editingTemplate = nil
         if note.id == selectedID {
             if let newPrimary = multiSelectedIDs.first {
                 multiSelectedIDs.remove(newPrimary)
@@ -906,11 +1073,29 @@ struct ContentView: View {
 
     private func navigateToNote(titled title: String) {
         let target = store.exactTitleMatch(for: title) ?? store.create(title: title)
+        editingTemplate = nil
         selectedID = target.id
         query = ""
     }
 
+    /// "template:xyz" creates from whichever template is highlighted (arrow
+    /// keys move highlightedTemplateID same as selectedID does for a plain
+    /// note search), falling back to the top match if nothing's highlighted
+    /// yet — shared by both the search field's Return and the note list's
+    /// own Return, so either one acts on the template list the same way.
+    private func actOnHighlightedTemplate() {
+        if let template = matchingTemplatesForQuery.first(where: { $0.id == highlightedTemplateID }) ?? matchingTemplatesForQuery.first {
+            createFromTemplate(template, title: template.name)
+        } else if let fragment = templateNameFragment?.trimmingCharacters(in: .whitespaces), !fragment.isEmpty {
+            createTemplate(named: fragment)
+        }
+    }
+
     private func handleEnter() {
+        if isTemplateQuery {
+            actOnHighlightedTemplate()
+            return
+        }
         // A search operator's "highlighted note" is whatever
         // reconcileSelection() already settled selectedID on as the list
         // narrowed — Enter just moves into it, same as the empty-query case
@@ -922,6 +1107,7 @@ struct ContentView: View {
             return
         }
         if let exact = store.exactTitleMatch(for: query) {
+            editingTemplate = nil
             selectedID = exact.id
             if moveFocusToEditorOnEnter { focusedField = .editor }
             return
@@ -934,6 +1120,7 @@ struct ContentView: View {
         }
 
         let newNote = store.create(title: trimmed)
+        editingTemplate = nil
         selectedID = newNote.id
         query = ""
         if moveFocusToEditorOnEnter { focusedField = .editor }
@@ -941,9 +1128,86 @@ struct ContentView: View {
 
     private func createBlankNote() {
         let note = store.create(title: "")
+        editingTemplate = nil
         selectedID = note.id
         query = ""
         focusedField = .editor
+    }
+
+    private func createFromTemplate(_ template: NoteTemplate, title: String) {
+        let note = store.create(title: title, fromTemplate: template, dateText: templateDateText)
+        editingTemplate = nil
+        selectedID = note.id
+        query = ""
+        if moveFocusToEditorOnEnter { focusedField = .editor }
+    }
+
+    /// "template:xyz" with no existing match — same shape as a plain search
+    /// offering to create a note from unmatched text, just creating a new
+    /// (empty) template and dropping straight into editing it instead.
+    /// query resets to the bare "template:" prefix (not ""), so the list
+    /// keeps showing templates — including the one just created — rather
+    /// than snapping back to the regular note list.
+    private func createTemplate(named name: String) {
+        let template = store.createTemplate(named: name)
+        editingTemplate = template
+        query = "template:"
+        if moveFocusToEditorOnEnter { focusedField = .editor }
+    }
+
+    /// Trashed (not permanently removed) — same recoverable-via-Finder
+    /// safety margin as a deleted note gets from NoteStore.delete(_:).
+    private func deleteTemplate(_ template: NoteTemplate) {
+        store.suppressReloadForExternalWrite()
+        try? FileManager.default.trashItem(at: template.url, resultingItemURL: nil)
+        if editingTemplate?.id == template.id {
+            editingTemplate = nil
+        }
+        if highlightedTemplateID == template.id {
+            highlightedTemplateID = nil
+        }
+    }
+
+    private func convertNoteToTemplate(_ note: Note) {
+        guard store.convertToTemplate(note) != nil else { return }
+        if selectedID == note.id {
+            selectedID = nil
+        }
+        multiSelectedIDs.remove(note.id)
+    }
+
+    /// Lands back in sourceDirectory (or defaultDirectory if that folder's
+    /// no longer configured) and opens right in the editor as a regular
+    /// note — see NoteStore.convertToNote(_:) for the fallback logic.
+    private func convertTemplateToNote(_ template: NoteTemplate) {
+        guard let note = store.convertToNote(template) else { return }
+        if editingTemplate?.id == template.id {
+            editingTemplate = nil
+        }
+        if highlightedTemplateID == template.id {
+            highlightedTemplateID = nil
+        }
+        selectedID = note.id
+        query = ""
+        if moveFocusToEditorOnEnter { focusedField = .editor }
+    }
+
+    /// Seeds Templates/ with a few starter templates the very first time the
+    /// app launches — same gated-by-a-persisted-flag pattern as
+    /// createWelcomeNoteIfNeeded(), and written directly rather than via
+    /// store.create() since templates are never part of the visible notes
+    /// list.
+    private func seedSampleTemplatesIfNeeded() {
+        guard !hasSeededSampleTemplates else { return }
+        hasSeededSampleTemplates = true
+
+        let templatesDirectory = store.defaultDirectory.appendingPathComponent("Templates", isDirectory: true)
+        try? FileManager.default.createDirectory(at: templatesDirectory, withIntermediateDirectories: true)
+        for sample in TemplateContent.samples {
+            let url = templatesDirectory.appendingPathComponent("\(sample.name).md")
+            guard !FileManager.default.fileExists(atPath: url.path) else { continue }
+            try? sample.body.write(to: url, atomically: true, encoding: .utf8)
+        }
     }
 
     private func deleteSelected() {
@@ -989,6 +1253,9 @@ struct ContentView: View {
                     }
                 }
             }
+        }
+        Button("Make This Note a Template") {
+            convertNoteToTemplate(note)
         }
         Button("Delete", role: .destructive) {
             deleteNote(note)

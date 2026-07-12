@@ -2,6 +2,21 @@
 
 Also published at [envynote.app/changelog.html](https://envynote.app/changelog.html).
 
+## 1.0.3 — July 11, 2026
+
+**Templates.** Type `template:` in the search box to browse, create, or use a template — same "type and hit Return" feel as a regular search. Templates live as plain `.md` files in a `Templates` folder, so making one is as simple as writing a note.
+
+- `template:daily` searches by name; Return uses the top (or arrow-key-highlighted) match, or creates a new template if nothing matches yet.
+- `{{date}}`, `{{time}}`, and `{{title}}` in a template's title or body are filled in when a note is created from it — a template literally named "Daily Notes {{date}}" produces a note titled with today's date automatically. `{{date}}`'s format is a free-text pattern in Settings → General → Templates (e.g. `MMMM d, yyyy` or `yyyy-MM-dd`), with a live preview.
+- Right-click a template to edit it directly in Envy's own live-markdown editor, reveal it in Finder, or delete it (recoverable from Trash).
+- Right-click any note to turn it into a template, and right-click a template to move it back to your notes — restores to the folder it came from, or the default folder if that one's gone.
+- Settings → General → Templates lets you choose one shared Templates folder or a separate one per notes folder.
+- Three starter templates (Daily Notes, To-Do List, Study Notes) are created automatically the first time you use the feature.
+- The menu bar "eyecon" now opens when Envy's window is showing and closes when it's hidden, with a green pupil matching the app's own icon.
+- Added an easter egg — blink and you'll miss it!
+- Fixed Envy sometimes failing to come to the front when summoned while using [AeroSpace](https://github.com/nikitabobko/AeroSpace) (by [nikitabobko](https://github.com/nikitabobko)) — AeroSpace hides windows belonging to a workspace you're not currently on, and Envy's global hotkey bypasses AeroSpace entirely, so it had no way to know a summon just happened. Envy now talks to AeroSpace's own socket protocol directly (if it's running) to move its window onto your current workspace right before showing it.
+- Fixed a checked task-list item (`- [x]`) silently failing to render as a checkbox — showing the raw `- [x]` text instead — whenever its text also contained other inline markdown, like `` `code` `` or **bold**.
+
 ## 1.0.2 — July 10, 2026
 
 - Summoning Envy now keeps focus wherever it was before you hid the app, instead of always jumping to the search box. Toggle "Keep focus where it was when summoned" in Settings → General to go back to the old always-search behavior.

@@ -20,6 +20,8 @@ struct GeneralSettingsView: View {
     @AppStorage("showBacklinks") private var showBacklinks = true
     @AppStorage("hideOnFocusLoss") private var hideOnFocusLoss = false
     @AppStorage("restoreFocusOnSummon") private var restoreFocusOnSummon = true
+    @AppStorage("templatesScope") private var templatesScopeRaw = TemplatesScope.global.rawValue
+    @AppStorage("templateDateFormatPattern") private var templateDateFormatPattern = TemplateDateFormat.defaultPattern
     @State private var showingMarkupHelp = false
     @State private var openAtLogin = SMAppService.mainApp.status == .enabled
 
@@ -34,6 +36,13 @@ struct GeneralSettingsView: View {
         Binding(
             get: { ClockDateFormat(rawValue: footerClockDateFormatRaw) ?? .short },
             set: { footerClockDateFormatRaw = $0.rawValue }
+        )
+    }
+
+    private var templatesScope: Binding<TemplatesScope> {
+        Binding(
+            get: { TemplatesScope(rawValue: templatesScopeRaw) ?? .global },
+            set: { templatesScopeRaw = $0.rawValue }
         )
     }
 
@@ -140,6 +149,28 @@ struct GeneralSettingsView: View {
                     Button("Reveal Default in Finder") {
                         NSWorkspace.shared.activateFileViewerSelecting([defaultDirectory])
                     }
+                }
+            }
+
+            Section("Templates") {
+                Picker("Templates Location", selection: templatesScope) {
+                    ForEach(TemplatesScope.allCases) { scope in
+                        Text(scope.label).tag(scope)
+                    }
+                }
+                VStack(alignment: .leading, spacing: 4) {
+                    TextField("{{date}} Format", text: $templateDateFormatPattern)
+                    HStack(spacing: 4) {
+                        Text("Preview: \(TemplateDateFormat.string(from: Date(), pattern: templateDateFormatPattern))")
+                        Text("· yyyy MM dd MMMM EEEE")
+                    }
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                }
+                Button("Reveal Templates Folder in Finder") {
+                    let templatesDirectory = defaultDirectory.appendingPathComponent("Templates", isDirectory: true)
+                    try? FileManager.default.createDirectory(at: templatesDirectory, withIntermediateDirectories: true)
+                    NSWorkspace.shared.activateFileViewerSelecting([templatesDirectory])
                 }
             }
 

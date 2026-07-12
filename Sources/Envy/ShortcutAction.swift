@@ -82,6 +82,7 @@ struct ShortcutBinding: Codable, Equatable {
 
 enum ShortcutAction: String, CaseIterable, Identifiable {
     case newNote
+    case newFromTemplate
     case deleteNote
     case toggleLayout
     case bold
@@ -105,6 +106,7 @@ enum ShortcutAction: String, CaseIterable, Identifiable {
     var label: String {
         switch self {
         case .newNote: "New Note"
+        case .newFromTemplate: "New Note from Template"
         case .deleteNote: "Delete Note"
         case .toggleLayout: "Toggle Layout"
         case .bold: "Bold"
@@ -129,6 +131,8 @@ enum ShortcutAction: String, CaseIterable, Identifiable {
         switch self {
         case .newNote:
             ShortcutBinding(character: "n", keyCode: kVK_ANSI_N, modifiers: SwiftUI.EventModifiers.command.rawValue)
+        case .newFromTemplate:
+            ShortcutBinding(character: "n", keyCode: kVK_ANSI_N, modifiers: SwiftUI.EventModifiers([.command, .shift]).rawValue)
         case .deleteNote:
             ShortcutBinding(character: String(KeyEquivalent.delete.character), keyCode: kVK_Delete, modifiers: SwiftUI.EventModifiers.command.rawValue)
         case .toggleLayout:

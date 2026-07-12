@@ -399,10 +399,17 @@ enum MarkdownStyler {
         }
 
         for match in taskListRegex.matches(in: text, range: full) {
-            guard !isClaimed(match.range) else { continue }
             let markerRange = match.range(at: 1)
             let checkboxRange = match.range(at: 2)
             let contentRange = match.range(at: 3)
+            // Only the marker + "[x]" itself disqualifies the checkbox — not
+            // match.range as a whole, which also spans contentRange. That
+            // trailing text is expected to carry its own independent inline
+            // styling (code, bold, links, ...); checking the whole line here
+            // meant a checked item like "- [x] see `template:`" silently
+            // rendered as plain "- [x] ..." text with no checkbox at all,
+            // since the inline code span claims part of the line first.
+            guard !isClaimed(NSUnionRange(markerRange, checkboxRange)) else { continue }
             let checkboxText = (text as NSString).substring(with: checkboxRange)
             let isChecked = checkboxText.lowercased() == "[x]"
 

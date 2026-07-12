@@ -16,6 +16,7 @@ This repository is published for source transparency. The code is proprietary (s
 - **Flat-file storage** — every note is a plain `.md` file on disk. No database, no proprietary format.
 - **Live markdown styling** — headings, bold, italic, strikethrough, code, lists, task checkboxes, footnotes, and blockquotes all render directly in the editor as you type, no separate preview mode. A plain-text mode toggle shows the raw markdown instead when you want it.
 - **Wiki-links** — link notes with `[[Note Title]]`; ⌘-click to follow a link, which creates the target note on the spot if it doesn't exist yet.
+- **Templates** — type `template:` in the search box to browse, create, or use a template, stored as a plain `.md` file. `{{date}}`, `{{time}}`, and `{{title}}` fill in automatically, with a configurable date format.
 - **Backlinks** — the footer shows a count of notes linking to the one you're viewing, expandable into a clickable list that opens upward from the footer.
 - **Tags** — write `#tag` anywhere in a note and Envy picks it up automatically, rendered bold with a tinted background. Search `tag:name` to filter by it, including partial matches.
 - **Date search** — `date:today`, `date:week`, `date:month`, or an exact date in whatever format you'd naturally type it.
@@ -41,6 +42,7 @@ Every shortcut below can be remapped in Settings → Shortcuts.
 |---|---|
 | `⌥⌘↩` | Show or hide Envy — works from any app |
 | `⌘N` | New note |
+| `⌘⇧N` | New note from template |
 | `⌘⌫` | Delete the selected note |
 | `⌘⇧⌫` | Restore the most recently deleted note(s) |
 | `⌥⌘P` | Pin or unpin the selected note |

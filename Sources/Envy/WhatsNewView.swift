@@ -28,12 +28,12 @@ struct WhatsNewView: View {
             }
 
             VStack(spacing: 10) {
-                Image(systemName: "arrow.uturn.backward.circle.fill")
+                Image(systemName: "doc.badge.plus")
                     .font(.system(size: 44))
                     .foregroundStyle(EnvyLogoView.irisColor)
-                Text("Envy remembers where you left off")
+                Text("Templates")
                     .font(.title3.bold())
-                Text("Summoning Envy now keeps focus wherever it was before you hid the app, instead of always jumping to the search box. Change this anytime in Settings → General.")
+                Text("Type template: in the search box to browse, create, or use a template — {{date}}, {{time}}, and {{title}} fill in automatically. Right-click any note to turn it into one.")
                     .font(.body)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)

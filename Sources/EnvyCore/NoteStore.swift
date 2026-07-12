@@ -2,6 +2,22 @@ import Foundation
 import Combine
 import CoreServices
 
+/// A template is just a plain `.md` file living in a `Templates`
+/// subfolder of one of the configured notes folders — never a Note itself,
+/// since scanDirectories() only reads `.md` files directly inside each
+/// top-level folder and never recurses, so `Templates/` is already
+/// invisible to search/list/backlinks without any extra exclusion logic.
+public struct NoteTemplate: Identifiable, Hashable, Sendable {
+    public let id: String
+    public let name: String
+    public let url: URL
+    /// The notes folder this template's `Templates/` subfolder belongs to
+    /// — a note created from this template lands here, not necessarily in
+    /// `defaultDirectory`, so per-folder templates keep their notes
+    /// together with the template that made them.
+    public let sourceDirectory: URL
+}
+
 @MainActor
 public final class NoteStore: ObservableObject {
     @Published public private(set) var notes: [Note] = []
@@ -182,6 +198,15 @@ public final class NoteStore: ObservableObject {
         reloadGeneration += 1
     }
 
+    /// Public wrapper around markInternalWrite(), for callers writing
+    /// directly to a file inside a watched folder that NoteStore doesn't
+    /// itself have a CRUD method for — a template's own save, in
+    /// particular, which writes straight to disk from TemplateEditorView
+    /// rather than through this class.
+    public func suppressReloadForExternalWrite() {
+        markInternalWrite()
+    }
+
     // MARK: - CRUD
 
     @discardableResult
@@ -198,6 +223,133 @@ public final class NoteStore: ObservableObject {
         let note = Note(id: url.path, url: url, content: "", modifiedDate: Date())
         notes.insert(note, at: 0)
         return note
+    }
+
+    /// Every template across the given folders' own `Templates/`
+    /// subfolders — `includeAllFolders: false` limits this to
+    /// `defaultDirectory` only, for a "one shared Templates folder"
+    /// setup; `true` merges every configured folder's own `Templates/`,
+    /// for a per-folder setup.
+    public func templates(includeAllFolders: Bool) -> [NoteTemplate] {
+        let directories = includeAllFolders ? noteDirectories : [defaultDirectory]
+        var results: [NoteTemplate] = []
+        for directory in directories {
+            let templatesDirectory = directory.appendingPathComponent("Templates", isDirectory: true)
+            guard let entries = try? FileManager.default.contentsOfDirectory(
+                at: templatesDirectory,
+                includingPropertiesForKeys: nil,
+                options: [.skipsHiddenFiles]
+            ) else { continue }
+            for url in entries where url.pathExtension.lowercased() == "md" {
+                let name = url.deletingPathExtension().lastPathComponent
+                results.append(NoteTemplate(id: url.path, name: name, url: url, sourceDirectory: directory))
+            }
+        }
+        return results.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+    }
+
+    /// Creates a new, empty template file in defaultDirectory's own
+    /// `Templates/` subfolder — always defaultDirectory regardless of
+    /// includeAllFolders scope, same as create(title:) always landing new
+    /// notes there too.
+    @discardableResult
+    public func createTemplate(named name: String) -> NoteTemplate {
+        let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let base = trimmedName.isEmpty ? "Untitled Template" : trimmedName
+        let directory = defaultDirectory
+        let templatesDirectory = directory.appendingPathComponent("Templates", isDirectory: true)
+        try? FileManager.default.createDirectory(at: templatesDirectory, withIntermediateDirectories: true)
+        let filename = Self.uniqueFilename(for: base, in: templatesDirectory)
+        let url = templatesDirectory.appendingPathComponent(filename)
+        markInternalWrite()
+        try? "".write(to: url, atomically: true, encoding: .utf8)
+        return NoteTemplate(id: url.path, name: url.deletingPathExtension().lastPathComponent, url: url, sourceDirectory: directory)
+    }
+
+    /// Creates a note whose starting content is `template`'s content, with
+    /// {{date}}/{{time}}/{{title}} substituted in — lands in the
+    /// template's own sourceDirectory. The title itself gets the same
+    /// substitution before it's used, so a template literally named e.g.
+    /// "Daily Notes {{date}}" produces a note titled with today's actual
+    /// date, not the literal token. `dateText` is caller-formatted (rather
+    /// than a fixed style here) so the app layer's own date-format setting
+    /// applies — EnvyCore stays platform/UI-agnostic and doesn't own a
+    /// preferred date style itself.
+    @discardableResult
+    public func create(title: String, fromTemplate template: NoteTemplate, dateText: String) -> Note {
+        let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let rawBase = trimmedTitle.isEmpty ? template.name : trimmedTitle
+        let base = Self.applyingTemplateTokens(rawBase, title: rawBase, dateText: dateText)
+        let directory = template.sourceDirectory
+        let filename = Self.uniqueFilename(for: base, in: directory)
+        let url = directory.appendingPathComponent(filename)
+
+        let rawContent = (try? String(contentsOf: template.url, encoding: .utf8)) ?? ""
+        let content = Self.applyingTemplateTokens(rawContent, title: base, dateText: dateText)
+
+        markInternalWrite()
+        try? content.write(to: url, atomically: true, encoding: .utf8)
+
+        let note = Note(id: url.path, url: url, content: content, modifiedDate: Date())
+        notes.insert(note, at: 0)
+        return note
+    }
+
+    /// Moves a note's file into its own folder's `Templates/` subfolder,
+    /// dropping it out of `notes` in the process — the same underlying
+    /// operation move(_:to:) already does, just always targeting
+    /// `<current folder>/Templates` instead of another configured folder.
+    @discardableResult
+    public func convertToTemplate(_ note: Note) -> NoteTemplate? {
+        let currentDirectory = note.url.deletingLastPathComponent()
+        let templatesDirectory = currentDirectory.appendingPathComponent("Templates", isDirectory: true)
+        try? FileManager.default.createDirectory(at: templatesDirectory, withIntermediateDirectories: true)
+        let filename = Self.uniqueFilename(for: note.title, in: templatesDirectory)
+        let newURL = templatesDirectory.appendingPathComponent(filename)
+
+        markInternalWrite()
+        do {
+            try FileManager.default.moveItem(at: note.url, to: newURL)
+        } catch {
+            return nil
+        }
+        notes.removeAll { $0.id == note.id }
+        return NoteTemplate(id: newURL.path, name: newURL.deletingPathExtension().lastPathComponent, url: newURL, sourceDirectory: currentDirectory)
+    }
+
+    /// The inverse of convertToTemplate(_:) — moves a template's file back
+    /// up out of its `Templates/` subfolder into sourceDirectory (the
+    /// folder it was made from), or defaultDirectory if sourceDirectory is
+    /// no longer one of the currently configured folders (removed in
+    /// Settings since the template was created).
+    @discardableResult
+    public func convertToNote(_ template: NoteTemplate) -> Note? {
+        let targetDirectory = noteDirectories.contains(template.sourceDirectory) ? template.sourceDirectory : defaultDirectory
+        let filename = Self.uniqueFilename(for: template.name, in: targetDirectory)
+        let newURL = targetDirectory.appendingPathComponent(filename)
+
+        markInternalWrite()
+        do {
+            try FileManager.default.moveItem(at: template.url, to: newURL)
+        } catch {
+            return nil
+        }
+        let content = (try? String(contentsOf: newURL, encoding: .utf8)) ?? ""
+        let note = Note(id: newURL.path, url: newURL, content: content, modifiedDate: Date())
+        notes.insert(note, at: 0)
+        return note
+    }
+
+    /// A small fixed set of tokens — plain string replacement, not any
+    /// kind of scripting, so a template stays a plain markdown file
+    /// readable by any other editor too.
+    private static func applyingTemplateTokens(_ content: String, title: String, dateText: String) -> String {
+        let timeFormatter = DateFormatter()
+        timeFormatter.timeStyle = .short
+        return content
+            .replacingOccurrences(of: "{{date}}", with: dateText)
+            .replacingOccurrences(of: "{{time}}", with: timeFormatter.string(from: Date()))
+            .replacingOccurrences(of: "{{title}}", with: title)
     }
 
     public func save(_ note: Note) {

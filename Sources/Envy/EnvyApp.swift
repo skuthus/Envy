@@ -12,6 +12,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var shortcutsObserver: Any?
     private var resignActiveObserver: Any?
     private var appliedSummonBinding: ShortcutBinding?
+    private var blinkTimer: Timer?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
@@ -126,6 +127,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         // orderOut only affects this window, sidestepping that entirely —
         // the same reasoning windowShouldClose below already relies on.
         mainWindow?.orderOut(nil)
+        updateStatusItemIcon()
     }
 
     private func applySummonHotKey() {
@@ -140,16 +142,134 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private func setUpStatusItem() {
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         if let button = item.button {
-            // A template image (not the full-color app icon) so it inverts
-            // correctly in dark menu bars and while highlighted, matching
-            // every other menu bar icon.
-            button.image = NSImage(systemSymbolName: "eye.fill", accessibilityDescription: "Envy")
-            button.image?.isTemplate = true
             button.target = self
             button.action = #selector(statusItemClicked(_:))
             button.sendAction(on: [.leftMouseUp, .rightMouseUp])
         }
         statusItem = item
+        updateStatusItemIcon()
+        scheduleNextBlink()
+    }
+
+    // A small easter egg: every so often, at a random interval, flash the
+    // menu bar eye shut and back open again — purely cosmetic, doesn't
+    // touch mainWindow's actual visibility. Only blinks while the window is
+    // genuinely showing; while hidden the eye is already closed, so there's
+    // nothing to blink. Reschedules itself after every fire (and every
+    // skipped fire while hidden), so it keeps going for the life of the app.
+    private func scheduleNextBlink() {
+        blinkTimer?.invalidate()
+        // Target/selector rather than the closure-based Timer API — the
+        // closure form's @Sendable block signature fights Swift 6 strict
+        // concurrency when it captures self to hop back onto the main
+        // actor. A @MainActor @objc selector sidesteps that entirely, same
+        // as statusItemClicked(_:) above.
+        blinkTimer = Timer.scheduledTimer(timeInterval: .random(in: 25...75), target: self, selector: #selector(performBlink), userInfo: nil, repeats: false)
+    }
+
+    @MainActor
+    @objc private func performBlink() {
+        defer { scheduleNextBlink() }
+        guard mainWindow?.isVisible == true else { return }
+        closeEyeBriefly()
+        // A real eye occasionally double-blinks — about 1 in 4 here. Timed
+        // as its own independent asyncAfter (0.2s close + 0.14s gap) rather
+        // than chained off the first blink's completion, since a captured
+        // completion closure fights Swift 6 strict concurrency the same way
+        // the old closure-based Timer API did above.
+        guard Int.random(in: 0..<4) == 0 else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.34) { [weak self] in
+            self?.closeEyeBriefly()
+        }
+    }
+
+    @MainActor
+    private func closeEyeBriefly() {
+        statusItem?.button?.image = Self.closedEyeImage()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
+            self?.updateStatusItemIcon()
+        }
+    }
+
+    // Both states are hand-drawn (not eye.fill/eye.slash.fill) so the open
+    // eye's pupil can carry the brand's green iris color, which no SF
+    // Symbol rendering mode of eye.fill supports. Both share the exact same
+    // lower-rim curve, so the lid appears to close down onto the same line
+    // it sits on when open, rather than the two glyphs disagreeing about
+    // where the bottom of the eye actually is. Called after every place in
+    // this file that changes mainWindow's visibility.
+    private func updateStatusItemIcon() {
+        let isVisible = mainWindow?.isVisible ?? false
+        statusItem?.button?.image = isVisible ? Self.openEyeImage() : Self.closedEyeImage()
+    }
+
+    // Resolved against whatever NSAppearance the button is actually drawn
+    // in (the menu bar's, not necessarily the app's own light/dark
+    // setting) — the same adaptation isTemplate gives a plain monochrome
+    // image, needed here too since the pupil below keeps its color instead
+    // of being auto-tinted.
+    private static let menuBarOutlineColor = NSColor(name: nil) { appearance in
+        appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? .white : .black
+    }
+
+    private static let eyeLineWidth: CGFloat = 2.0
+    // Corner y is the true vertical center of the 18pt-tall canvas (9.0),
+    // not the earlier 9.5 — since openEyeImage()'s lens is built by
+    // mirroring the lower rim above this same line, that 0.5pt offset was
+    // enough to visibly throw the whole icon off-center against the other
+    // menu bar items (e.g. the battery icon). closedEyeImage() shares these
+    // same constants, so it stays centered on the open eye automatically.
+    private static let eyeCornerLeft = NSPoint(x: 2.5, y: 9.0)
+    private static let eyeCornerRight = NSPoint(x: 15.5, y: 9.0)
+    private static let lowerRimControlLeft = NSPoint(x: 6, y: 4.3)
+    private static let lowerRimControlRight = NSPoint(x: 12, y: 4.3)
+
+    // Just the eyelid crease, traced along the exact same line and
+    // curvature as openEyeImage()'s lower rim below — an eyelid closes
+    // down to meet the lower lid, not the vertical center of the glyph's
+    // bounding box. Reads as a shut eyelid rather than a "disabled"
+    // slashed eye.
+    private static func closedEyeImage() -> NSImage {
+        let image = NSImage(size: NSSize(width: 18, height: 18), flipped: false) { rect in
+            let path = NSBezierPath()
+            path.lineCapStyle = .round
+            path.lineWidth = eyeLineWidth
+            path.move(to: eyeCornerLeft)
+            path.curve(to: eyeCornerRight, controlPoint1: lowerRimControlLeft, controlPoint2: lowerRimControlRight)
+
+            menuBarOutlineColor.setStroke()
+            path.stroke()
+            return true
+        }
+        image.isTemplate = false
+        return image
+    }
+
+    // A lens (upper rim mirrored above the same corner line the lower rim
+    // sits on) plus a solid pupil in the brand's iris green
+    // (EnvyLogoView.irisColor) — the one deliberately non-monochrome
+    // accent on an otherwise adaptive icon.
+    private static func openEyeImage() -> NSImage {
+        let image = NSImage(size: NSSize(width: 18, height: 18), flipped: false) { rect in
+            let path = NSBezierPath()
+            path.lineCapStyle = .round
+            path.lineWidth = eyeLineWidth
+            path.move(to: eyeCornerLeft)
+            path.curve(to: eyeCornerRight, controlPoint1: lowerRimControlLeft, controlPoint2: lowerRimControlRight)
+            let upperControlLeft = NSPoint(x: lowerRimControlLeft.x, y: 2 * eyeCornerLeft.y - lowerRimControlLeft.y)
+            let upperControlRight = NSPoint(x: lowerRimControlRight.x, y: 2 * eyeCornerRight.y - lowerRimControlRight.y)
+            path.curve(to: eyeCornerLeft, controlPoint1: upperControlRight, controlPoint2: upperControlLeft)
+
+            menuBarOutlineColor.setStroke()
+            path.stroke()
+
+            let pupil = NSBezierPath(ovalIn: NSRect(x: 7, y: 6.8, width: 4, height: 4))
+            NSColor(red: 0.243, green: 0.667, blue: 0.278, alpha: 1).setFill()
+            pupil.fill()
+            return true
+        }
+        image.isTemplate = false
+        return image
     }
 
     /// Left-click summons/hides the app exactly like the global hotkey;
@@ -201,8 +321,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     private func activateAndShowWindow() {
+        if let window = NSApp.windows.first {
+            AeroSpaceInterop.bringToFocusedWorkspace(window)
+        }
         NSApp.activate(ignoringOtherApps: true)
         NSApp.windows.first?.makeKeyAndOrderFront(nil)
+        updateStatusItemIcon()
     }
 
     private static func applyWindowChrome(to window: NSWindow) {
@@ -227,10 +351,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         if window.isVisible {
             window.orderOut(nil)
         } else {
+            AeroSpaceInterop.bringToFocusedWorkspace(window)
             NSApp.activate(ignoringOtherApps: true)
             window.makeKeyAndOrderFront(nil)
             NotificationCenter.default.post(name: .summonRequested, object: nil)
         }
+        updateStatusItemIcon()
     }
 
     // The red close button would otherwise let SwiftUI actually destroy the
@@ -242,6 +368,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     // and menu bar item are meant to provide.
     func windowShouldClose(_ sender: NSWindow) -> Bool {
         sender.orderOut(nil)
+        updateStatusItemIcon()
         return false
     }
 }
@@ -285,6 +412,11 @@ struct EnvyApp: App {
                     NotificationCenter.default.post(name: .newNoteRequested, object: nil)
                 }
                 .keyboardShortcut(binding(for: .newNote).keyEquivalent, modifiers: binding(for: .newNote).eventModifiers)
+
+                Button("New Note from Template") {
+                    NotificationCenter.default.post(name: .newFromTemplateRequested, object: nil)
+                }
+                .keyboardShortcut(binding(for: .newFromTemplate).keyEquivalent, modifiers: binding(for: .newFromTemplate).eventModifiers)
             }
             CommandGroup(after: .newItem) {
                 Button("Delete Note") {
