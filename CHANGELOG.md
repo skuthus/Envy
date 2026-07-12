@@ -4,7 +4,7 @@ Also published at [envynote.app/changelog.html](https://envynote.app/changelog.h
 
 ## 1.1.1 — unreleased
 
-- Settings → General has a new "Show tags in title bar" toggle (off by default) — a note's `#tags` show as chips next to its title.
+- Settings → General has a new "Show tags in title bar" toggle (off by default) — a note's `#tags` show as chips next to its title. Click one to search `tag:whatever` without losing your place — the note you clicked from stays open.
 - Task-list checkboxes no longer need a leading `-` — `[ ]`/`[x]` at the start of any line is now a live, clickable checkbox on its own, not just as part of a `- [ ]` list item. (`- [ ]` still works exactly as before, and still gets the bulleted-list treatment.)
 - `[ ]`/`[x]` typed inside inline code (`` `[ ]` ``) stays literal text instead of turning into a checkbox, matching how every other markdown marker already behaves inside a code span.
 - Fixed checkboxes occasionally rendering misaligned until you clicked into the editor — the checkbox glyph's position is now computed after forcing layout to fully complete, instead of trusting whatever the layout manager had already lazily cached, which could still be based on a provisional (pre-final-layout) width right after opening a note.
