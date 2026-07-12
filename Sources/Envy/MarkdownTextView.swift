@@ -162,6 +162,26 @@ struct MarkdownTextView: NSViewRepresentable {
             }
         }
         context.coordinator.updateCheckboxOverlays(in: textView)
+        // SwiftUI's first call to makeNSView often happens before this view
+        // has its real, final width from the surrounding layout (the note
+        // list/editor split isn't necessarily settled yet) — the checkbox
+        // overlay positions computed just above, from the layout manager's
+        // line-wrapping at whatever width existed at that moment, could
+        // already be stale by the time the window actually finishes laying
+        // out. Nothing in SwiftUI's own diffing notices that (none of
+        // theme/searchQuery/fontZoom/text actually changed), so it never
+        // calls updateNSView again on its own — this is what made checklists
+        // look misaligned until something else (clicking into the editor,
+        // which happens to trigger a re-render) recomputed them. Observing
+        // the text view's own frame changing directly catches the real
+        // layout settling regardless of what causes it.
+        textView.postsFrameChangedNotifications = true
+        context.coordinator.frameObserver = NotificationCenter.default.addObserver(
+            forName: NSView.frameDidChangeNotification, object: textView, queue: .main
+        ) { [weak coordinator = context.coordinator, weak textView] _ in
+            guard let coordinator, let textView else { return }
+            coordinator.updateCheckboxOverlays(in: textView)
+        }
         context.coordinator.lastSearchQuery = searchQuery
         context.coordinator.lastFontZoom = fontZoom
         context.coordinator.lastPlainTextMode = plainTextMode
@@ -328,6 +348,8 @@ struct MarkdownTextView: NSViewRepresentable {
         // pattern/reasoning as NoteStore's eventStream property.
         nonisolated(unsafe) private var boldObserver: NSObjectProtocol?
         nonisolated(unsafe) private var italicObserver: NSObjectProtocol?
+        // Registered once the text view exists, in makeNSView below.
+        nonisolated(unsafe) var frameObserver: NSObjectProtocol?
 
         init(_ parent: MarkdownTextView) {
             self.parent = parent
@@ -349,6 +371,7 @@ struct MarkdownTextView: NSViewRepresentable {
         deinit {
             if let boldObserver { NotificationCenter.default.removeObserver(boldObserver) }
             if let italicObserver { NotificationCenter.default.removeObserver(italicObserver) }
+            if let frameObserver { NotificationCenter.default.removeObserver(frameObserver) }
         }
 
         /// Intercepts single-character insertions before they land, purely to
