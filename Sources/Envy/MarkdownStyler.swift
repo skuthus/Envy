@@ -1,5 +1,4 @@
 import AppKit
-import CoreText
 
 @MainActor
 enum MarkdownStyler {
@@ -251,7 +250,15 @@ enum MarkdownStyler {
             ? unadjustedFont
             : NSFontManager.shared.convert(unadjustedFont, toSize: max(6, unadjustedFont.pointSize + fontSizeAdjustment))
         let markerColor = theme.resolvedMarkerColor
-        let listMarkerColor = markerColor.withAlphaComponent(0.5)
+        // .withAlphaComponent(_:) on a dynamic system color (theme.resolvedMarkerColor
+        // is .tertiaryLabelColor for the default, non-custom theme) resolves eagerly
+        // using whatever appearance happens to be "current" at this exact call site —
+        // which isn't reliably correct here — rather than staying dynamic. Same root
+        // cause as the light-mode search bar and inline-code background bugs, and the
+        // checkbox overlay's own uncheckedColor; same dynamic-resolver-closure fix.
+        // Without it, every list bullet (and the "- " before a checkbox) can render
+        // as white-on-white in light mode.
+        let listMarkerColor = NSColor(name: nil) { _ in markerColor.withAlphaComponent(0.5) }
         let linkColor = theme.resolvedLinkColor
         let codeBackground = theme.resolvedCodeBackgroundColor
         let monoFont = NSFont.monospacedSystemFont(ofSize: baseFont.pointSize, weight: .regular)
@@ -415,34 +422,34 @@ enum MarkdownStyler {
 
             textStorage.addAttribute(.foregroundColor, value: listMarkerColor, range: markerRange)
 
-            // Renders as an actual checkbox glyph substituted onto "[" — the
-            // inner character (space or x) and "]" always collapse. Glyph
-            // substitution was originally applied to the inner character, but
-            // when unchecked that character is a literal space, and AppKit
-            // silently skips drawing a substituted glyph on a whitespace
-            // character regardless of the override — the checkbox just
-            // vanished on uncheck. "[" is never whitespace, so it's reliable —
-            // but resolving ☐/☑ (Miscellaneous Symbols block) against the
-            // theme's own font silently failed too, since arbitrary fonts
-            // (including the default system font) often don't cover that
-            // block, and the lookup just falls back to plain "[" with no
-            // error. "Apple Symbols" is a bundled system font specifically
-            // meant to cover this kind of symbol, independent of body text
-            // font choice, so it's used here instead of baseFont.
+            // The whole "[x]"/"[ ]" run is collapsed (hidden, zero visual
+            // width — same technique as every other hidden markdown marker
+            // in this file) rather than substituting a checkbox glyph onto
+            // "[" via NSGlyphInfo, which is what this used to do. That
+            // worked most of the time, but AppKit's layout manager can get
+            // its internal glyph-generation cache out of sync when a text
+            // storage has several occurrences of the same base string ("["
+            // here) each substituted to a *different* glyph (☑ vs ☐) and
+            // keeps getting edited — it would intermittently stop drawing
+            // the substituted glyph for some or all occurrences at once,
+            // with no way to force a reliable re-sync. The actual checkbox
+            // glyph is now drawn by a floating overlay view instead (see
+            // Coordinator.updateCheckboxOverlays() in MarkdownTextView),
+            // positioned over this now-invisible "[" — sidestepping glyph
+            // substitution, and its fragility, entirely. Always collapsed,
+            // not gated by touches() like other markers — checkboxes are
+            // meant to be clicked, not hand-edited, and revealing "]"
+            // whenever the cursor was merely anywhere on the line
+            // (touches() checks the whole line's match.range) was
+            // distracting anyway.
             let bracketOpen = NSRange(location: checkboxRange.location, length: 1)
             let innerChar = NSRange(location: checkboxRange.location + 1, length: 1)
             let bracketClose = NSRange(location: checkboxRange.location + 2, length: 1)
-            let symbolFont = NSFont(name: "Apple Symbols", size: baseFont.pointSize + 5) ?? NSFontManager.shared.convert(baseFont, toSize: baseFont.pointSize + 5)
-            textStorage.addAttribute(.font, value: symbolFont, range: bracketOpen)
-            textStorage.addAttribute(.foregroundColor, value: isChecked ? NSColor.systemGreen : listMarkerColor, range: bracketOpen)
-            if let glyphInfo = glyphInfo(forUnicodeChar: isChecked ? "☑" : "☐", font: symbolFont, baseString: "[") {
-                textStorage.addAttribute(.glyphInfo, value: glyphInfo, range: bracketOpen)
-            }
-            // Always collapsed, not gated by touches() like other markers —
-            // checkboxes are meant to be clicked, not hand-edited, and
-            // revealing "]" whenever the cursor was merely anywhere on the
-            // line (touches() checks the whole line's match.range) was
-            // distracting.
+            // bracketOpen is padded out to the overlay's width rather than
+            // collapsed to zero, like innerChar/bracketClose are — otherwise
+            // the text right after "[x] " lays out as if the checkbox took
+            // no space at all and ends up drawn underneath the overlay glyph.
+            reserveSpace(range: bracketOpen, width: checkboxSymbolWidth(baseFont: baseFont), in: textStorage, text: text, font: baseFont)
             collapse(range: innerChar, in: textStorage, text: text, font: baseFont)
             collapse(range: bracketClose, in: textStorage, text: text, font: baseFont)
 
@@ -671,19 +678,6 @@ enum MarkdownStyler {
         }
     }
 
-    /// Resolves a Unicode character's own glyph in `font` via CoreText and
-    /// wraps it as an NSGlyphInfo substitution for `baseString` (the actual
-    /// character present at the target range). More robust than
-    /// NSGlyphInfo(glyphName:...) for characters without a standardized
-    /// PostScript/AGL name, like the checkbox glyphs.
-    private static func glyphInfo(forUnicodeChar char: Character, font: NSFont, baseString: String) -> NSGlyphInfo? {
-        guard let scalar = char.unicodeScalars.first else { return nil }
-        var chars: [UniChar] = [UniChar(scalar.value)]
-        var glyph: CGGlyph = 0
-        guard CTFontGetGlyphsForCharacters(font, &chars, &glyph, 1), glyph != 0 else { return nil }
-        return NSGlyphInfo(cgGlyph: glyph, for: font, baseString: baseString)
-    }
-
     /// Whether the cursor (or selection) currently sits inside, or right at the
     /// edge of, `range` — used to decide whether to reveal a span's raw markup
     /// characters or keep them collapsed into their "smart view" appearance.
@@ -719,6 +713,37 @@ enum MarkdownStyler {
             let width = NSAttributedString(string: char, attributes: [.font: font]).size().width
             textStorage.addAttribute(.kern, value: -width, range: charRange)
         }
+    }
+
+    // Like collapse(), but instead of shrinking the character to zero width,
+    // pads it out to exactly `width` — used to reserve room for the
+    // checkbox overlay (see Coordinator.updateCheckboxOverlays() in
+    // MarkdownTextView) so the following text doesn't lay out as if the
+    // hidden "[" were still its own natural (smaller) width and end up
+    // drawn underneath the overlay glyph.
+    private static func reserveSpace(range: NSRange, width: CGFloat, in textStorage: NSTextStorage, text: String, font: NSFont) {
+        guard range.length == 1 else { return }
+        let nsText = text as NSString
+        textStorage.addAttribute(.foregroundColor, value: NSColor.clear, range: range)
+        let char = nsText.substring(with: range)
+        let naturalWidth = NSAttributedString(string: char, attributes: [.font: font]).size().width
+        textStorage.addAttribute(.kern, value: width - naturalWidth, range: range)
+    }
+
+    // Shared between the checkbox-collapsing above and the checkbox overlay
+    // in MarkdownTextView.Coordinator.updateCheckboxOverlays() — both need
+    // to agree on the exact same font so the reserved space matches what's
+    // actually drawn on top of it.
+    static func checkboxSymbolFont(baseFont: NSFont) -> NSFont {
+        NSFont(name: "Apple Symbols", size: baseFont.pointSize + 5)
+            ?? NSFontManager.shared.convert(baseFont, toSize: baseFont.pointSize + 5)
+    }
+
+    static func checkboxSymbolWidth(baseFont: NSFont) -> CGFloat {
+        let symbolFont = checkboxSymbolFont(baseFont: baseFont)
+        let checked = NSAttributedString(string: "☑", attributes: [.font: symbolFont]).size().width
+        let unchecked = NSAttributedString(string: "☐", attributes: [.font: symbolFont]).size().width
+        return max(checked, unchecked)
     }
 
     private static func applyEmphasis(

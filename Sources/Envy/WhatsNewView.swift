@@ -28,12 +28,12 @@ struct WhatsNewView: View {
             }
 
             VStack(spacing: 10) {
-                Image(systemName: "doc.badge.plus")
+                Image(systemName: "bolt.fill")
                     .font(.system(size: 44))
                     .foregroundStyle(EnvyLogoView.irisColor)
-                Text("Templates")
+                Text("Built for Speed")
                     .font(.title3.bold())
-                Text("Type template: in the search box to browse, create, or use a template — {{date}}, {{time}}, and {{title}} fill in automatically. Right-click any note to turn it into one.")
+                Text("A major performance upgrade — search, scrolling, and switching between notes are all noticeably faster now, tested up to 15,000 notes in one folder.")
                     .font(.body)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)

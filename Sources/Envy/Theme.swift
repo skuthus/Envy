@@ -75,8 +75,22 @@ struct Theme: Equatable {
     var resolvedBackgroundColor: NSColor { isCustom ? backgroundColor.nsColor : .textBackgroundColor }
     var resolvedMarkerColor: NSColor { isCustom ? markerColor.nsColor : .tertiaryLabelColor }
     var resolvedLinkColor: NSColor { isCustom ? linkColor.nsColor : .linkColor }
+    // The non-custom branch is wrapped in a dynamic resolver rather than
+    // blending eagerly — calling .blended(withFraction:of:) directly on a
+    // dynamic color like .textBackgroundColor forces it to resolve to a
+    // fixed RGB snapshot immediately, using whatever appearance happens to
+    // be "current" at that exact moment, which isn't reliably correct for
+    // a plain computed property evaluated outside an actual AppKit drawing
+    // context. This is what colors backtick-wrapped inline code — it was
+    // staying dark even in Light mode. A resolver closure is only invoked
+    // by AppKit at actual draw time, with the correct appearance already
+    // active, so resolving and blending inside it is what actually tracks
+    // appearance correctly. Same fix as ContentView's searchFieldBackground.
+    private static let defaultCodeBackgroundColor = NSColor(name: nil) { _ in
+        NSColor.textBackgroundColor.blended(withFraction: 0.08, of: .labelColor) ?? .clear
+    }
     var resolvedCodeBackgroundColor: NSColor {
-        isCustom ? codeBackgroundColor.nsColor : (NSColor.textBackgroundColor.blended(withFraction: 0.08, of: .labelColor) ?? .clear)
+        isCustom ? codeBackgroundColor.nsColor : Self.defaultCodeBackgroundColor
     }
     var resolvedTagColor: NSColor { isCustom ? tagColor.nsColor : .systemGreen }
     var resolvedTagBackgroundColor: NSColor {

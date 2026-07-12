@@ -13,9 +13,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var resignActiveObserver: Any?
     private var appliedSummonBinding: ShortcutBinding?
     private var blinkTimer: Timer?
+    private var appliedVisibility: AppVisibility?
+    private var windowStateObservers: [Any] = []
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        NSApp.setActivationPolicy(.regular)
+        // Applied inline here rather than via applyAppVisibility() below —
+        // that helper also creates the status item, which needs mainWindow
+        // already assigned and visible to show the correct open/closed eye
+        // immediately, and neither is true yet at this point in launch.
+        let visibility = currentAppVisibility
+        appliedVisibility = visibility
+        applyActivationPolicy(for: visibility)
         NSApp.activate(ignoringOtherApps: true)
         AppearanceMode.applyStored()
 
@@ -98,9 +106,48 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             queue: .main
         ) { [weak self] _ in
             self?.applySummonHotKey()
+            self?.applyAppVisibility()
         }
 
-        setUpStatusItem()
+        if visibility.showsInMenuBar {
+            setUpStatusItem()
+        }
+
+        // Menu Bar Only mode still needs a real Dock presence (and thus a
+        // real menu bar — File/Edit/View/etc. are simply unavailable to a
+        // .accessory-policy app, that's Apple's own documented behavior,
+        // not a bug) whenever an Envy window is actually open, since so
+        // much lives in that menu (Font, Navigate, Folders, Check for
+        // Updates...). These two fire for *any* window in the app — main,
+        // Settings, About, What's New — not just mainWindow, so opening or
+        // closing any of them re-evaluates it.
+        windowStateObservers.append(NotificationCenter.default.addObserver(
+            forName: NSWindow.didBecomeKeyNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            guard let self else { return }
+            self.applyActivationPolicy(for: self.currentAppVisibility)
+        })
+        windowStateObservers.append(NotificationCenter.default.addObserver(
+            forName: NSWindow.didResignKeyNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            guard let self else { return }
+            // Deferred a tick via a near-zero timer (target/selector,
+            // matching the blink timer's pattern above) — a nested
+            // DispatchQueue.main.async or Task closure capturing self
+            // fights Swift 6 strict concurrency across this observer's own
+            // @Sendable boundary, but a plain target/selector Timer isn't
+            // capturing self into another closure at all. Resigning key
+            // can hand key status straight to another still-open Envy
+            // window (e.g. dismissing Settings while the main window is
+            // still up), and checking immediately would see zero key
+            // windows in that gap and spuriously demote to .accessory
+            // before the new key window is assigned.
+            Timer.scheduledTimer(timeInterval: 0, target: self, selector: #selector(self.reevaluateActivationPolicy), userInfo: nil, repeats: false)
+        })
 
         // Spotlight/Alfred-style auto-hide, opt-in via Settings → General.
         // didResignActiveNotification only fires when a *different app*
@@ -137,6 +184,65 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         appliedSummonBinding = binding
         hotKey.unregister()
         hotKey.register(keyCode: UInt32(binding.keyCode), modifiers: binding.carbonModifiers)
+    }
+
+    private var currentAppVisibility: AppVisibility {
+        let raw = UserDefaults.standard.string(forKey: "appVisibility") ?? ""
+        return AppVisibility(rawValue: raw) ?? .both
+    }
+
+    /// Re-applies AppVisibility live whenever it changes in Settings —
+    /// safe to call any time after launch, since mainWindow already exists
+    /// by then (see applicationDidFinishLaunching for why the launch-time
+    /// version of this is handled separately, inline). Only the status
+    /// item add/remove is gated on the *setting* actually changing —
+    /// activation policy is re-derived every time regardless, since for
+    /// Menu Bar Only mode it also depends on live window state, which can
+    /// change independently of this setting (see applyActivationPolicy).
+    private func applyAppVisibility() {
+        let visibility = currentAppVisibility
+        let visibilityChanged = visibility != appliedVisibility
+        appliedVisibility = visibility
+
+        applyActivationPolicy(for: visibility)
+        guard visibilityChanged else { return }
+
+        if visibility.showsInMenuBar {
+            if statusItem == nil { setUpStatusItem() }
+        } else if let item = statusItem {
+            NSStatusBar.system.removeStatusItem(item)
+            statusItem = nil
+            blinkTimer?.invalidate()
+            blinkTimer = nil
+        }
+    }
+
+    /// Dock Only and Both are always .regular. Menu Bar Only is normally
+    /// .accessory (no Dock icon, no menu bar — Apple's own documented
+    /// behavior for that policy), but temporarily promotes to .regular
+    /// whenever any Envy window is actually open, so File/Edit/View and
+    /// everything else that only lives in the menu bar stays reachable
+    /// while you're using the app — dropping back to .accessory once every
+    /// window closes. Called both at launch and from the window
+    /// key/resign-key observers set up in applicationDidFinishLaunching.
+    private func applyActivationPolicy(for visibility: AppVisibility) {
+        let desired: NSApplication.ActivationPolicy
+        switch visibility {
+        case .dockOnly, .both:
+            desired = .regular
+        case .menuBarOnly:
+            desired = NSApp.windows.contains(where: { $0.isVisible }) ? .regular : .accessory
+        }
+        guard NSApp.activationPolicy() != desired else { return }
+        NSApp.setActivationPolicy(desired)
+        if desired == .regular {
+            NSApp.activate(ignoringOtherApps: true)
+        }
+    }
+
+    @MainActor
+    @objc private func reevaluateActivationPolicy() {
+        applyActivationPolicy(for: currentAppVisibility)
     }
 
     private func setUpStatusItem() {

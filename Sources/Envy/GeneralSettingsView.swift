@@ -20,6 +20,7 @@ struct GeneralSettingsView: View {
     @AppStorage("showBacklinks") private var showBacklinks = true
     @AppStorage("hideOnFocusLoss") private var hideOnFocusLoss = false
     @AppStorage("restoreFocusOnSummon") private var restoreFocusOnSummon = true
+    @AppStorage("appVisibility") private var appVisibilityRaw = AppVisibility.both.rawValue
     @AppStorage("templatesScope") private var templatesScopeRaw = TemplatesScope.global.rawValue
     @AppStorage("templateDateFormatPattern") private var templateDateFormatPattern = TemplateDateFormat.defaultPattern
     @State private var showingMarkupHelp = false
@@ -43,6 +44,13 @@ struct GeneralSettingsView: View {
         Binding(
             get: { TemplatesScope(rawValue: templatesScopeRaw) ?? .global },
             set: { templatesScopeRaw = $0.rawValue }
+        )
+    }
+
+    private var appVisibility: Binding<AppVisibility> {
+        Binding(
+            get: { AppVisibility(rawValue: appVisibilityRaw) ?? .both },
+            set: { appVisibilityRaw = $0.rawValue }
         )
     }
 
@@ -88,6 +96,11 @@ struct GeneralSettingsView: View {
                 ))
                 Toggle("Hide Envy when clicking outside the app", isOn: $hideOnFocusLoss)
                 Toggle("Keep focus where it was when summoned", isOn: $restoreFocusOnSummon)
+                Picker("Show Envy in", selection: appVisibility) {
+                    ForEach(AppVisibility.allCases) { visibility in
+                        Text(visibility.label).tag(visibility)
+                    }
+                }
             }
 
             Section("Storage") {

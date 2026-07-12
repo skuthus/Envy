@@ -69,6 +69,15 @@ private final class WikiLinkGhostLabel: NSTextField {
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
 }
 
+/// Draws a task-list checkbox's ☑/☐ glyph as a floating overlay instead of
+/// substituting it onto the real (now-collapsed/invisible) "[" character —
+/// see Coordinator.updateCheckboxOverlays() for why. Purely visual, same
+/// hitTest-returns-nil treatment as WikiLinkGhostLabel: clicks are handled
+/// by hit-testing the checkbox's real position directly, not this view.
+private final class CheckboxOverlayLabel: NSTextField {
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+}
+
 struct MarkdownTextView: NSViewRepresentable {
     @Binding var text: String
     var onNavigate: (String) -> Void
@@ -152,6 +161,7 @@ struct MarkdownTextView: NSViewRepresentable {
                 MarkdownStyler.style(textStorage: textStorage, text: text, theme: theme, searchQuery: searchQuery, fontSizeAdjustment: fontZoom)
             }
         }
+        context.coordinator.updateCheckboxOverlays(in: textView)
         context.coordinator.lastSearchQuery = searchQuery
         context.coordinator.lastFontZoom = fontZoom
         context.coordinator.lastPlainTextMode = plainTextMode
@@ -215,6 +225,7 @@ struct MarkdownTextView: NSViewRepresentable {
                     )
                 }
             }
+            context.coordinator.updateCheckboxOverlays(in: textView)
             context.coordinator.lastTheme = theme
             context.coordinator.lastSearchQuery = searchQuery
             context.coordinator.lastFontZoom = fontZoom
@@ -300,6 +311,11 @@ struct MarkdownTextView: NSViewRepresentable {
         /// subview of the text view itself so it scrolls along with content,
         /// never touched by restyle() since it's not part of textStorage.
         private var wikiLinkGhostLabel: WikiLinkGhostLabel?
+        /// One floating overlay per checkbox currently in the text, pooled
+        /// and repositioned in updateCheckboxOverlays() rather than
+        /// recreated each time — see that function for why checkboxes are
+        /// drawn this way instead of via NSGlyphInfo substitution.
+        private var checkboxOverlayLabels: [CheckboxOverlayLabel] = []
         /// The suggested remainder text currently on screen, and the cursor
         /// location it was computed for. Accepting only applies if the
         /// cursor still matches — Tab/Right-arrow otherwise fall through to
@@ -694,6 +710,7 @@ struct MarkdownTextView: NSViewRepresentable {
             guard let textStorage = textView.textStorage else { return }
             if parent.plainTextMode {
                 MarkdownStyler.clearFormatting(textStorage: textStorage, text: textView.string, theme: parent.theme, fontSizeAdjustment: parent.fontZoom)
+                updateCheckboxOverlays(in: textView)
                 return
             }
             MarkdownStyler.style(
@@ -705,6 +722,86 @@ struct MarkdownTextView: NSViewRepresentable {
                 cursorSelection: MarkdownTextView.currentSelection(of: textView),
                 fontSizeAdjustment: parent.fontZoom
             )
+            updateCheckboxOverlays(in: textView)
+        }
+
+        /// Repositions/recreates one floating label per checkbox in the
+        /// current text, showing ☑ or ☐ over the now-invisible "[" that
+        /// MarkdownStyler collapses at each checkbox's position — see the
+        /// comment above that collapse() call for why this is a floating
+        /// overlay (matching the wiki-link ghost text's own approach)
+        /// rather than NSGlyphInfo glyph substitution. Pooled rather than
+        /// recreated each call: reused labels are just repositioned/
+        /// relabeled, extras beyond the current checkbox count are hidden
+        /// rather than removed, so a note that briefly has more checkboxes
+        /// than usual doesn't churn view creation on every keystroke.
+        @MainActor
+        func updateCheckboxOverlays(in textView: NSTextView) {
+            guard let layoutManager = textView.layoutManager, let textContainer = textView.textContainer else { return }
+            guard !parent.plainTextMode else {
+                checkboxOverlayLabels.forEach { $0.isHidden = true }
+                return
+            }
+            let checkboxes = MarkdownStyler.taskCheckboxRanges(in: textView.string)
+            while checkboxOverlayLabels.count < checkboxes.count {
+                let label = CheckboxOverlayLabel()
+                label.isEditable = false
+                label.isSelectable = false
+                label.isBezeled = false
+                label.isBordered = false
+                label.drawsBackground = false
+                label.lineBreakMode = .byClipping
+                label.cell?.usesSingleLineMode = true
+                textView.addSubview(label)
+                checkboxOverlayLabels.append(label)
+            }
+
+            // Matches MarkdownStyler.style()'s own baseFont computation exactly
+            // (not textView.font — see the note in applyTheme() above about why
+            // that's deliberately never set to the real content font) so the
+            // overlay's size lines up with the space MarkdownStyler reserved
+            // for it via reserveSpace().
+            let unadjustedFont = parent.theme.resolvedFont
+            let bodyFont = parent.fontZoom == 0
+                ? unadjustedFont
+                : NSFontManager.shared.convert(unadjustedFont, toSize: max(6, unadjustedFont.pointSize + parent.fontZoom))
+            let symbolFont = MarkdownStyler.checkboxSymbolFont(baseFont: bodyFont)
+            let origin = textView.textContainerOrigin
+            // .withAlphaComponent(_:), called here outside an actual AppKit
+            // drawing pass (this runs from a text-change delegate callback,
+            // not -draw(_:)), forces the same premature/wrong-context
+            // resolution already hit twice elsewhere in this app (the light
+            // mode search bar, inline code background) — it was resolving
+            // theme.resolvedMarkerColor as if dark mode were active even
+            // with a light effectiveAppearance, making unchecked boxes
+            // white-on-white. Deferring into a resolver closure like those
+            // other two fixes is what makes it resolve correctly.
+            let markerColor = parent.theme.resolvedMarkerColor
+            let uncheckedColor = NSColor(name: nil) { _ in markerColor.withAlphaComponent(0.5) }
+
+            for (index, label) in checkboxOverlayLabels.enumerated() {
+                guard index < checkboxes.count else {
+                    label.isHidden = true
+                    continue
+                }
+                let checkbox = checkboxes[index]
+                let glyphRange = layoutManager.glyphRange(forCharacterRange: checkbox.glyphRange, actualCharacterRange: nil)
+                let rect = layoutManager.boundingRect(forGlyphRange: glyphRange, in: textContainer)
+                let xPosition = rect.origin.x + origin.x
+                // The overlay's symbol font is larger than body text (same
+                // as the old glyph-substitution approach), so it needs
+                // vertically centering within the *line's* height, not just
+                // aligned to the small "[" character's own (body-sized) box.
+                let lineRect = layoutManager.lineFragmentRect(forGlyphAt: glyphRange.location, effectiveRange: nil)
+
+                label.font = symbolFont
+                label.textColor = checkbox.isChecked ? .systemGreen : uncheckedColor
+                label.stringValue = checkbox.isChecked ? "☑" : "☐"
+                label.sizeToFit()
+                let verticalOffset = (lineRect.height - label.frame.height) / 2
+                label.frame.origin = NSPoint(x: xPosition, y: lineRect.origin.y + origin.y + verticalOffset)
+                label.isHidden = false
+            }
         }
 
         /// Briefly flags an externally-changed range so the user notices it

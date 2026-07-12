@@ -46,6 +46,7 @@ struct ContentView: View {
     @State private var isFullScreen = false
     @State private var showLoadingIndicator = false
     @State private var loadingIndicatorTask: Task<Void, Never>?
+    @State private var searchDebounceTask: Task<Void, Never>?
     @FocusState private var focusedField: FocusField?
     @AppStorage("layoutMode") private var layoutModeRaw = LayoutMode.vertical.rawValue
     @AppStorage("theme") private var theme = Theme()
@@ -120,23 +121,49 @@ struct ContentView: View {
         TemplateDateFormat.string(from: Date(), pattern: templateDateFormatPattern)
     }
 
-    private var filteredNotes: [Note] {
-        NoteStore.applyPinning(sortedNotes(store.filtered(query: query)), pinnedIDs: pinnedNoteIDs)
+    // filteredNotes used to be a plain computed property, re-running
+    // store.filtered(query:) (an O(notes) scan) plus a full sort over
+    // however many notes matched, from scratch, on *every* SwiftUI
+    // re-render of ContentView — not just when query/notes/sort/pins
+    // actually changed, but on every unrelated one too (selection,
+    // hover, focus, scrolling). With a few thousand notes that turned
+    // typing and scrolling both sluggish. Cached here instead, and only
+    // recomputed by recomputeFilteredNotes() from the handful of
+    // .onChange hooks below that cover everything the pipeline actually
+    // depends on.
+    @State private var filteredNotesCache: [Note] = []
+
+    private var filteredNotes: [Note] { filteredNotesCache }
+
+    private func recomputeFilteredNotes() {
+        filteredNotesCache = NoteStore.applyPinning(sortedNotes(store.filtered(query: query)), pinnedIDs: pinnedNoteIDs)
     }
 
-    /// Notes whose content links to the open note, newest-edited first — a
-    /// plain scan over store.notes (already all in memory), same idea as
-    /// tag lookups. This is a computed property rather than @State because
-    /// ContentView's body only re-evaluates on note-switch or a store
-    /// change (a debounced save landing) — never per keystroke, since the
-    /// text being typed lives entirely in NoteEditorView's own @State and
-    /// doesn't bubble up here until it's saved.
-    private var currentBacklinkNotes: [Note] {
+    /// Notes whose content links to the open note, newest-edited first.
+    /// Used to be a plain computed property on the theory that it'd only
+    /// run on note-switch or a store change — but it's referenced 4 times
+    /// in the view body (the disclosure toggle, its count, the expanded
+    /// list, and the divider gate), and SwiftUI doesn't share one
+    /// evaluation of a computed property across multiple references within
+    /// the same body pass. With several thousand notes that meant up to 4
+    /// redundant O(notes) scan-and-sorts every time the editor pane
+    /// re-rendered — the same class of bug filteredNotesCache above fixes
+    /// for the search results list, just left unaddressed here. Same fix:
+    /// cached in @State, recomputed only when selectedID or store.notes
+    /// actually change.
+    @State private var currentBacklinkNotesCache: [Note] = []
+
+    private var currentBacklinkNotes: [Note] { currentBacklinkNotesCache }
+
+    private func recomputeBacklinkNotes() {
         guard showBacklinks, let selectedID,
               let currentTitle = store.notes.first(where: { $0.id == selectedID })?.title
-        else { return [] }
+        else {
+            currentBacklinkNotesCache = []
+            return
+        }
         let lowered = currentTitle.lowercased()
-        return store.notes
+        currentBacklinkNotesCache = store.notes
             .filter { $0.id != selectedID && $0.wikiLinks.contains(lowered) }
             .sorted { $0.modifiedDate > $1.modifiedDate }
     }
@@ -334,6 +361,8 @@ struct ContentView: View {
     var body: some View {
         notificationHandledLayout
         .onAppear {
+            recomputeFilteredNotes()
+            recomputeBacklinkNotes()
             isFullScreen = NSApp.windows.first?.styleMask.contains(.fullScreen) ?? false
             // Captured before createWelcomeNoteIfNeeded() flips it to true —
             // that's the signal for "already had notes before this launch,"
@@ -367,8 +396,14 @@ struct ContentView: View {
             // added/removed/renamed elsewhere, etc.) — falls back to the
             // first note only if the current selection no longer exists in
             // the fresh list, rather than assuming it doesn't.
+            recomputeFilteredNotes()
+            recomputeBacklinkNotes()
             reconcileSelection()
         }
+        .onChange(of: showBacklinks) { _, _ in recomputeBacklinkNotes() }
+        .onChange(of: sortFieldRaw) { _, _ in recomputeFilteredNotes() }
+        .onChange(of: sortAscending) { _, _ in recomputeFilteredNotes() }
+        .onChange(of: pinnedNotePathsRaw) { _, _ in recomputeFilteredNotes() }
         .onChange(of: store.isLoading) { _, isLoading in
             // A fade transition alone didn't stop the flash — a reload that
             // finishes in well under the fade's own duration still visibly
@@ -443,10 +478,35 @@ struct ContentView: View {
     /// color — the same fractional blend reads as "a bit lighter" correctly
     /// in both appearances, rather than needing a separate light-mode and
     /// dark-mode constant.
+    ///
+    /// Wrapped in a dynamic NSColor resolver rather than blending eagerly
+    /// here — calling .blended(withFraction:of:) directly on a dynamic
+    /// color like .windowBackgroundColor forces it to resolve to a fixed
+    /// RGB snapshot immediately, using whatever appearance happens to be
+    /// "current" at that exact moment. This property is a plain computed
+    /// value evaluated during SwiftUI's render pass, not inside an actual
+    /// AppKit drawing context, so that snapshot isn't reliably light-mode
+    /// even when the window genuinely is — it showed up as a much-too-dark
+    /// search bar in light mode. A resolver closure is only invoked by
+    /// AppKit at actual draw time, with the correct appearance already
+    /// active, so resolving .windowBackgroundColor and blending it inside
+    /// the closure (not before it) is what actually tracks appearance
+    /// correctly — same technique AeroSpaceInterop's menuBarOutlineColor
+    /// already relies on.
     private var searchFieldBackground: Color {
-        let base = NSColor.windowBackgroundColor
-        let lightened = base.blended(withFraction: 0.12, of: .white) ?? base
-        return Color(nsColor: lightened)
+        Color(nsColor: NSColor(name: nil) { _ in
+            NSColor.windowBackgroundColor.blended(withFraction: 0.12, of: .white) ?? NSColor.windowBackgroundColor
+        })
+    }
+
+    // A dynamic resolver rather than one fixed color — needs to darken the
+    // outline in Light mode and lighten it in Dark mode, not blend a static
+    // NSColor the way searchFieldBackground above does (same reasoning:
+    // resolving inside the closure, at actual draw time, is what tracks
+    // appearance correctly).
+    private static let searchFieldBorderColor = NSColor(name: nil) { appearance in
+        let isDark = appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+        return isDark ? NSColor.white.withAlphaComponent(0.22) : NSColor.black.withAlphaComponent(0.28)
     }
 
     /// Shown in place of the note list while "template:" is typed — click a
@@ -520,17 +580,6 @@ struct ContentView: View {
             // header, which stays looking like the rest of the window chrome.
             .background(Color(nsColor: .windowBackgroundColor))
             Divider()
-            if showLoadingIndicator {
-                HStack(spacing: 6) {
-                    ProgressView()
-                        .controlSize(.small)
-                    Text("Loading notes…")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                .padding(.bottom, 6)
-                .transition(.opacity)
-            }
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(spacing: 0) {
@@ -616,7 +665,6 @@ struct ContentView: View {
                     .padding(.bottom, 10)
             }
         }
-        .animation(.easeInOut(duration: 0.15), value: showLoadingIndicator)
     }
 
     private var editorPane: some View {
@@ -697,6 +745,7 @@ struct ContentView: View {
                 editorWordCount = 0
                 editorCharacterCount = 0
             }
+            recomputeBacklinkNotes()
         }
     }
 
@@ -718,23 +767,41 @@ struct ContentView: View {
                 }
             }
             HStack {
-                if selectedID != nil, showBacklinks, !currentBacklinkNotes.isEmpty {
-                    Button {
-                        withAnimation(.easeInOut(duration: 0.15)) { backlinksExpanded.toggle() }
-                    } label: {
-                        HStack(spacing: 4) {
-                            // Points where the panel will move on the next
-                            // tap — up to expand (the list grows upward),
-                            // down to collapse back.
-                            Image(systemName: backlinksExpanded ? "chevron.down" : "chevron.up")
+                HStack(spacing: 10) {
+                    // Lives here (rather than floating above the notes list,
+                    // where it used to be) so it doesn't shift that list's
+                    // layout every time it appears/disappears — a scan over
+                    // several thousand notes is common enough (external
+                    // sync, bulk import) that the old spot was popping in
+                    // and out distractingly often.
+                    if showLoadingIndicator {
+                        HStack(spacing: 6) {
+                            ProgressView()
+                                .controlSize(.small)
+                            Text("Loading notes…")
                                 .font(.caption2)
-                            Text("\(currentBacklinkNotes.count) Backlink\(currentBacklinkNotes.count == 1 ? "" : "s")")
-                                .font(.caption2)
+                                .foregroundStyle(.secondary)
                         }
-                        .foregroundStyle(.secondary)
-                        .contentShape(Rectangle())
+                        .transition(.opacity)
                     }
-                    .buttonStyle(.plain)
+                    if selectedID != nil, showBacklinks, !currentBacklinkNotes.isEmpty {
+                        Button {
+                            withAnimation(.easeInOut(duration: 0.15)) { backlinksExpanded.toggle() }
+                        } label: {
+                            HStack(spacing: 4) {
+                                // Points where the panel will move on the next
+                                // tap — up to expand (the list grows upward),
+                                // down to collapse back.
+                                Image(systemName: backlinksExpanded ? "chevron.down" : "chevron.up")
+                                    .font(.caption2)
+                                Text("\(currentBacklinkNotes.count) Backlink\(currentBacklinkNotes.count == 1 ? "" : "s")")
+                                    .font(.caption2)
+                            }
+                            .foregroundStyle(.secondary)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                    }
                 }
                 Spacer()
                 if selectedID != nil {
@@ -750,6 +817,7 @@ struct ContentView: View {
         .padding(.horizontal, 16)
         .padding(.vertical, 4)
         .background(.bar)
+        .animation(.easeInOut(duration: 0.15), value: showLoadingIndicator)
     }
 
     private var backlinksExpandedList: some View {
@@ -888,8 +956,22 @@ struct ContentView: View {
         }
         .onSubmit { handleEnter() }
         .onChange(of: query) { _, _ in
-            reconcileSelection()
-            reconcileTemplateHighlight()
+            // Debounced rather than recomputed inline — with several
+            // thousand notes even the fast path below is real work, and
+            // running it synchronously on every single keystroke was
+            // competing with the search field's own text-insertion
+            // rendering for the same main-thread frame. 60ms is well under
+            // the threshold where typing itself starts to feel delayed,
+            // but coalesces anything faster than that (fast typing bursts,
+            // rapid backspacing) into one recompute instead of many.
+            searchDebounceTask?.cancel()
+            searchDebounceTask = Task { @MainActor in
+                try? await Task.sleep(for: .milliseconds(60))
+                guard !Task.isCancelled else { return }
+                recomputeFilteredNotes()
+                reconcileSelection()
+                reconcileTemplateHighlight()
+            }
         }
         // A plain .glassEffect alone reads as barely-there against the
         // search/sort header's own opaque .windowBackgroundColor (see
@@ -899,6 +981,14 @@ struct ContentView: View {
         // none of which reach this deliberately opaque header area anyway.
         .background(Capsule().fill(searchFieldBackground))
         .glassEffect(.regular, in: Capsule())
+        // A resting-state outline — without it the search field barely
+        // reads as a distinct control against the header in Light mode,
+        // where the lightened fill above and the header's own background
+        // are close in value. .separatorColor (the system's own dynamic
+        // divider color) was tried first but read as too faint; a fixed
+        // black/white blend at a deliberately higher opacity, via the
+        // dynamic-resolver-closure pattern below, is more pronounced.
+        .overlay(Capsule().strokeBorder(Color(nsColor: Self.searchFieldBorderColor), lineWidth: 1.5))
         .focusHighlight(
             isFocused: focusedField == .search,
             fadeOut: fadeFocusHighlight,

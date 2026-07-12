@@ -12,7 +12,7 @@ This repository is published for source transparency. The code is proprietary (s
 
 ## Features
 
-- **Instant search-driven workflow** — type to filter notes as you type; press Return to open the top match or create a new note from your search text if nothing matches.
+- **Instant search-driven workflow** — type to filter notes as you type; press Return to open the top match or create a new note from your search text if nothing matches. Stays fast at scale — tested up to 15,000 notes in one folder.
 - **Flat-file storage** — every note is a plain `.md` file on disk. No database, no proprietary format.
 - **Live markdown styling** — headings, bold, italic, strikethrough, code, lists, task checkboxes, footnotes, and blockquotes all render directly in the editor as you type, no separate preview mode. A plain-text mode toggle shows the raw markdown instead when you want it.
 - **Wiki-links** — link notes with `[[Note Title]]`; ⌘-click to follow a link, which creates the target note on the spot if it doesn't exist yet.
