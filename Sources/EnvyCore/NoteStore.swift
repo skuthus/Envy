@@ -556,81 +556,140 @@ public final class NoteStore: ObservableObject {
         (haystack as NSString).range(of: needle).location != NSNotFound
     }
 
+    /// Comma-separated groups are independent searches, OR'd together —
+    /// "dog, bone, leash" means anything matching any one of the three;
+    /// "dog bone leash" (no comma) is one group, the existing
+    /// match-every-term-somewhere behavior, completely unchanged for a
+    /// query that never had commas in it to begin with. A note matching
+    /// more than one group keeps whichever group's score ranked it higher.
     public func filtered(query: String) -> [Note] {
-        let q = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        guard !q.isEmpty else { return notes }
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return notes }
 
-        let tokens = q.split(separator: " ").map(String.init).filter { !$0.isEmpty }
-        let tagTokens = tokens.filter { $0.hasPrefix("tag:") }
-        let dateTokens = tokens.filter { $0.hasPrefix("date:") }
-        let freeTerms = tokens.filter { !$0.hasPrefix("tag:") && !$0.hasPrefix("date:") }
+        let groups = trimmed.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+        guard !groups.isEmpty else { return notes }
 
-        // A "tag:"/"date:" operator combines with whatever else is typed
-        // alongside it — "tag:work meeting" means tagged #work AND
-        // mentioning "meeting", not a literal tag named "work meeting". Only
-        // the first tag:/date: token is honored if more than one appears;
-        // combining multiple tags/dates has ambiguous AND-vs-OR semantics
-        // not worth guessing at.
-        if !tagTokens.isEmpty || !dateTokens.isEmpty {
-            let tagFilter = tagTokens.first.flatMap { token -> String? in
-                let name = String(token.dropFirst("tag:".count))
-                return name.isEmpty ? nil : name
+        if groups.count == 1 {
+            return matched(forGroup: groups[0]).sorted(by: Self.rankedHigherFirst).map(\.0)
+        }
+
+        var bestScoreByID: [String: Int] = [:]
+        var noteByID: [String: Note] = [:]
+        for group in groups {
+            for (note, score) in matched(forGroup: group) {
+                noteByID[note.id] = note
+                bestScoreByID[note.id] = max(bestScoreByID[note.id] ?? Int.min, score)
             }
-            let dateFilter = dateTokens.first.flatMap { Self.dateRange(for: String($0.dropFirst("date:".count))) }
+        }
+        return noteByID.values
+            .map { ($0, bestScoreByID[$0.id] ?? 0) }
+            .sorted(by: Self.rankedHigherFirst)
+            .map(\.0)
+    }
 
-            return notes
-                .compactMap { note -> (Note, Int)? in
-                    if let tagFilter, !note.tags.contains(where: { Self.fastContains($0, tagFilter) }) { return nil }
-                    if let dateFilter, !(note.modifiedDate >= dateFilter.start && note.modifiedDate < dateFilter.end) { return nil }
-                    return Self.scoreByTermPresence(note: note, terms: freeTerms).map { (note, $0) }
+    private static func rankedHigherFirst(_ lhs: (Note, Int), _ rhs: (Note, Int)) -> Bool {
+        if lhs.1 != rhs.1 { return lhs.1 > rhs.1 }
+        return lhs.0.modifiedDate > rhs.0.modifiedDate
+    }
+
+    /// One comma-separated group's own self-contained search — operators
+    /// (tag:/date:/folder:/todo:), exclusions (-word, -tag:x, -folder:x),
+    /// and free terms all combine with AND semantics *within* a group,
+    /// same as the whole query used to before groups existed. Returns
+    /// (Note, score) pairs for whatever survives every filter in this group.
+    private func matched(forGroup group: String) -> [(Note, Int)] {
+        let q = group.lowercased()
+        let tokens = q.split(separator: " ").map(String.init).filter { !$0.isEmpty }
+
+        var tagFilter: String?
+        var excludeTags: [String] = []
+        var dateFilter: (start: Date, end: Date)?
+        var folderFilter: String?
+        var excludeFolders: [String] = []
+        var isTodoOnly = false
+        var excludeTerms: [String] = []
+        var freeTerms: [String] = []
+
+        // Only the first tag:/date:/folder: token is honored if more than
+        // one of the same kind appears — combining multiple has ambiguous
+        // AND-vs-OR semantics not worth guessing at (that's what the comma
+        // groups above are for). Every "-"-prefixed exclusion is honored,
+        // though — there's no such ambiguity in excluding more than one thing.
+        for token in tokens {
+            if token == "todo:" {
+                isTodoOnly = true
+            } else if token.hasPrefix("-tag:") {
+                let name = String(token.dropFirst("-tag:".count))
+                if !name.isEmpty { excludeTags.append(name) }
+            } else if token.hasPrefix("tag:") {
+                if tagFilter == nil {
+                    let name = String(token.dropFirst("tag:".count))
+                    tagFilter = name.isEmpty ? nil : name
                 }
-                .sorted { lhs, rhs in
-                    if lhs.1 != rhs.1 { return lhs.1 > rhs.1 }
-                    return lhs.0.modifiedDate > rhs.0.modifiedDate
+            } else if token.hasPrefix("-folder:") {
+                let name = String(token.dropFirst("-folder:".count))
+                if !name.isEmpty { excludeFolders.append(name) }
+            } else if token.hasPrefix("folder:") {
+                if folderFilter == nil {
+                    let name = String(token.dropFirst("folder:".count))
+                    folderFilter = name.isEmpty ? nil : name
                 }
-                .map(\.0)
+            } else if token.hasPrefix("date:") {
+                if dateFilter == nil {
+                    dateFilter = Self.dateRange(for: String(token.dropFirst("date:".count)))
+                }
+            } else if token.hasPrefix("-"), token.count > 1 {
+                excludeTerms.append(String(token.dropFirst()))
+            } else {
+                freeTerms.append(token)
+            }
         }
 
-        // Multiple words don't have to appear together as one phrase — each
-        // word just has to show up somewhere in the note (title or content),
-        // in any order. A single word keeps the original scored ranking
-        // below untouched.
-        if freeTerms.count > 1 {
-            return notes
-                .compactMap { note -> (Note, Int)? in
-                    Self.scoreByTermPresence(note: note, terms: freeTerms).map { (note, $0) }
-                }
-                .sorted { lhs, rhs in
-                    if lhs.1 != rhs.1 { return lhs.1 > rhs.1 }
-                    return lhs.0.modifiedDate > rhs.0.modifiedDate
-                }
-                .map(\.0)
-        }
+        let hasOperator = isTodoOnly || tagFilter != nil || !excludeTags.isEmpty
+            || dateFilter != nil || folderFilter != nil || !excludeFolders.isEmpty
 
-        return notes
-            .compactMap { note -> (Note, Int)? in
+        return notes.compactMap { note -> (Note, Int)? in
+            if isTodoOnly, !note.hasUncheckedTask { return nil }
+            if let tagFilter, !note.tags.contains(where: { Self.fastContains($0, tagFilter) }) { return nil }
+            if !excludeTags.isEmpty, note.tags.contains(where: { tag in excludeTags.contains { Self.fastContains(tag, $0) } }) { return nil }
+            if let dateFilter, !(note.modifiedDate >= dateFilter.start && note.modifiedDate < dateFilter.end) { return nil }
+            if let folderFilter, !Self.fastContains(note.folderName.lowercased(), folderFilter) { return nil }
+            if !excludeFolders.isEmpty, excludeFolders.contains(where: { Self.fastContains(note.folderName.lowercased(), $0) }) { return nil }
+            if !excludeTerms.isEmpty {
                 let titleLower = note.lowercasedTitle
                 let contentLower = note.lowercasedContent
+                if excludeTerms.contains(where: { Self.fastContains(titleLower, $0) || Self.fastContains(contentLower, $0) }) { return nil }
+            }
 
-                let score: Int
-                if titleLower == q {
-                    score = 4
-                } else if titleLower.hasPrefix(q) {
-                    score = 3
-                } else if Self.fastContains(titleLower, q) {
-                    score = 2
-                } else if Self.fastContains(contentLower, q) {
-                    score = 1
-                } else {
-                    return nil
-                }
-                return (note, score)
+            // An operator (or 2+ free terms) combines with whatever else is
+            // typed alongside it via "does every term show up somewhere"
+            // scoring — matches original behavior exactly, including that
+            // scoreByTermPresence already treats an empty terms list as an
+            // automatic 0-score match (a pure operator query like "todo:"
+            // with nothing else to search for).
+            if hasOperator || freeTerms.count > 1 {
+                return Self.scoreByTermPresence(note: note, terms: freeTerms).map { (note, $0) }
             }
-            .sorted { lhs, rhs in
-                if lhs.1 != rhs.1 { return lhs.1 > rhs.1 }
-                return lhs.0.modifiedDate > rhs.0.modifiedDate
+            guard let term = freeTerms.first else { return (note, 0) }
+
+            // A single free term, no operators — the original scored
+            // exact/prefix/contains ranking.
+            let titleLower = note.lowercasedTitle
+            let contentLower = note.lowercasedContent
+            let score: Int
+            if titleLower == term {
+                score = 4
+            } else if titleLower.hasPrefix(term) {
+                score = 3
+            } else if Self.fastContains(titleLower, term) {
+                score = 2
+            } else if Self.fastContains(contentLower, term) {
+                score = 1
+            } else {
+                return nil
             }
-            .map(\.0)
+            return (note, score)
+        }
     }
 
     /// Number of the given terms found in the note's title (used to rank

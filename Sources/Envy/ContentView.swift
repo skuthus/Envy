@@ -217,13 +217,19 @@ struct ContentView: View {
     }
 
     /// True if any whitespace-separated word in the query is a recognized
-    /// "tag:"/"date:" operator — matches NoteStore.filtered(query:), which
-    /// now honors these anywhere in the query (combined with free-text
-    /// terms), not just when the whole query starts with one.
+    /// search operator — matches NoteStore.filtered(query:), which honors
+    /// all of these anywhere in the query (combined with free-text terms
+    /// and, since comma-separated groups were added, split across groups
+    /// too — but this check works at the word level regardless of which
+    /// comma group a word happens to be in, so nothing extra is needed
+    /// here for that).
     private var containsSearchOperator: Bool {
         query.split(separator: " ").contains { word in
             let lowered = word.lowercased()
-            return lowered.hasPrefix("tag:") || lowered.hasPrefix("date:")
+            return lowered.hasPrefix("tag:") || lowered.hasPrefix("date:") || lowered.hasPrefix("folder:")
+                || lowered.hasPrefix("-tag:") || lowered.hasPrefix("-folder:")
+                || lowered == "todo:"
+                || (lowered.hasPrefix("-") && lowered.count > 1)
         }
     }
 
@@ -278,6 +284,8 @@ struct ContentView: View {
                 let word = query[index..<end]
                 let lowered = word.lowercased()
                 let isOperator = lowered.hasPrefix("tag:") || lowered.hasPrefix("date:") || lowered.hasPrefix("template:")
+                    || lowered.hasPrefix("folder:") || lowered.hasPrefix("-tag:") || lowered.hasPrefix("-folder:")
+                    || lowered == "todo:" || (lowered.hasPrefix("-") && lowered.count > 1)
                 result = result + Text(word).foregroundColor(isOperator ? Color.primary.opacity(0.8) : .primary)
                 index = end
             }

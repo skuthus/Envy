@@ -300,6 +300,108 @@ struct SelfCheck {
             check("multi-word query excludes unrelated notes", !results.contains { $0.id == unrelated.id })
         }
 
+        // filteredTodoQueryMatchesOnlyNotesWithAnUncheckedTask
+        do {
+            let store = await makeTempStore()
+            var withTodo = store.create(title: "Chores")
+            withTodo.content = "- [ ] take out trash\n- [x] pay rent"
+            store.save(withTodo)
+
+            var allDone = store.create(title: "Finished List")
+            allDone.content = "- [x] first\n- [x] second"
+            store.save(allDone)
+
+            var noTasks = store.create(title: "Plain Note")
+            noTasks.content = "Nothing to do here."
+            store.save(noTasks)
+
+            let results = store.filtered(query: "todo:")
+            check("todo: matches note with an unchecked task", results.contains { $0.id == withTodo.id })
+            check("todo: excludes a fully-checked note", !results.contains { $0.id == allDone.id })
+            check("todo: excludes a note with no tasks", !results.contains { $0.id == noTasks.id })
+        }
+
+        // filteredFolderQueryMatchesOnlyThatFoldersNotes
+        do {
+            let dirA = FileManager.default.temporaryDirectory
+                .appendingPathComponent("VelocitySelfCheck-Work-\(UUID().uuidString)", isDirectory: true)
+            let dirB = FileManager.default.temporaryDirectory
+                .appendingPathComponent("VelocitySelfCheck-Personal-\(UUID().uuidString)", isDirectory: true)
+            let store = NoteStore(directories: [dirA, dirB])
+            await waitForLoad(store)
+
+            let workNote = store.create(title: "Standup Notes")
+            let personalNote = store.move(store.create(title: "Grocery List"), to: dirB)
+
+            let results = store.filtered(query: "folder:\(dirA.lastPathComponent.lowercased())")
+            check("folder: matches notes in that folder", results.contains { $0.id == workNote.id })
+            check("folder: excludes notes in a different folder", !results.contains { $0.id == personalNote.id })
+        }
+
+        // filteredExcludeTermRemovesMatchingNotes
+        do {
+            let store = await makeTempStore()
+            var keep = store.create(title: "Dog Walk")
+            keep.content = "Took the dog to the park."
+            store.save(keep)
+
+            var excluded = store.create(title: "Dog and Cat")
+            excluded.content = "The dog and the cat get along fine."
+            store.save(excluded)
+
+            let results = store.filtered(query: "dog -cat")
+            check("-term excludes notes containing it", !results.contains { $0.id == excluded.id })
+            check("-term still matches notes without it", results.contains { $0.id == keep.id })
+        }
+
+        // filteredExcludeTagRemovesTaggedNotes
+        do {
+            let store = await makeTempStore()
+            var archived = store.create(title: "Old Project")
+            archived.content = "Wrapped up. #archive"
+            store.save(archived)
+
+            var active = store.create(title: "Current Project")
+            active.content = "Still in progress. #active"
+            store.save(active)
+
+            let results = store.filtered(query: "-tag:archive")
+            check("-tag: excludes notes with that tag", !results.contains { $0.id == archived.id })
+            check("-tag: keeps notes without that tag", results.contains { $0.id == active.id })
+        }
+
+        // filteredCommaSeparatedGroupsAreOrEd
+        do {
+            let store = await makeTempStore()
+            var dogNote = store.create(title: "Dog Note")
+            dogNote.content = "Walked the dog today."
+            store.save(dogNote)
+
+            var boneNote = store.create(title: "Bone Note")
+            boneNote.content = "Found a bone in the yard."
+            store.save(boneNote)
+
+            var leashNote = store.create(title: "Leash Note")
+            leashNote.content = "Bought a new leash."
+            store.save(leashNote)
+
+            var unrelated = store.create(title: "Unrelated")
+            unrelated.content = "Nothing to see here."
+            store.save(unrelated)
+
+            let orResults = store.filtered(query: "dog, bone, leash")
+            check("comma groups match any one term", orResults.count == 3)
+            check("comma groups include the dog note", orResults.contains { $0.id == dogNote.id })
+            check("comma groups include the bone note", orResults.contains { $0.id == boneNote.id })
+            check("comma groups include the leash note", orResults.contains { $0.id == leashNote.id })
+            check("comma groups exclude unrelated notes", !orResults.contains { $0.id == unrelated.id })
+
+            // No comma at all still means every term must appear somewhere —
+            // completely unchanged behavior for a query that was never split.
+            let andResults = store.filtered(query: "dog bone leash")
+            check("no comma still means every term required", andResults.isEmpty)
+        }
+
         // filteredDateQueryMatchesExactDateInMultipleFormats
         do {
             let store = await makeTempStore()

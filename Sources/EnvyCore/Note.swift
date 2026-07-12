@@ -61,6 +61,20 @@ private final class NoteDerivedCache: @unchecked Sendable {
             return title.isEmpty ? nil : title
         })
     }()
+
+    // Only needs to know whether at least one exists, for the "todo:"
+    // search operator — firstMatch stops at the first hit rather than
+    // scanning the rest of the note once one's found, so this is cheaper
+    // than tags/wikiLinks above even though it runs a regex too. Deliberately
+    // a separate, narrower pattern from MarkdownStyler's own task-list regex
+    // (which lives in the Envy module, not reachable from here, and also
+    // handles rendering concerns like the marker/content capture groups that
+    // this doesn't need) — just "is there a literal, unchecked '[ ]' task
+    // marker at the start of some line," matching the same dash-optional
+    // shape MarkdownStyler recognizes.
+    lazy var hasUncheckedTask: Bool = {
+        Note.uncheckedTaskRegex.firstMatch(in: content, range: NSRange(content.startIndex..., in: content)) != nil
+    }()
 }
 
 public struct Note: Identifiable, Sendable {
@@ -112,6 +126,20 @@ public struct Note: Identifiable, Sendable {
     public var wikiLinks: Set<String> { cache.wikiLinks }
 
     fileprivate static let wikiLinkRegex = try! NSRegularExpression(pattern: #"\[\[([^\[\]]+)\]\]"#)
+
+    /// Whether this note has at least one still-unchecked task-list item —
+    /// backs the "todo:" search operator.
+    public var hasUncheckedTask: Bool { cache.hasUncheckedTask }
+
+    fileprivate static let uncheckedTaskRegex = try! NSRegularExpression(
+        pattern: #"^\s*(?:[-*+][ \t]+)?\[ \][ \t]+"#, options: [.anchorsMatchLines]
+    )
+
+    /// The name of the folder this note directly lives in — backs the
+    /// "folder:" search operator. A plain path-component lookup, not
+    /// cached like the regex-derived properties above: no scan involved,
+    /// so there's nothing expensive here to save by caching it.
+    public var folderName: String { url.deletingLastPathComponent().lastPathComponent }
 }
 
 extension Note: Equatable {
