@@ -12,7 +12,12 @@ enum MarkdownStyler {
     private static let headerRegex = try! NSRegularExpression(pattern: #"^(#{1,6})[ \t]+(.*)$"#, options: [.anchorsMatchLines])
     private static let blockquoteRegex = try! NSRegularExpression(pattern: #"^(>[ \t]?)(.*)$"#, options: [.anchorsMatchLines])
     private static let horizontalRuleRegex = try! NSRegularExpression(pattern: #"^ {0,3}([-*_])[ \t]*(?:\1[ \t]*){2,}$"#, options: [.anchorsMatchLines])
-    private static let taskListRegex = try! NSRegularExpression(pattern: #"^(\s*[-*+][ \t]+)(\[[ xX]\])([ \t]+.*)$"#, options: [.anchorsMatchLines])
+    // The "-"/"*"/"+" list marker is optional (group 1 still captures it,
+    // and any leading whitespace, when present) — "[ ] Buy milk" on its own
+    // line is a checkbox exactly like "- [ ] Buy milk" is, just without the
+    // bullet. Still line-anchored, not a mid-sentence match — "Remember [ ]
+    // to buy milk" doesn't become one, only "[ ] Remember to buy milk" does.
+    private static let taskListRegex = try! NSRegularExpression(pattern: #"^(\s*(?:[-*+][ \t]+)?)(\[[ xX]\])([ \t]+.*)$"#, options: [.anchorsMatchLines])
     private static let unorderedListRegex = try! NSRegularExpression(pattern: #"^(\s*)([-*+])([ \t]+.*)$"#, options: [.anchorsMatchLines])
     private static let orderedListRegex = try! NSRegularExpression(pattern: #"^(\s*)(\d+[.)])([ \t]+.*)$"#, options: [.anchorsMatchLines])
     // The (?<!!) exclusion still applies even without dedicated image

@@ -182,6 +182,18 @@ struct MarkdownTextView: NSViewRepresentable {
             guard let coordinator, let textView else { return }
             coordinator.updateCheckboxOverlays(in: textView)
         }
+        // Belt and suspenders alongside ensureLayout() (inside
+        // updateCheckboxOverlays itself) and the frame observer above: this
+        // repositions the overlays again one runloop turn later, after
+        // SwiftUI's own layout pass for this render has fully committed —
+        // catching it even in the case where the container's width never
+        // actually changes again after this initial call (so the frame
+        // observer above would never fire) but was still provisional at the
+        // moment this function ran.
+        DispatchQueue.main.async { [weak coordinator = context.coordinator, weak textView] in
+            guard let coordinator, let textView else { return }
+            coordinator.updateCheckboxOverlays(in: textView)
+        }
         context.coordinator.lastSearchQuery = searchQuery
         context.coordinator.lastFontZoom = fontZoom
         context.coordinator.lastPlainTextMode = plainTextMode
@@ -765,6 +777,17 @@ struct MarkdownTextView: NSViewRepresentable {
                 checkboxOverlayLabels.forEach { $0.isHidden = true }
                 return
             }
+            // NSLayoutManager lays out lazily — glyph/line-fragment queries
+            // below only reflect layout that's actually been generated yet,
+            // which (particularly for the very first note opened after
+            // launch) can still be based on a provisional container width
+            // from before SwiftUI's surrounding layout has settled. This
+            // forces layout to be fully current for the whole container
+            // before reading any position from it, rather than trusting
+            // whatever's already cached — the root cause of checkboxes
+            // showing misaligned until something else (like clicking into
+            // the editor) happened to trigger a fresh layout pass.
+            layoutManager.ensureLayout(for: textContainer)
             let checkboxes = MarkdownStyler.taskCheckboxRanges(in: textView.string)
             while checkboxOverlayLabels.count < checkboxes.count {
                 let label = CheckboxOverlayLabel()
