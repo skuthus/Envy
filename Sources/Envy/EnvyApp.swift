@@ -297,10 +297,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     // A small easter egg: every so often, at a random interval, flash the
     // menu bar eye shut and back open again — purely cosmetic, doesn't
-    // touch mainWindow's actual visibility. Only blinks while the window is
-    // genuinely showing; while hidden the eye is already closed, so there's
-    // nothing to blink. Reschedules itself after every fire (and every
-    // skipped fire while hidden), so it keeps going for the life of the app.
+    // touch mainWindow's/pinnedNotePanel's actual visibility. Only blinks
+    // while the eye is genuinely showing something other than closed;
+    // while both are hidden the eye is already closed, so there's nothing
+    // to blink. Reschedules itself after every fire (and every skipped fire
+    // while hidden), so it keeps going for the life of the app.
     private func scheduleNextBlink() {
         blinkTimer?.invalidate()
         // Target/selector rather than the closure-based Timer API — the
@@ -314,7 +315,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     @MainActor
     @objc private func performBlink() {
         defer { scheduleNextBlink() }
-        guard mainWindow?.isVisible == true else { return }
+        guard mainWindow?.isVisible == true || pinnedNotePanel?.isVisible == true else { return }
         closeEyeBriefly()
         // A real eye occasionally double-blinks — about 1 in 4 here. Timed
         // as its own independent asyncAfter (0.2s close + 0.14s gap) rather
@@ -327,11 +328,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
     }
 
+    // Eases through the squint frame on the way down and back up, instead
+    // of a hard cut straight to/from fully closed — reads as an eyelid
+    // actually sliding shut rather than a binary flash. Same total ~0.2s
+    // duration as the original two-frame version. Ends by handing off to
+    // updateStatusItemIcon() rather than hardcoding a return to open, so it
+    // correctly settles back on squint instead of open if the pinned note
+    // popup is what's actually showing right now.
     @MainActor
     private func closeEyeBriefly() {
-        statusItem?.button?.image = Self.closedEyeImage()
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
-            self?.updateStatusItemIcon()
+        statusItem?.button?.image = Self.squintEyeImage
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
+            self?.statusItem?.button?.image = Self.closedEyeImage
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
+                self?.statusItem?.button?.image = Self.squintEyeImage
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
+                    self?.updateStatusItemIcon()
+                }
+            }
         }
     }
 
@@ -343,8 +357,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     // where the bottom of the eye actually is. Called after every place in
     // this file that changes mainWindow's visibility.
     private func updateStatusItemIcon() {
-        let isVisible = mainWindow?.isVisible ?? false
-        statusItem?.button?.image = isVisible ? Self.openEyeImage() : Self.closedEyeImage()
+        if mainWindow?.isVisible == true {
+            statusItem?.button?.image = Self.openEyeImage
+        } else if pinnedNotePanel?.isVisible == true {
+            statusItem?.button?.image = Self.squintEyeImage
+        } else {
+            statusItem?.button?.image = Self.closedEyeImage
+        }
     }
 
     // Resolved against whatever NSAppearance the button is actually drawn
@@ -367,13 +386,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private static let eyeCornerRight = NSPoint(x: 15.5, y: 9.0)
     private static let lowerRimControlLeft = NSPoint(x: 6, y: 4.3)
     private static let lowerRimControlRight = NSPoint(x: 12, y: 4.3)
+    private static let pupilRect = NSRect(x: 6.5, y: 6.3, width: 5, height: 5)
+    private static let pupilColor = NSColor(red: 0.194, green: 0.534, blue: 0.222, alpha: 1)
 
     // Just the eyelid crease, traced along the exact same line and
-    // curvature as openEyeImage()'s lower rim below — an eyelid closes
-    // down to meet the lower lid, not the vertical center of the glyph's
-    // bounding box. Reads as a shut eyelid rather than a "disabled"
-    // slashed eye.
-    private static func closedEyeImage() -> NSImage {
+    // curvature as openEyeImage's lower rim below — an eyelid closes down
+    // to meet the lower lid, not the vertical center of the glyph's
+    // bounding box. Reads as a shut eyelid rather than a "disabled" slashed
+    // eye. A `static let`, not a `static func` recomputed on every call —
+    // NSImage(size:flipped:drawingHandler:) re-invokes its drawing block on
+    // every actual draw regardless of when the NSImage itself was built, so
+    // caching the instance loses nothing: menuBarOutlineColor's
+    // light/dark-adaptive resolution still happens at real draw time.
+    private static let closedEyeImage: NSImage = {
         let image = NSImage(size: NSSize(width: 18, height: 18), flipped: false) { rect in
             let path = NSBezierPath()
             path.lineCapStyle = .round
@@ -387,13 +412,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
         image.isTemplate = false
         return image
-    }
+    }()
 
     // A lens (upper rim mirrored above the same corner line the lower rim
     // sits on) plus a solid pupil in the brand's iris green
     // (EnvyLogoView.irisColor) — the one deliberately non-monochrome
     // accent on an otherwise adaptive icon.
-    private static func openEyeImage() -> NSImage {
+    private static let openEyeImage: NSImage = {
         let image = NSImage(size: NSSize(width: 18, height: 18), flipped: false) { rect in
             let path = NSBezierPath()
             path.lineCapStyle = .round
@@ -404,17 +429,61 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             let upperControlRight = NSPoint(x: lowerRimControlRight.x, y: 2 * eyeCornerRight.y - lowerRimControlRight.y)
             path.curve(to: eyeCornerLeft, controlPoint1: upperControlRight, controlPoint2: upperControlLeft)
 
+            // White "sclera" fill across the whole lens (path already
+            // closes back on itself via the two curves above), testing
+            // whether that reads more clearly than the pupil floating
+            // directly on whatever's behind the menu bar (wallpaper
+            // showing through, a busy notch-area background, etc.) — pure
+            // visibility experiment, not a settled design choice yet.
+            NSColor.white.setFill()
+            path.fill()
+
             menuBarOutlineColor.setStroke()
             path.stroke()
 
-            let pupil = NSBezierPath(ovalIn: NSRect(x: 7, y: 6.8, width: 4, height: 4))
-            NSColor(red: 0.243, green: 0.667, blue: 0.278, alpha: 1).setFill()
+            let pupil = NSBezierPath(ovalIn: pupilRect)
+            pupilColor.setFill()
             pupil.fill()
             return true
         }
         image.isTemplate = false
         return image
-    }
+    }()
+
+    // A drooping upper eyelid — much closer to the lower rim than
+    // openEyeImage's fully mirrored one — for a sleepy/suspicious squint,
+    // shown while the pinned note popup is open instead of the full app
+    // window. The pupil is the exact same circle as the fully open eye,
+    // just clipped to this shallower lens, so it reads as the same eye
+    // partway through closing rather than a differently-sized iris.
+    private static let squintEyeImage: NSImage = {
+        let image = NSImage(size: NSSize(width: 18, height: 18), flipped: false) { rect in
+            let path = NSBezierPath()
+            path.lineCapStyle = .round
+            path.lineWidth = eyeLineWidth
+            path.move(to: eyeCornerLeft)
+            path.curve(to: eyeCornerRight, controlPoint1: lowerRimControlLeft, controlPoint2: lowerRimControlRight)
+            let squintUpperControlLeft = NSPoint(x: lowerRimControlLeft.x, y: 9.6)
+            let squintUpperControlRight = NSPoint(x: lowerRimControlRight.x, y: 9.6)
+            path.curve(to: eyeCornerLeft, controlPoint1: squintUpperControlRight, controlPoint2: squintUpperControlLeft)
+
+            NSColor.white.setFill()
+            path.fill()
+
+            NSGraphicsContext.saveGraphicsState()
+            path.addClip()
+            let pupil = NSBezierPath(ovalIn: pupilRect)
+            pupilColor.setFill()
+            pupil.fill()
+            NSGraphicsContext.restoreGraphicsState()
+
+            menuBarOutlineColor.setStroke()
+            path.stroke()
+            return true
+        }
+        image.isTemplate = false
+        return image
+    }()
 
     /// Left-click summons/hides the app exactly like the global hotkey (or,
     /// with "Show Pinned Note" selected in Settings and a note actually
@@ -531,6 +600,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
         panel.makeKeyAndOrderFront(nil)
         pinnedNotePanel = panel
+        updateStatusItemIcon()
+    }
+
+    /// Catches every way the pinned note panel can close — the explicit
+    /// toggle-closed path, the outside-click auto-dismiss in
+    /// windowDidResignKey, and the "open in app" button's close() — in one
+    /// place, rather than remembering to call updateStatusItemIcon()
+    /// separately at each call site.
+    func windowWillClose(_ notification: Notification) {
+        guard let window = notification.object as? NSWindow, window === pinnedNotePanel else { return }
+        // Not a plain updateStatusItemIcon() call — windowWillClose fires
+        // before the panel actually finishes closing, so its own isVisible
+        // still reads true at this exact moment, which meant the squint
+        // icon never reverted to closed. Computed directly here instead of
+        // through the panel's own (still-stale) visibility.
+        statusItem?.button?.image = (mainWindow?.isVisible == true) ? Self.openEyeImage : Self.closedEyeImage
     }
 
     /// Auto-dismisses the pinned-note panel on any outside click — the
