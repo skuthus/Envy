@@ -100,6 +100,7 @@ enum ShortcutAction: String, CaseIterable, Identifiable {
     case focusPreviousArea
     case togglePin
     case toggleBacklinks
+    case showPinnedNote
 
     var id: String { rawValue }
 
@@ -124,6 +125,7 @@ enum ShortcutAction: String, CaseIterable, Identifiable {
         case .focusPreviousArea: "Focus Previous Area (Search / List / Editor)"
         case .togglePin: "Pin/Unpin Note"
         case .toggleBacklinks: "Toggle Backlinks"
+        case .showPinnedNote: "Show/Hide Pinned Note (works from any app)"
         }
     }
 
@@ -172,6 +174,8 @@ enum ShortcutAction: String, CaseIterable, Identifiable {
             // Plain ⌘B is already Bold — ⇧ added rather than picking an
             // unrelated letter, so it's still "B for backlinks."
             ShortcutBinding(character: "b", keyCode: kVK_ANSI_B, modifiers: SwiftUI.EventModifiers([.command, .shift]).rawValue)
+        case .showPinnedNote:
+            ShortcutBinding(character: String(KeyEquivalent.downArrow.character), keyCode: kVK_DownArrow, modifiers: SwiftUI.EventModifiers([.command, .option]).rawValue)
         }
     }
 }

@@ -13,6 +13,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var shortcutsObserver: Any?
     private var resignActiveObserver: Any?
     private var appliedSummonBinding: ShortcutBinding?
+    private var appliedPinnedNoteBinding: ShortcutBinding?
+    private static let summonHotKeyID: UInt32 = 1
+    private static let pinnedNoteHotKeyID: UInt32 = 2
     private var blinkTimer: Timer?
     private var appliedVisibility: AppVisibility?
     private var windowStateObservers: [Any] = []
@@ -96,13 +99,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             Self.applyWindowChrome(to: window)
         }
 
-        hotKey.handler = { [weak self] in
+        // Assigned once via direct subscript assignment (not passed as a
+        // register(...) argument — see GlobalHotKey's own comment on why)
+        // and never touched again; only the key combination itself changes
+        // when Settings → Shortcuts is edited.
+        hotKey.handlers[Self.summonHotKeyID] = { [weak self] in
             Task { @MainActor in
                 self?.toggleWindow()
             }
         }
+        hotKey.handlers[Self.pinnedNoteHotKeyID] = { [weak self] in
+            Task { @MainActor in
+                self?.summonPinnedNote()
+            }
+        }
         applySummonHotKey()
-        // The global hotkey is registered once with whatever keyCode/
+        applyPinnedNoteHotKey()
+        // Both global hotkeys are registered once with whatever keyCode/
         // modifiers were current at launch — re-applied whenever any
         // UserDefaults value changes (cheap: guarded by an equality check
         // against what's already registered) so a change in Settings →
@@ -113,6 +126,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             queue: .main
         ) { [weak self] _ in
             self?.applySummonHotKey()
+            self?.applyPinnedNoteHotKey()
             self?.applyAppVisibility()
         }
 
@@ -189,8 +203,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let binding = ShortcutPreferences.binding(for: .summonApp, raw: raw)
         guard binding != appliedSummonBinding else { return }
         appliedSummonBinding = binding
-        hotKey.unregister()
-        hotKey.register(keyCode: UInt32(binding.keyCode), modifiers: binding.carbonModifiers)
+        hotKey.register(id: Self.summonHotKeyID, keyCode: UInt32(binding.keyCode), modifiers: binding.carbonModifiers)
+    }
+
+    private func applyPinnedNoteHotKey() {
+        let raw = UserDefaults.standard.string(forKey: ShortcutPreferences.storageKey) ?? ""
+        let binding = ShortcutPreferences.binding(for: .showPinnedNote, raw: raw)
+        guard binding != appliedPinnedNoteBinding else { return }
+        appliedPinnedNoteBinding = binding
+        hotKey.register(id: Self.pinnedNoteHotKeyID, keyCode: UInt32(binding.keyCode), modifiers: binding.carbonModifiers)
+    }
+
+    /// Always targets the pinned note directly, regardless of what
+    /// "Clicking the menu bar icon" is set to in Settings — that setting is
+    /// specifically about the icon click, while this is its own dedicated
+    /// shortcut. No-op if nothing's currently pinned.
+    @MainActor
+    private func summonPinnedNote() {
+        guard let pinnedNoteURL else { return }
+        togglePinnedNotePanel(for: pinnedNoteURL)
     }
 
     private var currentAppVisibility: AppVisibility {
