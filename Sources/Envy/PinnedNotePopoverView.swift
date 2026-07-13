@@ -260,6 +260,14 @@ private struct HoverScrollingTitleLabel: View {
     }
 
     var body: some View {
+        // Pinned to the truncated string's own measured width rather than
+        // left to fill whatever leftover space the header HStack hands it
+        // (usually wider than 25 characters actually need) — otherwise
+        // swapping the displayed Text from `truncated` to the full `text`
+        // on hover immediately filled that leftover space with real
+        // characters before the scroll animation below even started,
+        // instead of revealing them by scrolling.
+        let boxWidth = Self.measuredWidth(of: truncated)
         GeometryReader { proxy in
             Text(isHovering ? text : truncated)
                 .font(.headline)
@@ -284,7 +292,7 @@ private struct HoverScrollingTitleLabel: View {
         // .headline isn't a fixed point size, but this is close enough for
         // a decorative scroll label; it doesn't need to be exact the way
         // the scroll distance above does.
-        .frame(height: 18)
+        .frame(width: boxWidth, height: 18)
         .clipped()
         .onHover { isHovering = $0 }
     }
