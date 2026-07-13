@@ -8,6 +8,8 @@ Also published at [envynote.app/changelog.html](https://envynote.app/changelog.h
 - The pinned note popup's title now truncates to 25 characters at rest, and scrolls across to reveal the rest on hover — click it to rename, same as before.
 - Fixed summoning or hiding Envy while [AeroSpace](https://github.com/nikitabobko/AeroSpace) is running in accordion layout mode sometimes bumping an unrelated app's window to the front instead of (or alongside) Envy.
 - Fixed blockquotes (`>`) rendering too faint to read comfortably — quoted text was using the same very low-contrast color reserved for dimming collapsed markdown markers, not actual content.
+- Added a dedicated global hotkey (⌥⌘↓ by default, editable in Settings → Shortcuts) to show or hide your pinned note from any app, independent of what "Clicking the menu bar icon" is set to.
+- Fixed the pinned note popup always opening at the top of the note — it now restores your cursor position (and scrolls it into view) from wherever you last were, even though it still reloads the note fresh from disk on every open.
 
 ## 1.1.1 — July 12, 2026
 
