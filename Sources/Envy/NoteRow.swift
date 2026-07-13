@@ -11,31 +11,34 @@ struct NoteRow: View {
     var isPinned: Bool = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            HStack {
-                if isPinned {
-                    Image(systemName: "pin.fill")
-                        .font(.caption2)
-                        .foregroundStyle(textColor ?? Color.secondary)
-                }
-                Text(note.title)
-                    .font(.body)
-                    .lineLimit(1)
-                    .foregroundStyle(textColor ?? Color.primary)
-                    .fontWeight(bold ? .bold : nil)
-                if showDateModified {
-                    Spacer()
-                    dateText
-                        .font(.caption)
-                        .foregroundStyle(textColor ?? Color.secondary)
-                        .fontWeight(bold ? .bold : nil)
-                        .lineLimit(1)
-                }
+        HStack(spacing: 6) {
+            if isPinned {
+                Image(systemName: "pin.fill")
+                    .font(.caption2)
+                    .foregroundStyle(textColor ?? Color.secondary)
             }
+            // layoutPriority(1) so the title always keeps its full width —
+            // the preview (default priority) is what gives way and
+            // truncates when the row is too narrow for both, never the
+            // other way around.
+            Text(note.title)
+                .font(.body)
+                .lineLimit(1)
+                .foregroundStyle(textColor ?? Color.primary)
+                .fontWeight(bold ? .bold : nil)
+                .layoutPriority(1)
             if showPreview && !note.preview.isEmpty {
                 Text(note.preview)
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                    .fontWeight(bold ? .bold : nil)
+                    .lineLimit(1)
+            }
+            if showDateModified {
+                Spacer()
+                dateText
+                    .font(.caption)
+                    .foregroundStyle(textColor ?? Color.secondary)
                     .fontWeight(bold ? .bold : nil)
                     .lineLimit(1)
             }
