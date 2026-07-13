@@ -220,7 +220,7 @@ struct GeneralSettingsView: View {
 
             Section("Note List") {
                 Toggle("Move cursor to editor after opening a note", isOn: $moveFocusToEditorOnEnter)
-                Toggle("Show content preview under title", isOn: $showNotePreview)
+                Toggle("Show content preview next to title", isOn: $showNotePreview)
                 Toggle("Show date modified", isOn: $showDateModified)
                 Picker("Date Format", selection: dateDisplayStyle) {
                     ForEach(DateDisplayStyle.allCases) { style in

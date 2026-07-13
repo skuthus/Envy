@@ -356,7 +356,15 @@ enum MarkdownStyler {
 
             let italicFont = NSFontManager.shared.convert(baseFont, toHaveTrait: .italicFontMask)
             textStorage.addAttribute(.font, value: italicFont, range: contentRange)
-            textStorage.addAttribute(.foregroundColor, value: markerColor, range: contentRange)
+            // Was markerColor (tertiaryLabelColor by default) — the same very
+            // low-contrast color used to dim collapsed markdown syntax
+            // markers, not meant for actual readable content. That made
+            // quoted text itself hard to read instead of just italicized,
+            // unlike every other element here (headings, bold, etc.), which
+            // only ever apply the marker color to the marker's own range,
+            // never its content. secondaryLabelColor still reads as quieter
+            // than body text without being borderline invisible.
+            textStorage.addAttribute(.foregroundColor, value: NSColor.secondaryLabelColor, range: contentRange)
 
             if touches(match.range, cursorSelection) {
                 textStorage.addAttribute(.foregroundColor, value: markerColor, range: markerRange)

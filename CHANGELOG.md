@@ -6,6 +6,8 @@ Also published at [envynote.app/changelog.html](https://envynote.app/changelog.h
 
 - The note-preview snippet (Settings → General → "Show note preview") now shows inline next to the title instead of on its own line below it.
 - The pinned note popup's title now truncates to 25 characters at rest, and scrolls across to reveal the rest on hover — click it to rename, same as before.
+- Fixed summoning or hiding Envy while [AeroSpace](https://github.com/nikitabobko/AeroSpace) is running in accordion layout mode sometimes bumping an unrelated app's window to the front instead of (or alongside) Envy.
+- Fixed blockquotes (`>`) rendering too faint to read comfortably — quoted text was using the same very low-contrast color reserved for dimming collapsed markdown markers, not actual content.
 
 ## 1.1.1 — July 12, 2026
 
