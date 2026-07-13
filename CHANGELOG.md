@@ -2,7 +2,7 @@
 
 Also published at [envynote.app/changelog.html](https://envynote.app/changelog.html).
 
-## 1.1.1 — unreleased
+## 1.1.1 — July 12, 2026
 
 **A pinnable menu bar note.** Right-click the eyecon for "Pin to Menu Bar" on any note (or "New Pinned Note" / "New Pinned Note from Template" to create one on the spot), then set Settings → General → "Clicking the menu bar icon" to "Show Pinned Note" — a click now shows that note in a small, resizable, editable popup instead of opening the full app. Good for a running to-do list or a reminder you want one click away.
 

@@ -28,12 +28,12 @@ struct WhatsNewView: View {
             }
 
             VStack(spacing: 10) {
-                Image(systemName: "bolt.fill")
+                Image(systemName: "pin.fill")
                     .font(.system(size: 44))
                     .foregroundStyle(EnvyLogoView.irisColor)
-                Text("Built for Speed")
+                Text("A Pinnable Menu Bar Note")
                     .font(.title3.bold())
-                Text("A major performance upgrade — search, scrolling, and switching between notes are all noticeably faster now, tested up to 15,000 notes in one folder.")
+                Text("Right-click the eyecon for \"Pin to Menu Bar,\" then set \"Clicking the menu bar icon\" to \"Show Pinned Note\" in Settings — a click now opens that note in a small, resizable, editable popup instead of the full app. Plus new search operators (todo:, folder:, -exclude), comma-separated OR searches, sub-task nesting with Tab, and a checkbox rewrite.")
                     .font(.body)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
