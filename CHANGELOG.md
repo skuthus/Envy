@@ -2,7 +2,7 @@
 
 Also published at [envynote.app/changelog.html](https://envynote.app/changelog.html).
 
-## 1.1.2 — unreleased
+## 1.1.2 — July 13, 2026
 
 - The note-preview snippet (Settings → General → "Show note preview") now shows inline next to the title instead of on its own line below it.
 - The pinned note popup's title now truncates to 25 characters at rest, and scrolls across to reveal the rest on hover — click it to rename, same as before.

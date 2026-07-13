@@ -28,12 +28,12 @@ struct WhatsNewView: View {
             }
 
             VStack(spacing: 10) {
-                Image(systemName: "pin.fill")
+                Image(systemName: "keyboard")
                     .font(.system(size: 44))
                     .foregroundStyle(EnvyLogoView.irisColor)
-                Text("A Pinnable Menu Bar Note")
+                Text("A Hotkey for Your Pinned Note")
                     .font(.title3.bold())
-                Text("Right-click the eyecon for \"Pin to Menu Bar,\" then set \"Clicking the menu bar icon\" to \"Show Pinned Note\" in Settings — a click now opens that note in a small, resizable, editable popup instead of the full app. Plus new search operators (todo:, folder:, -exclude), comma-separated OR searches, sub-task nesting with Tab, and a checkbox rewrite.")
+                Text("⌥⌘↓ shows or hides your pinned note from any app — no need to click the eyecon. Plus Jump to OmniBar (⌘L) to focus the search bar from anywhere, a cursor-position fix for the pinned popup, better blockquote contrast, and a fix for AeroSpace users in accordion layout.")
                     .font(.body)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
