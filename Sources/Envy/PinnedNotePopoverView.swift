@@ -58,6 +58,16 @@ struct PinnedNotePopoverView: View {
     /// save only actually fires for a real edit, not for the state update
     /// that seeds the initial load.
     @State private var lastSyncedContent: String
+    /// Where the cursor was last known to be, restored on load instead of
+    /// always landing at the top — this view is fully torn down and
+    /// recreated on every reopen (see showPinnedNotePanel in EnvyApp), so
+    /// this can't just live in memory the way it would for a view that
+    /// stays alive across closes.
+    @State private var initialSelectedRange: NSRange?
+
+    private static func cursorStorageKey(for url: URL) -> String {
+        "pinnedNoteCursorLocation:\(url.path)"
+    }
 
     init(url: URL, onOpenInApp: @escaping () -> Void) {
         self.onOpenInApp = onOpenInApp
@@ -80,10 +90,17 @@ struct PinnedNotePopoverView: View {
             _content = State(initialValue: loaded)
             _lastSyncedContent = State(initialValue: loaded)
             _loadFailed = State(initialValue: false)
+            let savedLocation = UserDefaults.standard.object(forKey: Self.cursorStorageKey(for: url)) as? Int
+            if let savedLocation, savedLocation <= (loaded as NSString).length {
+                _initialSelectedRange = State(initialValue: NSRange(location: savedLocation, length: 0))
+            } else {
+                _initialSelectedRange = State(initialValue: nil)
+            }
         } else {
             _content = State(initialValue: "")
             _lastSyncedContent = State(initialValue: "")
             _loadFailed = State(initialValue: true)
+            _initialSelectedRange = State(initialValue: nil)
         }
     }
 
@@ -173,7 +190,11 @@ struct PinnedNotePopoverView: View {
                     requireModifierForLinkClick: requireModifierForLinkClick,
                     searchQuery: "",
                     fontZoom: CGFloat(fontZoom),
-                    plainTextMode: plainTextMode
+                    plainTextMode: plainTextMode,
+                    initialSelectedRange: initialSelectedRange,
+                    onSelectionChange: { range in
+                        UserDefaults.standard.set(range.location, forKey: Self.cursorStorageKey(for: url))
+                    }
                 )
             }
         }

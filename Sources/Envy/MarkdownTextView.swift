@@ -105,6 +105,17 @@ struct MarkdownTextView: NSViewRepresentable {
     /// the app (immediately if already active, or on the next
     /// didBecomeActiveNotification otherwise).
     var highlightTrigger: Int = 0
+    /// Applied once, right after the fresh NSTextView is created — restores
+    /// the cursor (and scrolls it into view) to wherever the caller last
+    /// saw it, instead of always landing at the very top. Not re-applied on
+    /// later updateNSView calls, only at creation, same as everything else
+    /// in makeNSView that only makes sense to do once per note.
+    var initialSelectedRange: NSRange?
+    /// Fires on every cursor/selection change — used by callers that want
+    /// to remember the cursor position across a full teardown/recreation of
+    /// this view (e.g. the pinned note popup, which reloads fresh from disk
+    /// on every reopen rather than staying alive in the background).
+    var onSelectionChange: ((NSRange) -> Void)?
 
     func makeCoordinator() -> Coordinator {
         Coordinator(self)
@@ -129,6 +140,16 @@ struct MarkdownTextView: NSViewRepresentable {
         textView.minSize = NSSize(width: 0, height: 0)
         textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
         textView.string = text
+        // Selection itself is just logical state, safe to set immediately —
+        // but scrolling it into view has to wait (see the deferred block
+        // near the end of this function): at this point textView has no
+        // enclosing NSScrollView yet (constructed just below) and no real
+        // frame at all (SwiftUI hasn't inserted the view this function
+        // returns into the window yet), so scrollRangeToVisible here would
+        // have nothing meaningful to scroll within.
+        if let initialSelectedRange, initialSelectedRange.location <= (text as NSString).length {
+            textView.setSelectedRange(initialSelectedRange)
+        }
 
         textView.onHoverPoint = { [weak coordinator = context.coordinator] point in
             coordinator?.handleHover(at: point)
@@ -193,6 +214,15 @@ struct MarkdownTextView: NSViewRepresentable {
         DispatchQueue.main.async { [weak coordinator = context.coordinator, weak textView] in
             guard let coordinator, let textView else { return }
             coordinator.updateCheckboxOverlays(in: textView)
+        }
+        // Same "wait one runloop turn for real layout/geometry" reasoning as
+        // the checkbox overlay positioning above — scrollRangeToVisible
+        // needs the scroll view to already know its real size, which isn't
+        // true yet at the point makeNSView runs.
+        if let initialSelectedRange, initialSelectedRange.location <= (text as NSString).length {
+            DispatchQueue.main.async { [weak textView] in
+                textView?.scrollRangeToVisible(initialSelectedRange)
+            }
         }
         context.coordinator.lastSearchQuery = searchQuery
         context.coordinator.lastFontZoom = fontZoom
@@ -791,6 +821,7 @@ struct MarkdownTextView: NSViewRepresentable {
             guard !isHandlingTextChange, let textView = notification.object as? NSTextView else { return }
             restyle(textView)
             updateWikiLinkGhostSuggestion(in: textView)
+            parent.onSelectionChange?(textView.selectedRange())
         }
 
         /// Re-applies styling using the view's own live content and current
