@@ -45,6 +45,10 @@ struct PinnedNotePopoverView: View {
     @State private var url: URL
     @State private var titleText: String
     @FocusState private var isTitleFocused: Bool
+    /// Whether the title is currently showing as an editable TextField —
+    /// otherwise it's the truncated, hover-to-scroll label below. Tapping
+    /// the label switches to editing; losing focus switches back.
+    @State private var isEditingTitle = false
 
     @State private var content: String
     @State private var saveTask: Task<Void, Never>?
@@ -86,15 +90,33 @@ struct PinnedNotePopoverView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                TextField("Title", text: $titleText)
-                    .font(.headline)
-                    .textFieldStyle(.plain)
-                    .lineLimit(1)
-                    .focused($isTitleFocused)
-                    .onSubmit { commitRename() }
-                    .onChange(of: isTitleFocused) { _, focused in
-                        if !focused { commitRename() }
-                    }
+                if isEditingTitle {
+                    TextField("Title", text: $titleText)
+                        .font(.headline)
+                        .textFieldStyle(.plain)
+                        .lineLimit(1)
+                        .focused($isTitleFocused)
+                        .onSubmit {
+                            commitRename()
+                            isEditingTitle = false
+                        }
+                        .onChange(of: isTitleFocused) { _, focused in
+                            guard !focused else { return }
+                            commitRename()
+                            isEditingTitle = false
+                        }
+                        .onAppear { isTitleFocused = true }
+                } else {
+                    // Truncated-with-hover-scroll display rather than just
+                    // handing this straight to the TextField's own natural
+                    // clipping — the ask was specifically a fixed 25-character
+                    // limit at rest (not "however many characters happen to
+                    // fit"), with the rest revealed by scrolling on hover
+                    // rather than growing the popup or wrapping.
+                    HoverScrollingTitleLabel(text: titleText)
+                        .contentShape(Rectangle())
+                        .onTapGesture { isEditingTitle = true }
+                }
                 Spacer()
                 // No visible controls for this — ⌘+/⌘-/⌘0 already cover it,
                 // same shortcuts as the main editor's own zoom. These stay
@@ -210,5 +232,64 @@ struct PinnedNotePopoverView: View {
             try? newValue.write(to: url, atomically: true, encoding: .utf8)
             lastSyncedContent = newValue
         }
+    }
+}
+
+/// Shows only the first `visibleCharacterLimit` characters of `text` plus
+/// "…" at rest; hovering scrolls the full text across so the rest becomes
+/// readable, then resets once the mouse leaves. Styled to match a SwiftUI
+/// `.headline` label specifically (both the `.font(.headline)` applied to
+/// the visible Text and the NSFont used to measure scroll distance) —
+/// not a general-purpose reusable label for arbitrary fonts.
+private struct HoverScrollingTitleLabel: View {
+    let text: String
+    var visibleCharacterLimit: Int = 25
+
+    @State private var isHovering = false
+    @State private var scrollOffset: CGFloat = 0
+
+    // Matches the semibold weight/size .headline actually renders at
+    // closely enough for a scroll-distance estimate — this doesn't need
+    // pixel-perfect precision, just enough that the small "+6" safety
+    // margin below reliably clears the last character past the clip edge.
+    private static let measuringFont = NSFont.systemFont(ofSize: NSFont.systemFontSize, weight: .semibold)
+
+    private var truncated: String {
+        guard text.count > visibleCharacterLimit else { return text }
+        return String(text.prefix(visibleCharacterLimit)) + "…"
+    }
+
+    var body: some View {
+        GeometryReader { proxy in
+            Text(isHovering ? text : truncated)
+                .font(.headline)
+                .lineLimit(1)
+                .fixedSize(horizontal: true, vertical: false)
+                .offset(x: scrollOffset)
+                .onChange(of: isHovering) { _, hovering in
+                    guard hovering else {
+                        withAnimation(.easeOut(duration: 0.2)) { scrollOffset = 0 }
+                        return
+                    }
+                    // A few extra points past the exact measured overflow so
+                    // the very last character clears the clipped edge instead
+                    // of stopping flush against it.
+                    let overflow = Self.measuredWidth(of: text) - proxy.size.width + 6
+                    guard overflow > 0 else { return }
+                    withAnimation(.linear(duration: Double(overflow) / 40).delay(0.2)) {
+                        scrollOffset = -overflow
+                    }
+                }
+        }
+        // .headline isn't a fixed point size, but this is close enough for
+        // a decorative scroll label; it doesn't need to be exact the way
+        // the scroll distance above does.
+        .frame(height: 18)
+        .clipped()
+        .onHover { isHovering = $0 }
+    }
+
+    private static func measuredWidth(of string: String) -> CGFloat {
+        (string as NSString).size(withAttributes: [.font: measuringFont]).width
     }
 }
