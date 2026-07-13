@@ -10,6 +10,7 @@ Also published at [envynote.app/changelog.html](https://envynote.app/changelog.h
 - Fixed blockquotes (`>`) rendering too faint to read comfortably — quoted text was using the same very low-contrast color reserved for dimming collapsed markdown markers, not actual content.
 - Added a dedicated global hotkey (⌥⌘↓ by default, editable in Settings → Shortcuts) to show or hide your pinned note from any app, independent of what "Clicking the menu bar icon" is set to.
 - Fixed the pinned note popup always opening at the top of the note — it now restores your cursor position (and scrolls it into view) from wherever you last were, even though it still reloads the note fresh from disk on every open.
+- Replaced the New Note shortcut with Jump to OmniBar (⌘L by default) — the search bar's own "type a name, hit ↩" already creates a note, so ⌘N was redundant. The new shortcut jumps focus to the search bar from anywhere, including mid-edit in a note. New Note is still available from the File menu and the menu bar icon's right-click menu, just without its own keyboard shortcut.
 
 ## 1.1.1 — July 12, 2026
 
