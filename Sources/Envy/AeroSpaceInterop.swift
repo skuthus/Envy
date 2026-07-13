@@ -46,7 +46,42 @@ enum AeroSpaceInterop {
             .trimmingCharacters(in: .whitespacesAndNewlines), !workspace.isEmpty
         else { return }
         let windowID = String(window.windowNumber)
+        // Force Envy's window into AeroSpace's floating layer before moving
+        // it. Confirmed in AeroSpace's own source
+        // (MoveNodeToWorkspaceCommand.swift, moveWindowToWorkspace(_:_:_:)):
+        // move-node-to-workspace binds a *tiled* window into the target
+        // workspace's rootTilingContainer, but a *floating* one into a
+        // separate floatingWindowsContainer instead. In accordion layout,
+        // inserting a brand-new node into that tiling container is what was
+        // reshuffling which window the accordion shows as "expanded,"
+        // yanking some unrelated app to the front instead of (or alongside)
+        // Envy. `layout floating` is idempotent — a no-op if already
+        // floating — so this is safe to send on every single summon rather
+        // than only the first.
+        send(["layout", "floating", "--window-id", windowID])
         send(["move-node-to-workspace", workspace, "--window-id", windowID])
+        send(["focus", "--window-id", windowID])
+    }
+
+    /// Whatever AeroSpace considers focused right now, if anything — call
+    /// right before bringToFocusedWorkspace() so the caller can hand focus
+    /// back explicitly once Envy's window disappears again. AeroSpace's own
+    /// automatic "what should be focused now" reselection, when a window it
+    /// was just told to focus (Envy) goes away, isn't reliable in accordion
+    /// layout — it can land on some other window in the accordion stack
+    /// instead of back on whatever was actually frontmost before Envy was
+    /// summoned.
+    static func focusedWindowID() -> String? {
+        guard isAvailable else { return nil }
+        return send(["list-windows", "--focused", "--format", "%{window-id}"])?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// Explicitly restores focus to a window ID captured by
+    /// focusedWindowID() — used on hide instead of trusting AeroSpace to
+    /// automatically refocus something sensible on its own.
+    static func restoreFocus(to windowID: String) {
+        guard isAvailable else { return }
         send(["focus", "--window-id", windowID])
     }
 

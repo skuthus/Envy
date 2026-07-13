@@ -17,6 +17,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var appliedVisibility: AppVisibility?
     private var windowStateObservers: [Any] = []
     private var pinnedNotePanel: NSPanel?
+    /// Whatever AeroSpace window ID was focused right before Envy's window
+    /// was last summoned — captured so hiding can explicitly hand focus
+    /// back to it, rather than trusting AeroSpace's own automatic refocus,
+    /// which is unreliable in accordion layout. See AeroSpaceInterop.
+    private var previousAeroSpaceWindowID: String?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Applied inline here rather than via applyAppVisibility() below —
@@ -635,6 +640,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     private func activateAndShowWindow() {
         if let window = NSApp.windows.first {
+            previousAeroSpaceWindowID = AeroSpaceInterop.focusedWindowID()
             AeroSpaceInterop.bringToFocusedWorkspace(window)
         }
         NSApp.activate(ignoringOtherApps: true)
@@ -663,7 +669,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         // (see hideIfAutoHideEnabled for why).
         if window.isVisible {
             window.orderOut(nil)
+            if let previousAeroSpaceWindowID {
+                AeroSpaceInterop.restoreFocus(to: previousAeroSpaceWindowID)
+            }
         } else {
+            previousAeroSpaceWindowID = AeroSpaceInterop.focusedWindowID()
             AeroSpaceInterop.bringToFocusedWorkspace(window)
             NSApp.activate(ignoringOtherApps: true)
             window.makeKeyAndOrderFront(nil)
