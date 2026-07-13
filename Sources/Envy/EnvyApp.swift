@@ -847,10 +847,15 @@ struct EnvyApp: App {
                 }
             }
             CommandGroup(replacing: .newItem) {
+                // No .keyboardShortcut — ⌘N was pulled in favor of "Jump to
+                // OmniBar" (Navigate menu), since the omnibar's own type-a-
+                // name-and-hit-Return already creates a note. Still reachable
+                // from this File menu item, the status bar's right-click
+                // menu, or "New Pinned Note" for anyone who wants a blank
+                // note without naming it first.
                 Button("New Note") {
                     NotificationCenter.default.post(name: .newNoteRequested, object: nil)
                 }
-                .keyboardShortcut(binding(for: .newNote).keyEquivalent, modifiers: binding(for: .newNote).eventModifiers)
 
                 Button("New Note from Template") {
                     NotificationCenter.default.post(name: .newFromTemplateRequested, object: nil)
@@ -918,6 +923,13 @@ struct EnvyApp: App {
                 .keyboardShortcut(binding(for: .actualSize).keyEquivalent, modifiers: binding(for: .actualSize).eventModifiers)
             }
             CommandMenu("Navigate") {
+                Button("Jump to OmniBar") {
+                    NotificationCenter.default.post(name: .jumpToOmniBarRequested, object: nil)
+                }
+                .keyboardShortcut(binding(for: .jumpToOmniBar).keyEquivalent, modifiers: binding(for: .jumpToOmniBar).eventModifiers)
+
+                Divider()
+
                 // No .keyboardShortcut here, deliberately — Option+Up/Down are
                 // already claimed by AppKit's own paragraph-navigation text
                 // editing (moveToBeginningOfParagraph:/moveToEndOfParagraph:),

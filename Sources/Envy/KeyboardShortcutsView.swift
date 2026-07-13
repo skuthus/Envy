@@ -38,13 +38,13 @@ struct KeyboardShortcutsView: View {
                 Entry(action: .showPinnedNote, description: "Show or hide your pinned note — works from any app"),
             ]),
             Group(title: "Notes", entries: [
-                Entry(action: .newNote, description: "New note"),
                 Entry(action: .deleteNote, description: "Delete the selected note"),
                 Entry(action: .restoreDeletedNote, description: "Restore the most recently deleted note(s)"),
                 Entry(action: .togglePin, description: "Pin or unpin the selected note"),
                 Entry(keys: "⌘-click a [[link]]", description: "Open the linked note (creates it if it doesn't exist)"),
             ]),
             Group(title: "Search & Navigation", entries: [
+                Entry(action: .jumpToOmniBar, description: "Jump to the OmniBar from anywhere — type a name and hit ↩ to create a note"),
                 Entry(keys: "↑ / ↓", description: "Move the highlighted note while searching"),
                 Entry(keys: "↩", description: "Open the highlighted note, or create one from your search text"),
                 Entry(action: .focusNextArea, description: "Move focus to the next area (search → list → editor)"),

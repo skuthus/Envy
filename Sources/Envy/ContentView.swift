@@ -344,6 +344,9 @@ struct ContentView: View {
         .onReceive(NotificationCenter.default.publisher(for: .newNoteRequested)) { _ in
             createBlankNote()
         }
+        .onReceive(NotificationCenter.default.publisher(for: .jumpToOmniBarRequested)) { _ in
+            focusedField = .search
+        }
         .onReceive(NotificationCenter.default.publisher(for: .externalNoteOpenRequested)) { notification in
             guard let url = notification.object as? URL else { return }
             editingTemplate = nil
