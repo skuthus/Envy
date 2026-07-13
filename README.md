@@ -2,7 +2,7 @@
 
 A flat-file, frictionless note-taking application for macOS. One search box, instant results, and notes stored as plain `.md` files you can grep, sync, or edit with anything else you like.
 
-Built by [Skyler Schoos](https://github.com/skuthus), with [Claude Code](https://claude.com/claude-code).
+Built by [Skyler Schoos](https://github.com/skuthus).
 
 ## Download
 
