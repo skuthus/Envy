@@ -28,12 +28,12 @@ struct WhatsNewView: View {
             }
 
             VStack(spacing: 10) {
-                Image(systemName: "wrench.and.screwdriver.fill")
+                Image(systemName: "arrow.uturn.backward")
                     .font(.system(size: 44))
                     .foregroundStyle(EnvyLogoView.irisColor)
-                Text("An AeroSpace Hotfix")
+                Text("Focus Stays Put on Hide")
                     .font(.title3.bold())
-                Text("Removed a behavior that could un-minimize and raise an unrelated window when hiding Envy while AeroSpace is running. If you don't use AeroSpace, this release doesn't affect you.")
+                Text("Fixed hiding Envy sometimes snapping an unrelated window to the foreground. Whatever app was focused before you summoned Envy now gets focus back directly, instead of leaving it to chance.")
                     .font(.body)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)

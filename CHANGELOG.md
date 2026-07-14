@@ -2,6 +2,10 @@
 
 Also published at [envynote.app/changelog.html](https://envynote.app/changelog.html).
 
+## 1.1.5 — July 13, 2026
+
+- Fixed hiding Envy (hotkey, menu bar icon, or the red button) sometimes snapping an unrelated window — occasionally a minimized one — to the foreground while AeroSpace is running. Turned out not to be AeroSpace-specific at all: ordering out Envy's only visible window makes AppKit auto-activate the "next" window in the global window-server order, and AeroSpace keeps off-workspace windows parked in that order even though they're off-screen, so AppKit's pick routinely landed on a window from a different workspace. Fixed by capturing whichever app was frontmost right before summoning Envy and explicitly reactivating it after hiding — a plain macOS app activation, not routed through AeroSpace at all, so it can't un-minimize anything and helps even without a window manager running.
+
 ## 1.1.4 — July 13, 2026
 
 - Hotfix for AeroSpace interactions: removed the "restore previous focus on hide" behavior added in 1.1.2. Re-focusing a window in AeroSpace un-minimizes it, and if the captured ID went stale, hiding Envy could un-minimize and raise a completely unrelated window — jarring and unrelated to anything you were doing. No longer needed: with Envy set to always float (via an on-window-detected rule in AeroSpace's own config), the accordion-mode bug this was originally working around shouldn't occur in the first place.
