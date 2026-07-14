@@ -20,6 +20,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var appliedVisibility: AppVisibility?
     private var windowStateObservers: [Any] = []
     private var pinnedNotePanel: NSPanel?
+    // Whatever app was frontmost right before we summoned Envy over the top
+    // of it, so hiding Envy can hand focus straight back to it rather than
+    // letting AppKit pick an arbitrary "next" window — see
+    // captureFrontmostForRestore() / restorePreviousAppFocus() for why that
+    // matters under AeroSpace.
+    private var appToRestoreOnHide: NSRunningApplication?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Applied inline here rather than via applyAppVisibility() below —
@@ -750,6 +756,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     private func activateAndShowWindow() {
+        captureFrontmostForRestore()
         NSApp.activate(ignoringOtherApps: true)
         NSApp.windows.first?.makeKeyAndOrderFront(nil)
         updateStatusItemIcon()
@@ -778,8 +785,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         // matters now that hiding uses orderOut instead of NSApp.hide(nil)
         // (see hideIfAutoHideEnabled for why).
         if window.isVisible {
+            // Captured before orderOut: once the window is gone, AppKit may
+            // already have flipped frontmost to its own arbitrary pick.
+            let wasFrontmost = envyIsFrontmost
             window.orderOut(nil)
+            restorePreviousAppFocus(envyWasFrontmost: wasFrontmost)
         } else {
+            captureFrontmostForRestore()
             NSApp.activate(ignoringOtherApps: true)
             window.makeKeyAndOrderFront(nil)
             NotificationCenter.default.post(name: .summonRequested, object: nil)
@@ -811,6 +823,56 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
     }
 
+    /// Records the app that was frontmost the instant before Envy summons
+    /// itself over the top of it, so a later hide can return focus there
+    /// directly (restorePreviousAppFocus below). Must be called *before*
+    /// NSApp.activate — once Envy activates, it's the frontmost app and the
+    /// answer is lost. Skips capturing ourselves: summoning while an Envy
+    /// window (Settings, About, an already-open main window) is frontmost
+    /// should leave whatever we last captured intact, not overwrite it with
+    /// Envy — restoring focus *to Envy* on hide would be a no-op at best and
+    /// could re-raise a window we just dismissed.
+    private func captureFrontmostForRestore() {
+        let frontmost = NSWorkspace.shared.frontmostApplication
+        guard frontmost?.processIdentifier != NSRunningApplication.current.processIdentifier else { return }
+        appToRestoreOnHide = frontmost
+    }
+
+    /// Hands focus back to whatever app was frontmost before the last summon,
+    /// consuming the captured value. The real point of this is what it
+    /// *prevents*: after Envy's only visible window is ordered out, AppKit
+    /// otherwise auto-activates the "next" window in the global window-server
+    /// order — and AeroSpace parks windows from other workspaces off-screen
+    /// but still *in* that order, so that next pick routinely lands on a
+    /// window belonging to a different workspace, which AeroSpace then
+    /// reveals (an unrelated window snapping to the front — exactly the bug).
+    /// Explicitly reactivating the previous app instead keeps focus on the
+    /// current workspace. Deliberately *not* routed through AeroSpace's
+    /// socket (unlike the 1.1.2 attempt this replaces): a plain app
+    /// activation can't un-minimize a window the way `focus --window-id`
+    /// does, and it also fixes the same jump for people running no window
+    /// manager at all.
+    ///
+    /// Callers pass whether Envy actually held focus at hide time (captured
+    /// *before* orderOut, since orderOut itself may have already flipped
+    /// frontmost to AppKit's arbitrary pick). If the user had already
+    /// switched to some other app before hiding, we leave their focus alone.
+    private func restorePreviousAppFocus(envyWasFrontmost: Bool) {
+        guard let previous = appToRestoreOnHide else { return }
+        appToRestoreOnHide = nil
+        guard envyWasFrontmost else { return }
+        guard previous.processIdentifier != NSRunningApplication.current.processIdentifier,
+              !previous.isTerminated else { return }
+        _ = previous.activate()
+    }
+
+    /// True when Envy is the app that currently holds focus — checked right
+    /// before ordering a window out, so the restore only fires when hiding
+    /// Envy is actually what's giving up focus.
+    private var envyIsFrontmost: Bool {
+        NSWorkspace.shared.frontmostApplication?.processIdentifier == NSRunningApplication.current.processIdentifier
+    }
+
     // The red close button would otherwise let SwiftUI actually destroy the
     // WindowGroup's window — after that, NSApp.windows.first (used to
     // summon it back, both from the global hotkey and the menu bar item)
@@ -819,7 +881,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     // brought back, the same "quit-resistant" behavior the summon hotkey
     // and menu bar item are meant to provide.
     func windowShouldClose(_ sender: NSWindow) -> Bool {
+        // Same focus-handoff as hiding via the hotkey/menu bar (toggleWindow)
+        // — clicking the red button gives up focus too, so without this it
+        // hits the identical AeroSpace "next window" jump.
+        let wasFrontmost = envyIsFrontmost
         sender.orderOut(nil)
+        restorePreviousAppFocus(envyWasFrontmost: wasFrontmost)
         updateStatusItemIcon()
         return false
     }
