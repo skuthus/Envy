@@ -2,6 +2,10 @@
 
 Also published at [envynote.app/changelog.html](https://envynote.app/changelog.html).
 
+## 1.1.4 — July 13, 2026
+
+- Hotfix for AeroSpace interactions: removed the "restore previous focus on hide" behavior added in 1.1.2. Re-focusing a window in AeroSpace un-minimizes it, and if the captured ID went stale, hiding Envy could un-minimize and raise a completely unrelated window — jarring and unrelated to anything you were doing. No longer needed: with Envy set to always float (via an on-window-detected rule in AeroSpace's own config), the accordion-mode bug this was originally working around shouldn't occur in the first place.
+
 ## 1.1.3 — July 13, 2026
 
 - Fixed a serious delay between summoning Envy (hotkey or menu bar icon) and the window actually appearing — a regression from 1.1.2's AeroSpace fixes, which added several socket round trips directly on the main thread before the window could show. That work now happens in the background, after the window is already on screen.

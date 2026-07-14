@@ -20,17 +20,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var appliedVisibility: AppVisibility?
     private var windowStateObservers: [Any] = []
     private var pinnedNotePanel: NSPanel?
-    /// Whatever AeroSpace window ID was focused right before Envy's window
-    /// was last summoned — captured so hiding can explicitly hand focus
-    /// back to it, rather than trusting AeroSpace's own automatic refocus,
-    /// which is unreliable in accordion layout. See AeroSpaceInterop.
-    // nonisolated(unsafe): written from a background task in
-    // performAeroSpaceHandoff, read from the main-thread hide path in
-    // toggleWindow() — same trust model as the observer tokens in
-    // MarkdownTextView.swift. Never written concurrently with itself; the
-    // write always happens once, after the background AeroSpace call it's
-    // derived from has finished.
-    nonisolated(unsafe) private var previousAeroSpaceWindowID: String?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Applied inline here rather than via applyAppVisibility() below —
@@ -790,11 +779,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         // (see hideIfAutoHideEnabled for why).
         if window.isVisible {
             window.orderOut(nil)
-            if let previousAeroSpaceWindowID {
-                DispatchQueue.global(qos: .userInitiated).async {
-                    AeroSpaceInterop.restoreFocus(to: previousAeroSpaceWindowID)
-                }
-            }
         } else {
             NSApp.activate(ignoringOtherApps: true)
             window.makeKeyAndOrderFront(nil)
@@ -804,19 +788,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         updateStatusItemIcon()
     }
 
-    /// Captures whatever AeroSpace currently has focused, then moves/
-    /// focuses Envy's window onto the current workspace — both real,
-    /// blocking socket round trips (see AeroSpaceInterop's own comments),
-    /// so this always runs on a background queue and never blocks the
-    /// window actually appearing. previousAeroSpaceWindowID is
-    /// nonisolated(unsafe) specifically so this can write it back directly
-    /// without fighting Swift 6's actor-isolation checker over a
-    /// self-capturing closure.
+    /// Moves/focuses Envy's window onto AeroSpace's currently focused
+    /// workspace — a real, blocking socket round trip (see
+    /// AeroSpaceInterop's own comments), so this always runs on a
+    /// background queue and never blocks the window actually appearing.
+    ///
+    /// This used to also capture whatever AeroSpace had focused beforehand
+    /// and explicitly restore it on hide, to work around Envy's own
+    /// AeroSpace focus commands disrupting accordion-mode layouts. That
+    /// restore step turned out to cause a worse problem of its own:
+    /// re-focusing a minimized window in AeroSpace un-minimizes it, and if
+    /// the captured ID went stale, hiding Envy could un-minimize and raise
+    /// a completely unrelated window — a jarring, unrelated interruption.
+    /// Removed rather than patched further: with Envy configured to
+    /// always float (via the user's own aerospace.toml on-window-detected
+    /// rule), the original accordion-reshuffling bug this was working
+    /// around shouldn't occur in the first place, since a floating window
+    /// never enters the tiling container that bug was about.
     private func performAeroSpaceHandoff(forWindowNumber windowNumber: Int) {
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            let previousID = AeroSpaceInterop.focusedWindowID()
+        DispatchQueue.global(qos: .userInitiated).async {
             AeroSpaceInterop.bringToFocusedWorkspace(windowNumber: windowNumber)
-            self?.previousAeroSpaceWindowID = previousID
         }
     }
 

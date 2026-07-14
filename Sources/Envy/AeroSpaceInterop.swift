@@ -69,28 +69,6 @@ enum AeroSpaceInterop {
         send(["focus", "--window-id", windowID])
     }
 
-    /// Whatever AeroSpace considers focused right now, if anything — call
-    /// right before bringToFocusedWorkspace() so the caller can hand focus
-    /// back explicitly once Envy's window disappears again. AeroSpace's own
-    /// automatic "what should be focused now" reselection, when a window it
-    /// was just told to focus (Envy) goes away, isn't reliable in accordion
-    /// layout — it can land on some other window in the accordion stack
-    /// instead of back on whatever was actually frontmost before Envy was
-    /// summoned.
-    static func focusedWindowID() -> String? {
-        guard isAvailable else { return nil }
-        return send(["list-windows", "--focused", "--format", "%{window-id}"])?
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
-    /// Explicitly restores focus to a window ID captured by
-    /// focusedWindowID() — used on hide instead of trusting AeroSpace to
-    /// automatically refocus something sensible on its own.
-    static func restoreFocus(to windowID: String) {
-        guard isAvailable else { return }
-        send(["focus", "--window-id", windowID])
-    }
-
     /// One round trip over AeroSpace's socket protocol: connect, exchange
     /// the 4-byte version handshake, send a length-prefixed JSON request,
     /// read the length-prefixed JSON response, and return its stdout.

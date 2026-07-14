@@ -28,12 +28,12 @@ struct WhatsNewView: View {
             }
 
             VStack(spacing: 10) {
-                Image(systemName: "bolt.fill")
+                Image(systemName: "wrench.and.screwdriver.fill")
                     .font(.system(size: 44))
                     .foregroundStyle(EnvyLogoView.irisColor)
-                Text("A Faster Summon")
+                Text("An AeroSpace Hotfix")
                     .font(.title3.bold())
-                Text("Fixed a delay between summoning Envy and the window actually appearing — a regression from 1.1.2's AeroSpace fixes, which ran several socket round trips before the window could show. That work now happens in the background instead.")
+                Text("Removed a behavior that could un-minimize and raise an unrelated window when hiding Envy while AeroSpace is running. If you don't use AeroSpace, this release doesn't affect you.")
                     .font(.body)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
