@@ -37,15 +37,21 @@ enum AeroSpaceInterop {
         FileManager.default.fileExists(atPath: socketPath)
     }
 
-    /// Moves `window` onto whichever AeroSpace workspace is currently
-    /// focused and asks AeroSpace to focus it there — call right before
-    /// showing the window.
-    static func bringToFocusedWorkspace(_ window: NSWindow) {
+    /// Moves the window with the given windowNumber onto whichever
+    /// AeroSpace workspace is currently focused and asks AeroSpace to
+    /// focus it there. Takes a raw window number rather than an NSWindow
+    /// so callers can safely dispatch this to a background queue — see the
+    /// call sites in EnvyApp.swift for why that matters. Every call here is
+    /// a separate blocking socket round trip (up to ~0.3s each in the worst
+    /// case), so this must never run on the main thread: doing so used to
+    /// delay the window actually appearing by however long all of these
+    /// took to complete, sequentially.
+    static func bringToFocusedWorkspace(windowNumber: Int) {
         guard isAvailable else { return }
         guard let workspace = send(["list-workspaces", "--focused"])?
             .trimmingCharacters(in: .whitespacesAndNewlines), !workspace.isEmpty
         else { return }
-        let windowID = String(window.windowNumber)
+        let windowID = String(windowNumber)
         // Force Envy's window into AeroSpace's floating layer before moving
         // it. Confirmed in AeroSpace's own source
         // (MoveNodeToWorkspaceCommand.swift, moveWindowToWorkspace(_:_:_:)):

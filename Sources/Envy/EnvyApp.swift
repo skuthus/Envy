@@ -24,7 +24,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     /// was last summoned — captured so hiding can explicitly hand focus
     /// back to it, rather than trusting AeroSpace's own automatic refocus,
     /// which is unreliable in accordion layout. See AeroSpaceInterop.
-    private var previousAeroSpaceWindowID: String?
+    // nonisolated(unsafe): written from a background task in
+    // performAeroSpaceHandoff, read from the main-thread hide path in
+    // toggleWindow() — same trust model as the observer tokens in
+    // MarkdownTextView.swift. Never written concurrently with itself; the
+    // write always happens once, after the background AeroSpace call it's
+    // derived from has finished.
+    nonisolated(unsafe) private var previousAeroSpaceWindowID: String?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Applied inline here rather than via applyAppVisibility() below —
@@ -755,13 +761,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     private func activateAndShowWindow() {
-        if let window = NSApp.windows.first {
-            previousAeroSpaceWindowID = AeroSpaceInterop.focusedWindowID()
-            AeroSpaceInterop.bringToFocusedWorkspace(window)
-        }
         NSApp.activate(ignoringOtherApps: true)
         NSApp.windows.first?.makeKeyAndOrderFront(nil)
         updateStatusItemIcon()
+        if let windowNumber = NSApp.windows.first?.windowNumber {
+            performAeroSpaceHandoff(forWindowNumber: windowNumber)
+        }
     }
 
     private static func applyWindowChrome(to window: NSWindow) {
@@ -786,16 +791,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         if window.isVisible {
             window.orderOut(nil)
             if let previousAeroSpaceWindowID {
-                AeroSpaceInterop.restoreFocus(to: previousAeroSpaceWindowID)
+                DispatchQueue.global(qos: .userInitiated).async {
+                    AeroSpaceInterop.restoreFocus(to: previousAeroSpaceWindowID)
+                }
             }
         } else {
-            previousAeroSpaceWindowID = AeroSpaceInterop.focusedWindowID()
-            AeroSpaceInterop.bringToFocusedWorkspace(window)
             NSApp.activate(ignoringOtherApps: true)
             window.makeKeyAndOrderFront(nil)
             NotificationCenter.default.post(name: .summonRequested, object: nil)
+            performAeroSpaceHandoff(forWindowNumber: window.windowNumber)
         }
         updateStatusItemIcon()
+    }
+
+    /// Captures whatever AeroSpace currently has focused, then moves/
+    /// focuses Envy's window onto the current workspace — both real,
+    /// blocking socket round trips (see AeroSpaceInterop's own comments),
+    /// so this always runs on a background queue and never blocks the
+    /// window actually appearing. previousAeroSpaceWindowID is
+    /// nonisolated(unsafe) specifically so this can write it back directly
+    /// without fighting Swift 6's actor-isolation checker over a
+    /// self-capturing closure.
+    private func performAeroSpaceHandoff(forWindowNumber windowNumber: Int) {
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let previousID = AeroSpaceInterop.focusedWindowID()
+            AeroSpaceInterop.bringToFocusedWorkspace(windowNumber: windowNumber)
+            self?.previousAeroSpaceWindowID = previousID
+        }
     }
 
     // The red close button would otherwise let SwiftUI actually destroy the

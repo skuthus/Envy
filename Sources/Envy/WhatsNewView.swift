@@ -28,12 +28,12 @@ struct WhatsNewView: View {
             }
 
             VStack(spacing: 10) {
-                Image(systemName: "keyboard")
+                Image(systemName: "bolt.fill")
                     .font(.system(size: 44))
                     .foregroundStyle(EnvyLogoView.irisColor)
-                Text("A Hotkey for Your Pinned Note")
+                Text("A Faster Summon")
                     .font(.title3.bold())
-                Text("⌥⌘↓ shows or hides your pinned note from any app — no need to click the eyecon. Plus Jump to OmniBar (⌘L) to focus the search bar from anywhere, a cursor-position fix for the pinned popup, better blockquote contrast, and a fix for AeroSpace users in accordion layout.")
+                Text("Fixed a delay between summoning Envy and the window actually appearing — a regression from 1.1.2's AeroSpace fixes, which ran several socket round trips before the window could show. That work now happens in the background instead.")
                     .font(.body)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)

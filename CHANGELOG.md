@@ -2,6 +2,10 @@
 
 Also published at [envynote.app/changelog.html](https://envynote.app/changelog.html).
 
+## 1.1.3 — July 13, 2026
+
+- Fixed a serious delay between summoning Envy (hotkey or menu bar icon) and the window actually appearing — a regression from 1.1.2's AeroSpace fixes, which added several socket round trips directly on the main thread before the window could show. That work now happens in the background, after the window is already on screen.
+
 ## 1.1.2 — July 13, 2026
 
 - The note-preview snippet (Settings → General → "Show note preview") now shows inline next to the title instead of on its own line below it.
