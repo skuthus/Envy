@@ -28,12 +28,12 @@ struct WhatsNewView: View {
             }
 
             VStack(spacing: 10) {
-                Image(systemName: "arrow.uturn.backward")
+                Image(systemName: "paintpalette.fill")
                     .font(.system(size: 44))
                     .foregroundStyle(EnvyLogoView.irisColor)
-                Text("Focus Stays Put on Hide")
+                Text("A Full Theme System")
                     .font(.title3.bold())
-                Text("Fixed hiding Envy sometimes snapping an unrelated window to the foreground. Whatever app was focused before you summoned Envy now gets focus back directly, instead of leaving it to chance.")
+                Text("Settings → Theme now has a gallery of ready-made looks — Tokyo Night, Dracula, Monokai, Solarized, and two new Velocity themes — plus your own saved themes, with save, duplicate, import, and export. Every color is always editable, right down to tag colors, the note title bar, and text selection, with automatic legibility fixes when a color choice would otherwise be hard to read.")
                     .font(.body)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
