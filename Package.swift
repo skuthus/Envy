@@ -22,7 +22,7 @@ let package = Package(
             ]
         ),
         .executableTarget(
-            name: "VelocitySelfCheck",
+            name: "EnvySelfCheck",
             dependencies: ["EnvyCore"]
         ),
         .executableTarget(

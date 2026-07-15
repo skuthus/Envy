@@ -2,6 +2,16 @@
 
 Also published at [envynote.app/changelog.html](https://envynote.app/changelog.html).
 
+## 1.1.7 — July 15, 2026
+
+**Lagless at any library size.** The whole search pipeline (matching, ranking, sorting, pinning) now runs off the main thread over a snapshot of your notes — typing in the OmniBar stays instant even with tens of thousands of notes. First-character searches, previously the worst case (one letter matches nearly everything), no longer block anything.
+
+- Typing in very large notes is faster too: the per-keystroke markdown styling pass now only re-processes the region around your edit on big documents (full styling still applies when searching or when the note contains fenced code blocks, where matches can be document-wide), and checkbox layout work is skipped entirely for notes without checkboxes.
+- Fixed a fast backspace right after typing — or a quick re-click of a checkbox — occasionally restoring the just-deleted text: the editor's own debounced save could echo back through the external-file-change detector and be mistaken for another app editing the note.
+- Every color swatch in Settings → Appearance now has a reset-to-default button, and the Focus Highlight color moved in with the rest of the Focus Highlight settings instead of living two sections away.
+- Theme colors are now uniformly "system until you customize them" under the hood, fixing a class of appearance-tracking edge cases (colors freezing at whatever Light/Dark resolved to at launch).
+- Backlink computation and the wiki-link autocomplete index also moved off the main thread — both could previously cause brief hitches on large libraries.
+
 ## 1.1.6 — July 14, 2026
 
 **A full theme system.** Settings → Theme now has a gallery of ready-made looks — Tokyo Night, Dracula, Monokai, both Solarized themes, and two new Velocity Light/Dark themes modeled on the original Notational Velocity — plus your own saved themes, with save, duplicate, rename, delete, import, and export.

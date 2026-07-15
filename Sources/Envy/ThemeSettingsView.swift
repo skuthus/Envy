@@ -45,53 +45,6 @@ struct ThemeSettingsView: View {
         )
     }
 
-    /// Always editable, same as every other color now — nil ("no color")
-    /// just means "hasn't been touched since Reset," restored via the
-    /// swatch's own reset button (see colorSwatch's onReset) rather than a
-    /// separate on/off toggle. Off, the note list keeps showing the
-    /// window's own blur/solid backdrop through.
-    private var fileListBackgroundColorBinding: Binding<Color> {
-        Binding(
-            get: { theme.fileListBackgroundColor?.color ?? Color(nsColor: .windowBackgroundColor) },
-            set: { theme.fileListBackgroundColor = CodableColor(nsColor: NSColor($0)) }
-        )
-    }
-
-    private var fileListTextColorBinding: Binding<Color> {
-        Binding(
-            get: { theme.fileListTextColor?.color ?? Color(nsColor: .labelColor) },
-            set: { theme.fileListTextColor = CodableColor(nsColor: NSColor($0)) }
-        )
-    }
-
-    /// Same reset-button-not-toggle pattern as the file list's own colors —
-    /// nil keeps the note editor's title bar on the system's translucent
-    /// .bar material.
-    private var noteTitleBarBackgroundColorBinding: Binding<Color> {
-        Binding(
-            get: { theme.noteTitleBarBackgroundColor?.color ?? Color(nsColor: .windowBackgroundColor) },
-            set: { theme.noteTitleBarBackgroundColor = CodableColor(nsColor: NSColor($0)) }
-        )
-    }
-
-    private var noteTitleBarTextColorBinding: Binding<Color> {
-        Binding(
-            get: { theme.noteTitleBarTextColor?.color ?? Color(nsColor: .labelColor) },
-            set: { theme.noteTitleBarTextColor = CodableColor(nsColor: NSColor($0)) }
-        )
-    }
-
-    /// Same reset-button-not-toggle pattern as the file list/title bar
-    /// colors above — nil tracks the system's live selection color instead
-    /// of freezing a snapshot of it (see the comment on Theme.selectedTextColor
-    /// for why baking that in eagerly broke selection highlighting).
-    private var selectedTextColorBinding: Binding<Color> {
-        Binding(
-            get: { theme.selectedTextColor?.color ?? Color(nsColor: .selectedTextBackgroundColor) },
-            set: { theme.selectedTextColor = CodableColor(nsColor: NSColor($0)) }
-        )
-    }
-
     private var appearanceMode: Binding<AppearanceMode> {
         Binding(
             get: { AppearanceMode(rawValue: appearanceModeRaw) ?? .system },
@@ -111,7 +64,7 @@ struct ThemeSettingsView: View {
     private func migrateLegacyCustomThemeIfNeeded() {
         guard !didMigrateLegacyCustomTheme else { return }
         didMigrateLegacyCustomTheme = true
-        guard theme.isCustom, !savedThemesStorage.themes.contains(where: { $0.name == "My Theme" }) else { return }
+        guard theme != Theme(), !savedThemesStorage.themes.contains(where: { $0.name == "My Theme" }) else { return }
         savedThemesStorage.themes.append(NamedTheme(name: "My Theme", theme: theme))
     }
 
@@ -201,6 +154,10 @@ struct ThemeSettingsView: View {
                 }
             }
 
+            // Everything about the focus highlight lives here — fade,
+            // thickness, AND color — rather than the color hiding two
+            // sections away in the Highlight Colors grid while its other
+            // controls sat up here.
             Section("Focus Highlight") {
                 Toggle("Fade out after a moment", isOn: $fadeFocusHighlight)
                 HStack {
@@ -210,6 +167,7 @@ struct ThemeSettingsView: View {
                         .foregroundStyle(.secondary)
                         .frame(width: 30, alignment: .trailing)
                 }
+                themeColorSwatch("Color", \.focusHighlightColor, default: theme.resolvedFocusHighlightColor)
             }
 
             Section("Theme") {
@@ -244,70 +202,38 @@ struct ThemeSettingsView: View {
 
             Section("Editor Colors") {
                 colorGrid {
-                    colorSwatch("Text", selection: customColorBinding(\.textColor))
-                    colorSwatch("Background", selection: customColorBinding(\.backgroundColor))
-                    colorSwatch("Markers", selection: customColorBinding(\.markerColor))
-                    colorSwatch("Links", selection: customColorBinding(\.linkColor))
-                    colorSwatch("Code Background", selection: customColorBinding(\.codeBackgroundColor))
-                    colorSwatch("Tags", selection: customColorBinding(\.tagColor))
-                    colorSwatch("Tag Background", selection: customColorBinding(\.tagBackgroundColor))
-                    colorSwatch("Blockquotes", selection: customColorBinding(\.blockquoteColor))
-                    colorSwatch("Completed Tasks", selection: customColorBinding(\.completedTaskColor))
-                    colorSwatch("Footnotes", selection: customColorBinding(\.footnoteColor))
-                    colorSwatch("Checked Checkbox", selection: customColorBinding(\.checkedCheckboxColor))
+                    themeColorSwatch("Text", \.textColor, default: theme.resolvedTextColor)
+                    themeColorSwatch("Background", \.backgroundColor, default: theme.resolvedBackgroundColor)
+                    themeColorSwatch("Markers", \.markerColor, default: theme.resolvedMarkerColor)
+                    themeColorSwatch("Links", \.linkColor, default: theme.resolvedLinkColor)
+                    themeColorSwatch("Code Background", \.codeBackgroundColor, default: theme.resolvedCodeBackgroundColor)
+                    themeColorSwatch("Tags", \.tagColor, default: theme.resolvedTagColor)
+                    themeColorSwatch("Tag Background", \.tagBackgroundColor, default: theme.resolvedTagBackgroundColor)
+                    themeColorSwatch("Blockquotes", \.blockquoteColor, default: theme.resolvedBlockquoteColor)
+                    themeColorSwatch("Completed Tasks", \.completedTaskColor, default: theme.resolvedCompletedTaskColor)
+                    themeColorSwatch("Footnotes", \.footnoteColor, default: theme.resolvedFootnoteColor)
+                    themeColorSwatch("Checked Checkbox", \.checkedCheckboxColor, default: theme.resolvedCheckedCheckboxColor)
                 }
             }
 
             Section("List Colors") {
                 colorGrid {
-                    colorSwatch(
-                        "File List Background",
-                        selection: fileListBackgroundColorBinding,
-                        onReset: { theme.fileListBackgroundColor = nil },
-                        isDefault: theme.fileListBackgroundColor == nil
-                    )
-                    colorSwatch(
-                        "File List Text",
-                        selection: fileListTextColorBinding,
-                        onReset: { theme.fileListTextColor = nil },
-                        isDefault: theme.fileListTextColor == nil
-                    )
-                    colorSwatch(
-                        "File List Highlight Color",
-                        selection: colorBinding(\.selectionColor),
-                        onReset: { theme.selectionColor = Theme.defaultSelectionColor },
-                        isDefault: theme.selectionColor == Theme.defaultSelectionColor
-                    )
-                    colorSwatch(
-                        "Note Title Bar Background",
-                        selection: noteTitleBarBackgroundColorBinding,
-                        onReset: { theme.noteTitleBarBackgroundColor = nil },
-                        isDefault: theme.noteTitleBarBackgroundColor == nil
-                    )
-                    colorSwatch(
-                        "Note Title Bar Text",
-                        selection: noteTitleBarTextColorBinding,
-                        onReset: { theme.noteTitleBarTextColor = nil },
-                        isDefault: theme.noteTitleBarTextColor == nil
-                    )
+                    // These two (and the title bar background below) have no
+                    // resolved* fallback color of their own — nil means "no
+                    // fill at all," so the picker just shows a neutral
+                    // system color until one is actually chosen.
+                    themeColorSwatch("File List Background", \.fileListBackgroundColor, default: .windowBackgroundColor)
+                    themeColorSwatch("File List Text", \.fileListTextColor, default: .labelColor)
+                    themeColorSwatch("File List Highlight Color", \.selectionColor, default: theme.resolvedSelectionColor)
+                    themeColorSwatch("Note Title Bar Background", \.noteTitleBarBackgroundColor, default: .windowBackgroundColor)
+                    themeColorSwatch("Note Title Bar Text", \.noteTitleBarTextColor, default: .labelColor)
                 }
             }
 
             Section("Highlight Colors") {
                 colorGrid {
-                    colorSwatch("Search Highlight", selection: colorBinding(\.highlightColor))
-                    colorSwatch(
-                        "Focus Highlight",
-                        selection: colorBinding(\.focusHighlightColor),
-                        onReset: { theme.focusHighlightColor = Theme.defaultFocusHighlightColor },
-                        isDefault: theme.focusHighlightColor == Theme.defaultFocusHighlightColor
-                    )
-                    colorSwatch(
-                        "Text Selection",
-                        selection: selectedTextColorBinding,
-                        onReset: { theme.selectedTextColor = nil },
-                        isDefault: theme.selectedTextColor == nil
-                    )
+                    themeColorSwatch("Search Highlight", \.highlightColor, default: theme.resolvedHighlightColor)
+                    themeColorSwatch("Text Selection", \.selectedTextColor, default: theme.resolvedSelectedTextColor)
                 }
             }
 
@@ -416,7 +342,9 @@ struct ThemeSettingsView: View {
 
     @ViewBuilder
     private func themeSwatch(_ entry: GalleryEntry) -> some View {
-        let isSelected = entry.id == "system-default" ? !theme.isCustom : theme == entry.theme
+        // Uniform now that System Default is just Theme() — a theme with
+        // every color nil — rather than a special isCustom-flag state.
+        let isSelected = theme == entry.theme
         VStack(spacing: 4) {
             ZStack(alignment: .topTrailing) {
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
@@ -523,45 +451,39 @@ struct ThemeSettingsView: View {
         .fixedSize(horizontal: false, vertical: true)
     }
 
-    private func colorBinding(_ keyPath: WritableKeyPath<Theme, CodableColor>) -> Binding<Color> {
-        Binding(
-            get: { theme[keyPath: keyPath].color },
-            set: { theme[keyPath: keyPath] = CodableColor(nsColor: NSColor($0)) }
-        )
-    }
-
-    /// Same as colorBinding, but also flips isCustom on. isCustom no longer
-    /// has a visible toggle in the UI — every Editor Colors swatch (and the
-    /// Font controls) is always editable, and touching any one of them is
-    /// what quietly turns "custom" on instead of a separate switch the user
-    /// had to remember to flip first. Kept as an internal flag rather than
-    /// removed outright: resolvedTextColor and friends still need it to
-    /// tell "the user picked System Default and hasn't touched a color"
-    /// (return the live, appearance-tracking system color) apart from "the
-    /// user picked/edited a real color" (return the frozen stored one) —
-    /// without it, System Default would freeze at whatever it resolved to
-    /// once, and stop following System/Light/Dark switches.
-    private func customColorBinding(_ keyPath: WritableKeyPath<Theme, CodableColor>) -> Binding<Color> {
-        Binding(
-            get: { theme[keyPath: keyPath].color },
-            set: { newValue in
-                theme.isCustom = true
-                theme[keyPath: keyPath] = CodableColor(nsColor: NSColor(newValue))
-            }
-        )
-    }
-
     private var fontNameBinding: Binding<String> {
         Binding(
             get: { theme.fontName },
-            set: { theme.isCustom = true; theme.fontName = $0 }
+            set: { theme.fontName = $0 }
         )
     }
 
     private var fontSizeBinding: Binding<Double> {
         Binding(
             get: { theme.fontSize },
-            set: { theme.isCustom = true; theme.fontSize = $0 }
+            set: { theme.fontSize = $0 }
+        )
+    }
+
+    /// One swatch pattern for every theme color: pick a color and it's
+    /// stored; hit reset and it goes back to nil, meaning "track the live
+    /// system default." `defaultColor` is only what the picker *displays*
+    /// while nothing is stored — an @autoclosure so passing
+    /// `theme.resolved*` re-reads the current appearance each render
+    /// instead of freezing one evaluation.
+    private func themeColorSwatch(
+        _ label: String,
+        _ keyPath: WritableKeyPath<Theme, CodableColor?>,
+        default defaultColor: @autoclosure @escaping () -> NSColor
+    ) -> some View {
+        colorSwatch(
+            label,
+            selection: Binding(
+                get: { theme[keyPath: keyPath]?.color ?? Color(nsColor: defaultColor()) },
+                set: { theme[keyPath: keyPath] = CodableColor(nsColor: NSColor($0)) }
+            ),
+            onReset: { theme[keyPath: keyPath] = nil },
+            isDefault: theme[keyPath: keyPath] == nil
         )
     }
 

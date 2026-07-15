@@ -26,7 +26,7 @@ struct SelfCheck {
 
         func makeTempStore() async -> NoteStore {
             let dir = FileManager.default.temporaryDirectory
-                .appendingPathComponent("VelocitySelfCheck-\(UUID().uuidString)", isDirectory: true)
+                .appendingPathComponent("EnvySelfCheck-\(UUID().uuidString)", isDirectory: true)
             let store = NoteStore(directories: [dir])
             await waitForLoad(store)
             return store
@@ -115,9 +115,9 @@ struct SelfCheck {
         // moveRelocatesFileToAnotherConfiguredFolder
         do {
             let dirA = FileManager.default.temporaryDirectory
-                .appendingPathComponent("VelocitySelfCheck-\(UUID().uuidString)", isDirectory: true)
+                .appendingPathComponent("EnvySelfCheck-\(UUID().uuidString)", isDirectory: true)
             let dirB = FileManager.default.temporaryDirectory
-                .appendingPathComponent("VelocitySelfCheck-\(UUID().uuidString)", isDirectory: true)
+                .appendingPathComponent("EnvySelfCheck-\(UUID().uuidString)", isDirectory: true)
             let store = NoteStore(directories: [dirA, dirB])
             await waitForLoad(store)
 
@@ -141,7 +141,7 @@ struct SelfCheck {
             storeA.create(title: "In Folder A")
 
             let dirB = FileManager.default.temporaryDirectory
-                .appendingPathComponent("VelocitySelfCheck-\(UUID().uuidString)", isDirectory: true)
+                .appendingPathComponent("EnvySelfCheck-\(UUID().uuidString)", isDirectory: true)
             storeA.setDirectories([dirB])
             await waitForLoad(storeA)
             check("setDirectories updates noteDirectories", storeA.noteDirectories == [dirB])
@@ -154,9 +154,9 @@ struct SelfCheck {
         // multipleFoldersAggregateIntoOneFlatListWithUniqueIDs
         do {
             let dirA = FileManager.default.temporaryDirectory
-                .appendingPathComponent("VelocitySelfCheck-\(UUID().uuidString)", isDirectory: true)
+                .appendingPathComponent("EnvySelfCheck-\(UUID().uuidString)", isDirectory: true)
             let dirB = FileManager.default.temporaryDirectory
-                .appendingPathComponent("VelocitySelfCheck-\(UUID().uuidString)", isDirectory: true)
+                .appendingPathComponent("EnvySelfCheck-\(UUID().uuidString)", isDirectory: true)
             let store = NoteStore(directories: [dirA, dirB])
             await waitForLoad(store)
 
@@ -176,7 +176,7 @@ struct SelfCheck {
         // reloadInFlightAtLaunchDoesNotClobberAnImmediateCreate
         do {
             let dir = FileManager.default.temporaryDirectory
-                .appendingPathComponent("VelocitySelfCheck-\(UUID().uuidString)", isDirectory: true)
+                .appendingPathComponent("EnvySelfCheck-\(UUID().uuidString)", isDirectory: true)
             // Don't wait for the initial load — create immediately, racing the
             // in-flight background scan of what was (at construction time) an
             // empty folder.
@@ -324,9 +324,9 @@ struct SelfCheck {
         // filteredFolderQueryMatchesOnlyThatFoldersNotes
         do {
             let dirA = FileManager.default.temporaryDirectory
-                .appendingPathComponent("VelocitySelfCheck-Work-\(UUID().uuidString)", isDirectory: true)
+                .appendingPathComponent("EnvySelfCheck-Work-\(UUID().uuidString)", isDirectory: true)
             let dirB = FileManager.default.temporaryDirectory
-                .appendingPathComponent("VelocitySelfCheck-Personal-\(UUID().uuidString)", isDirectory: true)
+                .appendingPathComponent("EnvySelfCheck-Personal-\(UUID().uuidString)", isDirectory: true)
             let store = NoteStore(directories: [dirA, dirB])
             await waitForLoad(store)
 

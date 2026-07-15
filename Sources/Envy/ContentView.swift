@@ -21,108 +21,113 @@ enum NoteSortField: String {
     }
 }
 
+// ContentView's members deliberately sit at internal (not private) access:
+// the type is split across several files (ContentView+ListPane, +EditorPane,
+// +Selection, +Actions) purely for navigability, and extensions in other
+// files can't see private members. This file holds the state and the
+// top-level body; everything else lives with its pane/concern.
 struct ContentView: View {
-    @Environment(\.openSettings) private var openSettings
-    @Environment(\.openWindow) private var openWindow
-    @StateObject private var store = NoteStore(directories: NotesDirectoryPreference.loadEnabled())
-    @State private var query = ""
-    @State private var selectedID: String?
+    @Environment(\.openSettings) var openSettings
+    @Environment(\.openWindow) var openWindow
+    @StateObject var store = NoteStore(directories: NotesDirectoryPreference.loadEnabled())
+    @State var query = ""
+    @State var selectedID: String?
     /// Extra notes ⌘-selected alongside selectedID, for multi-select bulk
     /// actions (Delete/Move/Open in Finder). selectedID stays the "primary"
     /// selection driving the editor pane and keyboard navigation, unchanged
     /// from before multi-select existed — this is purely additive.
-    @State private var multiSelectedIDs: Set<String> = []
+    @State var multiSelectedIDs: Set<String> = []
     /// The fixed starting point for ⇧-click range selection — set by a plain
     /// click, left alone by ⇧-click itself so repeated ⇧-clicks each
     /// recompute the range from the same anchor rather than chaining from
     /// wherever the previous ⇧-click landed (matching Finder).
-    @State private var selectionAnchorID: String?
-    @State private var renamingNote: Note?
-    @State private var renameText = ""
-    @State private var cachedWindowTitle: String?
-    @State private var editorWordCount = 0
-    @State private var editorCharacterCount = 0
-    @State private var backlinksExpanded = false
-    @State private var isFullScreen = false
-    @State private var showLoadingIndicator = false
-    @State private var loadingIndicatorTask: Task<Void, Never>?
-    @State private var searchDebounceTask: Task<Void, Never>?
-    @FocusState private var focusedField: FocusField?
-    @AppStorage("layoutMode") private var layoutModeRaw = LayoutMode.vertical.rawValue
-    @AppStorage("theme") private var theme = Theme()
-    @AppStorage("backgroundBlurStrength") private var backgroundBlurStrengthRaw = BlurStrength.strong.rawValue
-    @AppStorage("showNotePreview") private var showNotePreview = false
-    @AppStorage("showDateModified") private var showDateModified = true
-    @AppStorage("dateDisplayStyle") private var dateDisplayStyleRaw = DateDisplayStyle.smart.rawValue
-    @AppStorage("requireModifierForLinkClick") private var requireModifierForLinkClick = true
-    @AppStorage("showEditorTitleHeader") private var showEditorTitleHeader = true
-    @AppStorage("showTagsInTitleBar") private var showTagsInTitleBar = false
-    @AppStorage(NotesDirectoryPreference.storageKey) private var notesDirectoryPathsRaw = ""
-    @AppStorage(NotesDirectoryPreference.disabledStorageKey) private var disabledDirectoryPathsRaw = ""
-    @AppStorage("hasCreatedWelcomeNote") private var hasCreatedWelcomeNote = false
-    @AppStorage("lastSeenWhatsNewVersion") private var lastSeenWhatsNewVersion = ""
-    @AppStorage("moveFocusToEditorOnEnter") private var moveFocusToEditorOnEnter = true
-    @AppStorage("listDensity") private var listDensityRaw = ListDensity.compact.rawValue
-    @AppStorage("noteSortField") private var sortFieldRaw = NoteSortField.date.rawValue
-    @AppStorage("noteSortAscending") private var sortAscending = false
-    @AppStorage("showFooterClock") private var showFooterClock = false
-    @AppStorage("showFooterClockDate") private var showFooterClockDate = false
-    @AppStorage("footerClockDateFormat") private var footerClockDateFormatRaw = ClockDateFormat.short.rawValue
-    @AppStorage("showFooterClockOnlyWhenFullScreen") private var showFooterClockOnlyWhenFullScreen = false
-    @AppStorage("editorFontZoom") private var editorFontZoom: Double = 0
-    @AppStorage("plainTextMode") private var plainTextMode = false
-    @AppStorage("fadeFocusHighlight") private var fadeFocusHighlight = false
-    @AppStorage("boldFileListText") private var boldFileListText = false
-    @AppStorage("showBacklinks") private var showBacklinks = true
-    @AppStorage("restoreFocusOnSummon") private var restoreFocusOnSummon = true
-    @AppStorage("templatesScope") private var templatesScopeRaw = TemplatesScope.global.rawValue
-    @AppStorage("templateDateFormatPattern") private var templateDateFormatPattern = TemplateDateFormat.defaultPattern
-    @AppStorage("hasSeededSampleTemplates") private var hasSeededSampleTemplates = false
-    @State private var editingTemplate: NoteTemplate?
-    @State private var highlightedTemplateID: String?
+    @State var selectionAnchorID: String?
+    @State var renamingNote: Note?
+    @State var renameText = ""
+    @State var cachedWindowTitle: String?
+    @State var editorWordCount = 0
+    @State var editorCharacterCount = 0
+    @State var backlinksExpanded = false
+    @State var isFullScreen = false
+    @State var showLoadingIndicator = false
+    @State var loadingIndicatorTask: Task<Void, Never>?
+    @State var searchDebounceTask: Task<Void, Never>?
+    @FocusState var focusedField: FocusField?
+    @AppStorage("layoutMode") var layoutModeRaw = LayoutMode.vertical.rawValue
+    @AppStorage("theme") var theme = Theme()
+    @AppStorage("backgroundBlurStrength") var backgroundBlurStrengthRaw = BlurStrength.strong.rawValue
+    @AppStorage("showNotePreview") var showNotePreview = false
+    @AppStorage("showDateModified") var showDateModified = true
+    @AppStorage("dateDisplayStyle") var dateDisplayStyleRaw = DateDisplayStyle.smart.rawValue
+    @AppStorage("requireModifierForLinkClick") var requireModifierForLinkClick = true
+    @AppStorage("showEditorTitleHeader") var showEditorTitleHeader = true
+    @AppStorage("showTagsInTitleBar") var showTagsInTitleBar = false
+    @AppStorage(NotesDirectoryPreference.storageKey) var notesDirectoryPathsRaw = ""
+    @AppStorage(NotesDirectoryPreference.disabledStorageKey) var disabledDirectoryPathsRaw = ""
+    @AppStorage("hasCreatedWelcomeNote") var hasCreatedWelcomeNote = false
+    @AppStorage("lastSeenWhatsNewVersion") var lastSeenWhatsNewVersion = ""
+    @AppStorage("moveFocusToEditorOnEnter") var moveFocusToEditorOnEnter = true
+    @AppStorage("listDensity") var listDensityRaw = ListDensity.compact.rawValue
+    @AppStorage("noteSortField") var sortFieldRaw = NoteSortField.date.rawValue
+    @AppStorage("noteSortAscending") var sortAscending = false
+    @AppStorage("showFooterClock") var showFooterClock = false
+    @AppStorage("showFooterClockDate") var showFooterClockDate = false
+    @AppStorage("footerClockDateFormat") var footerClockDateFormatRaw = ClockDateFormat.short.rawValue
+    @AppStorage("showFooterClockOnlyWhenFullScreen") var showFooterClockOnlyWhenFullScreen = false
+    @AppStorage("editorFontZoom") var editorFontZoom: Double = 0
+    @AppStorage("plainTextMode") var plainTextMode = false
+    @AppStorage("fadeFocusHighlight") var fadeFocusHighlight = false
+    @AppStorage("boldFileListText") var boldFileListText = false
+    @AppStorage("showBacklinks") var showBacklinks = true
+    @AppStorage("restoreFocusOnSummon") var restoreFocusOnSummon = true
+    @AppStorage("templatesScope") var templatesScopeRaw = TemplatesScope.global.rawValue
+    @AppStorage("templateDateFormatPattern") var templateDateFormatPattern = TemplateDateFormat.defaultPattern
+    @AppStorage("hasSeededSampleTemplates") var hasSeededSampleTemplates = false
+    @State var editingTemplate: NoteTemplate?
+    @State var highlightedTemplateID: String?
     // Newline-joined note ids (paths), matching the encoding NotesDirectoryPreference
     // already uses for a list of paths in one AppStorage string.
-    @AppStorage("pinnedNotePaths") private var pinnedNotePathsRaw = ""
+    @AppStorage("pinnedNotePaths") var pinnedNotePathsRaw = ""
     // Read directly off UserDefaults by EnvyApp's AppDelegate too (an
     // NSObject, not a SwiftUI view, so it can't use @AppStorage) when
     // deciding what a menu bar click should do — same key, same value.
-    @AppStorage("menuBarPinnedNotePath") private var menuBarPinnedNotePath = ""
+    @AppStorage("menuBarPinnedNotePath") var menuBarPinnedNotePath = ""
 
-    private var layoutMode: LayoutMode {
+    var layoutMode: LayoutMode {
         LayoutMode(rawValue: layoutModeRaw) ?? .horizontal
     }
 
-    private var sortField: NoteSortField {
+    var sortField: NoteSortField {
         NoteSortField(rawValue: sortFieldRaw) ?? .date
     }
 
-    private var dateDisplayStyle: DateDisplayStyle {
+    var dateDisplayStyle: DateDisplayStyle {
         DateDisplayStyle(rawValue: dateDisplayStyleRaw) ?? .smart
     }
 
-    private var listDensity: ListDensity {
+    var listDensity: ListDensity {
         ListDensity(rawValue: listDensityRaw) ?? .compact
     }
 
-    private var footerClockDateFormat: ClockDateFormat {
+    var footerClockDateFormat: ClockDateFormat {
         ClockDateFormat(rawValue: footerClockDateFormatRaw) ?? .short
     }
 
-    private var backgroundBlurStrength: BlurStrength {
+    var backgroundBlurStrength: BlurStrength {
         BlurStrength(rawValue: backgroundBlurStrengthRaw) ?? .strong
     }
 
-    private var templatesScope: TemplatesScope {
+    var templatesScope: TemplatesScope {
         TemplatesScope(rawValue: templatesScopeRaw) ?? .global
     }
 
-    private var availableTemplates: [NoteTemplate] {
+    var availableTemplates: [NoteTemplate] {
         store.templates(includeAllFolders: templatesScope == .perFolder)
     }
 
     /// The text {{date}} in a template (title or body) actually gets
     /// substituted with — computed fresh each use so it's always today.
-    private var templateDateText: String {
+    var templateDateText: String {
         TemplateDateFormat.string(from: Date(), pattern: templateDateFormatPattern)
     }
 
@@ -136,13 +141,106 @@ struct ContentView: View {
     // recomputed by recomputeFilteredNotes() from the handful of
     // .onChange hooks below that cover everything the pipeline actually
     // depends on.
-    @State private var filteredNotesCache: [Note] = []
+    @State var filteredNotesCache: [Note] = []
 
-    private var filteredNotes: [Note] { filteredNotesCache }
+    var filteredNotes: [Note] { filteredNotesCache }
 
-    private func recomputeFilteredNotes() {
-        filteredNotesCache = NoteStore.applyPinning(sortedNotes(store.filtered(query: query)), pinnedIDs: pinnedNoteIDs)
+    /// The ghost-text completion and "Press ↩ to create" state for the
+    /// current results — computed in the same background pass as the
+    /// results themselves. Both used to be O(notes) scans in the search
+    /// field's body on every keystroke render.
+    @State var suggestionNoteCache: Note?
+    @State var queryHasExactTitleMatch = false
+    @State private var searchComputeGeneration = 0
+
+    struct SearchComputation: Sendable {
+        var notes: [Note]
+        var suggestion: Note?
+        var hasExactTitleMatch: Bool
     }
+
+    /// The whole search pipeline — filter, rank-sort, pinning, plus the
+    /// suggestion/exact-match extras — over an immutable snapshot, so it
+    /// can run on a background task. With a large library this is real
+    /// work (the first typed character matches nearly everything, so the
+    /// early keystrokes are the *most* expensive), and running it on the
+    /// main actor — even debounced — stalled the keystrokes queued behind
+    /// it. The main thread now only assigns the finished result.
+    nonisolated static func computeSearch(
+        notes: [Note],
+        query: String,
+        pinnedIDs: Set<String>,
+        sortField: NoteSortField,
+        sortAscending: Bool
+    ) -> SearchComputation {
+        let filtered = NoteStore.filtered(notes, query: query)
+        let sorted = sortNotes(filtered, field: sortField, ascending: sortAscending)
+        let pinned = NoteStore.applyPinning(sorted, pinnedIDs: pinnedIDs)
+
+        var suggestion: Note?
+        if !query.isEmpty {
+            let lowered = query.lowercased()
+            suggestion = pinned.first { $0.lowercasedTitle.hasPrefix(lowered) && $0.title.count > query.count }
+        }
+
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let hasExact = !trimmed.isEmpty && notes.contains { $0.lowercasedTitle == trimmed }
+
+        return SearchComputation(notes: pinned, suggestion: suggestion, hasExactTitleMatch: hasExact)
+    }
+
+    /// Guarded by a generation counter rather than task cancellation alone:
+    /// several triggers (typing debounce, sort toggles, pin changes, store
+    /// reloads) can each start a computation, and an older one finishing
+    /// late must not clobber a newer one's result.
+    func recomputeFilteredNotes() async {
+        searchComputeGeneration += 1
+        let generation = searchComputeGeneration
+        let notesSnapshot = store.notes
+        let querySnapshot = query
+        let pinnedSnapshot = pinnedNoteIDs
+        let field = sortField
+        let ascending = sortAscending
+        let result = await Task.detached(priority: .userInitiated) {
+            Self.computeSearch(notes: notesSnapshot, query: querySnapshot, pinnedIDs: pinnedSnapshot, sortField: field, sortAscending: ascending)
+        }.value
+        guard generation == searchComputeGeneration else { return }
+        filteredNotesCache = result.notes
+        suggestionNoteCache = result.suggestion
+        queryHasExactTitleMatch = result.hasExactTitleMatch
+    }
+
+    /// Titles of every note, newest-edited first — feeds the editors'
+    /// wiki-link ghost autocomplete. Cached for the same reason as
+    /// filteredNotesCache: it was being built inline in the editor pane's
+    /// body (an O(n log n) sort plus a title copy per note) on every
+    /// keystroke-triggered render. The sort runs off the main thread too —
+    /// this recomputes on every store.notes change, which includes the
+    /// debounced save fired every 400ms while typing in the editor.
+    @State var noteTitlesByRecencyCache: [String] = []
+    @State private var noteTitlesGeneration = 0
+
+    func recomputeNoteTitles() {
+        noteTitlesGeneration += 1
+        let generation = noteTitlesGeneration
+        let notesSnapshot = store.notes
+        Task { @MainActor in
+            let titles = await Task.detached(priority: .utility) {
+                notesSnapshot.sorted { $0.modifiedDate > $1.modifiedDate }.map(\.title)
+            }.value
+            guard generation == noteTitlesGeneration else { return }
+            noteTitlesByRecencyCache = titles
+        }
+    }
+
+    /// The query the editor highlights matches for — trails `query` by the
+    /// same 60ms debounce as the filtered list (it's updated in the same
+    /// debounce task). Passing the live query instead meant every single
+    /// keystroke in the search bar re-styled the entire open note (search
+    /// highlighting is document-wide, so it can't use the editor's own
+    /// windowed restyle), which was a visible chunk of the typing lag on
+    /// large notes.
+    @State var editorSearchQuery = ""
 
     /// Notes whose content links to the open note, newest-edited first.
     /// Used to be a plain computed property on the theory that it'd only
@@ -156,11 +254,19 @@ struct ContentView: View {
     /// for the search results list, just left unaddressed here. Same fix:
     /// cached in @State, recomputed only when selectedID or store.notes
     /// actually change.
-    @State private var currentBacklinkNotesCache: [Note] = []
+    @State var currentBacklinkNotesCache: [Note] = []
+    @State private var backlinksGeneration = 0
 
-    private var currentBacklinkNotes: [Note] { currentBacklinkNotesCache }
+    var currentBacklinkNotes: [Note] { currentBacklinkNotesCache }
 
-    private func recomputeBacklinkNotes() {
+    /// Off the main thread like the search pipeline — `wikiLinks` is
+    /// computed lazily per note, so the very first backlink pass after a
+    /// load runs the wiki-link regex over every note's full content, which
+    /// on a large library is far too much to do synchronously in a
+    /// selection-change handler.
+    func recomputeBacklinkNotes() {
+        backlinksGeneration += 1
+        let generation = backlinksGeneration
         guard showBacklinks, let selectedID,
               let currentTitle = store.notes.first(where: { $0.id == selectedID })?.title
         else {
@@ -168,146 +274,16 @@ struct ContentView: View {
             return
         }
         let lowered = currentTitle.lowercased()
-        currentBacklinkNotesCache = store.notes
-            .filter { $0.id != selectedID && $0.wikiLinks.contains(lowered) }
-            .sorted { $0.modifiedDate > $1.modifiedDate }
-    }
-
-    private var pinnedNoteIDs: Set<String> {
-        Set(pinnedNotePathsRaw.split(separator: "\n").map(String.init))
-    }
-
-    private func isPinned(_ note: Note) -> Bool {
-        pinnedNoteIDs.contains(note.id)
-    }
-
-    private func togglePin(_ note: Note) {
-        var ids = pinnedNoteIDs
-        if ids.contains(note.id) {
-            ids.remove(note.id)
-        } else {
-            ids.insert(note.id)
-        }
-        pinnedNotePathsRaw = ids.joined(separator: "\n")
-    }
-
-    /// Called wherever a note's id changes out from under it (rename, move)
-    /// so a pin doesn't silently vanish just because the underlying path did.
-    private func carryPinnedStatus(from oldID: String, to newID: String) {
-        guard oldID != newID, pinnedNoteIDs.contains(oldID) else { return }
-        var ids = pinnedNoteIDs
-        ids.remove(oldID)
-        ids.insert(newID)
-        pinnedNotePathsRaw = ids.joined(separator: "\n")
-        if menuBarPinnedNotePath == oldID {
-            menuBarPinnedNotePath = newID
-        }
-    }
-
-    private func isMenuBarPinned(_ note: Note) -> Bool {
-        menuBarPinnedNotePath == note.id
-    }
-
-    /// Only one note can be pinned to the menu bar at a time — pinning a
-    /// second one replaces the first, same "there's only one slot" idea as
-    /// AeroSpace's own scratchpad concept, not an ever-growing list like the
-    /// regular note-list pinning above.
-    private func toggleMenuBarPin(_ note: Note) {
-        menuBarPinnedNotePath = isMenuBarPinned(note) ? "" : note.id
-    }
-
-    /// True if any whitespace-separated word in the query is a recognized
-    /// search operator — matches NoteStore.filtered(query:), which honors
-    /// all of these anywhere in the query (combined with free-text terms
-    /// and, since comma-separated groups were added, split across groups
-    /// too — but this check works at the word level regardless of which
-    /// comma group a word happens to be in, so nothing extra is needed
-    /// here for that).
-    private var containsSearchOperator: Bool {
-        query.split(separator: " ").contains { word in
-            let lowered = word.lowercased()
-            return lowered.hasPrefix("tag:") || lowered.hasPrefix("date:") || lowered.hasPrefix("folder:")
-                || lowered.hasPrefix("-tag:") || lowered.hasPrefix("-folder:")
-                || lowered == "todo:"
-                || (lowered.hasPrefix("-") && lowered.count > 1)
-        }
-    }
-
-    /// "tag:xyz"/"date:xyz" are search operators, not literal titles — Enter
-    /// shouldn't offer (or fall back to) creating a note literally named
-    /// after the whole query when one's present.
-    private var isSearchOperatorQuery: Bool {
-        containsSearchOperator || isTemplateQuery
-    }
-
-    /// "template:xyz" — like tag:/date:, but a create action rather than a
-    /// filter, so unlike them it only counts when it's the query's first
-    /// word (not combinable mid-query) and drives creating a note from a
-    /// template instead of filtering existing ones.
-    private var templateNameFragment: String? {
-        let trimmed = query.trimmingCharacters(in: .whitespaces)
-        guard trimmed.lowercased().hasPrefix("template:") else { return nil }
-        return String(trimmed.dropFirst("template:".count))
-    }
-
-    private var isTemplateQuery: Bool { templateNameFragment != nil }
-
-    /// Templates whose name contains the typed fragment — an empty
-    /// fragment (just "template:" typed so far) matches everything, same
-    /// as tag:/date: showing everything until you narrow it.
-    private var matchingTemplatesForQuery: [NoteTemplate] {
-        guard let fragment = templateNameFragment else { return [] }
-        let needle = fragment.trimmingCharacters(in: .whitespaces).lowercased()
-        guard !needle.isEmpty else { return availableTemplates }
-        return availableTemplates.filter { $0.name.lowercased().contains(needle) }
-    }
-
-    /// The typed query with every recognized operator word dimmed slightly,
-    /// to acknowledge it's being read as a command rather than literal
-    /// search text — whitespace is preserved exactly as typed, only the
-    /// operator/non-operator words differ in styling. Rendered as an
-    /// overlay in place of the search TextField's own (made-invisible) text
-    /// — see searchField below.
-    private var styledQueryText: Text {
-        guard containsSearchOperator else { return Text(query) }
-        var result = Text("")
-        var index = query.startIndex
-        while index < query.endIndex {
-            if query[index] == " " {
-                var end = index
-                while end < query.endIndex, query[end] == " " { end = query.index(after: end) }
-                result = result + Text(query[index..<end])
-                index = end
-            } else {
-                var end = index
-                while end < query.endIndex, query[end] != " " { end = query.index(after: end) }
-                let word = query[index..<end]
-                let lowered = word.lowercased()
-                let isOperator = lowered.hasPrefix("tag:") || lowered.hasPrefix("date:") || lowered.hasPrefix("template:")
-                    || lowered.hasPrefix("folder:") || lowered.hasPrefix("-tag:") || lowered.hasPrefix("-folder:")
-                    || lowered == "todo:" || (lowered.hasPrefix("-") && lowered.count > 1)
-                result = result + Text(word).foregroundColor(isOperator ? Color.primary.opacity(0.8) : .primary)
-                index = end
-            }
-        }
-        return result
-    }
-
-    /// Column sort is authoritative over the list's order — it applies on
-    /// top of (not instead of) the search filter, so typing still narrows
-    /// down which notes show up, but the active column always decides the
-    /// order they appear in, like Notational Velocity's Name/Date headers.
-    private func sortedNotes(_ notes: [Note]) -> [Note] {
-        switch sortField {
-        case .name:
-            return notes.sorted {
-                let result = $0.title.localizedStandardCompare($1.title)
-                return sortAscending ? result == .orderedAscending : result == .orderedDescending
-            }
-        case .date:
-            return notes.sorted {
-                sortAscending ? $0.modifiedDate < $1.modifiedDate : $0.modifiedDate > $1.modifiedDate
-            }
+        let notesSnapshot = store.notes
+        let selected = selectedID
+        Task { @MainActor in
+            let backlinks = await Task.detached(priority: .utility) {
+                notesSnapshot
+                    .filter { $0.id != selected && $0.wikiLinks.contains(lowered) }
+                    .sorted { $0.modifiedDate > $1.modifiedDate }
+            }.value
+            guard generation == backlinksGeneration else { return }
+            currentBacklinkNotesCache = backlinks
         }
     }
 
@@ -398,8 +374,9 @@ struct ContentView: View {
     var body: some View {
         notificationHandledLayout
         .onAppear {
-            recomputeFilteredNotes()
+            Task { await recomputeFilteredNotes() }
             recomputeBacklinkNotes()
+            recomputeNoteTitles()
             isFullScreen = NSApp.windows.first?.styleMask.contains(.fullScreen) ?? false
             // Captured before createWelcomeNoteIfNeeded() flips it to true —
             // that's the signal for "already had notes before this launch,"
@@ -433,14 +410,19 @@ struct ContentView: View {
             // added/removed/renamed elsewhere, etc.) — falls back to the
             // first note only if the current selection no longer exists in
             // the fresh list, rather than assuming it doesn't.
-            recomputeFilteredNotes()
+            // Selection reconciliation waits for the recompute to land —
+            // it reads filteredNotes, which the await is what refreshes.
+            Task {
+                await recomputeFilteredNotes()
+                reconcileSelection()
+            }
             recomputeBacklinkNotes()
-            reconcileSelection()
+            recomputeNoteTitles()
         }
         .onChange(of: showBacklinks) { _, _ in recomputeBacklinkNotes() }
-        .onChange(of: sortFieldRaw) { _, _ in recomputeFilteredNotes() }
-        .onChange(of: sortAscending) { _, _ in recomputeFilteredNotes() }
-        .onChange(of: pinnedNotePathsRaw) { _, _ in recomputeFilteredNotes() }
+        .onChange(of: sortFieldRaw) { _, _ in Task { await recomputeFilteredNotes() } }
+        .onChange(of: sortAscending) { _, _ in Task { await recomputeFilteredNotes() } }
+        .onChange(of: pinnedNotePathsRaw) { _, _ in Task { await recomputeFilteredNotes() } }
         .onChange(of: store.isLoading) { _, isLoading in
             // A fade transition alone didn't stop the flash — a reload that
             // finishes in well under the fade's own duration still visibly
@@ -495,1166 +477,5 @@ struct ContentView: View {
         } else {
             Color(nsColor: .windowBackgroundColor)
         }
-    }
-
-    /// An opaque fill behind the note list, applying regardless of the blur
-    /// strength setting — nil (the default, "no color") shows the window's
-    /// own blur/solid backdrop through instead, same as before this setting
-    /// existed.
-    @ViewBuilder
-    private var fileListBackground: some View {
-        if let fileListColor = theme.fileListBackgroundColor {
-            fileListColor.color
-        } else {
-            Color.clear
-        }
-    }
-
-    /// A fixed step lighter than the header's own opaque background,
-    /// blending toward white rather than picking an absolute light/dark
-    /// color — the same fractional blend reads as "a bit lighter" correctly
-    /// in both appearances, rather than needing a separate light-mode and
-    /// dark-mode constant.
-    ///
-    /// Wrapped in a dynamic NSColor resolver rather than blending eagerly
-    /// here — calling .blended(withFraction:of:) directly on a dynamic
-    /// color like .windowBackgroundColor forces it to resolve to a fixed
-    /// RGB snapshot immediately, using whatever appearance happens to be
-    /// "current" at that exact moment. This property is a plain computed
-    /// value evaluated during SwiftUI's render pass, not inside an actual
-    /// AppKit drawing context, so that snapshot isn't reliably light-mode
-    /// even when the window genuinely is — it showed up as a much-too-dark
-    /// search bar in light mode. A resolver closure is only invoked by
-    /// AppKit at actual draw time, with the correct appearance already
-    /// active, so resolving .windowBackgroundColor and blending it inside
-    /// the closure (not before it) is what actually tracks appearance
-    /// correctly — same technique AeroSpaceInterop's menuBarOutlineColor
-    /// already relies on.
-    private var searchFieldBackground: Color {
-        Color(nsColor: NSColor(name: nil) { _ in
-            NSColor.windowBackgroundColor.blended(withFraction: 0.12, of: .white) ?? NSColor.windowBackgroundColor
-        })
-    }
-
-    // A dynamic resolver rather than one fixed color — needs to darken the
-    // outline in Light mode and lighten it in Dark mode, not blend a static
-    // NSColor the way searchFieldBackground above does (same reasoning:
-    // resolving inside the closure, at actual draw time, is what tracks
-    // appearance correctly).
-    private static let searchFieldBorderColor = NSColor(name: nil) { appearance in
-        let isDark = appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
-        return isDark ? NSColor.white.withAlphaComponent(0.22) : NSColor.black.withAlphaComponent(0.28)
-    }
-
-    /// Shown in place of the note list while "template:" is typed — click a
-    /// row (or press Return, which picks the first) to create a note from
-    /// it, same "type and act on it" shape as a plain search.
-    @ViewBuilder
-    private var matchingTemplateRows: some View {
-        ForEach(matchingTemplatesForQuery) { template in
-            HStack(spacing: 8) {
-                Image(systemName: "doc.badge.plus")
-                    .foregroundStyle(.secondary)
-                Text(template.name)
-                Spacer()
-            }
-            .padding(.vertical, listDensity.rowVerticalPadding)
-            .padding(.horizontal, 8)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .fill(highlightedTemplateID == template.id ? Color(nsColor: theme.resolvedSelectionColor) : Color.clear)
-            )
-            .contentShape(Rectangle())
-            .onTapGesture {
-                highlightedTemplateID = template.id
-                createFromTemplate(template, title: template.name)
-            }
-            .contextMenu {
-                Button("Edit Template") {
-                    editingTemplate = template
-                }
-                Button("Reveal in Finder") {
-                    NSWorkspace.shared.activateFileViewerSelecting([template.url])
-                }
-                Button("Move Back to Notes List") {
-                    convertTemplateToNote(template)
-                }
-                Button("Delete", role: .destructive) {
-                    deleteTemplate(template)
-                }
-            }
-        }
-        if matchingTemplatesForQuery.isEmpty {
-            if let fragment = templateNameFragment?.trimmingCharacters(in: .whitespaces), !fragment.isEmpty {
-                Text("Press \u{23CE} to create template \"\(fragment)\"")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-            } else {
-                Text("No templates yet — type a name to create one.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-            }
-        }
-    }
-
-    private var listPane: some View {
-        VStack(spacing: 0) {
-            VStack(spacing: 0) {
-                searchField
-                listSortHeader
-            }
-            // Opaque, not blurred — an exception to the rest of the window's
-            // translucent backdrop so the search/sort chrome (and, via the
-            // window's own opaque title bar, everything above it) reads as
-            // one solid block instead of fading into whatever's behind it.
-            // Deliberately NOT tinted by fileListBackgroundColor — that
-            // setting is scoped to the scrollable notes below, not this
-            // header, which stays looking like the rest of the window chrome.
-            .background(Color(nsColor: .windowBackgroundColor))
-            Divider()
-            ScrollViewReader { proxy in
-                ScrollView {
-                    LazyVStack(spacing: 0) {
-                        if isTemplateQuery {
-                            matchingTemplateRows
-                        } else {
-                            ForEach(filteredNotes) { note in
-                                NoteRow(note: note, showPreview: showNotePreview, showDateModified: showDateModified, dateDisplayStyle: dateDisplayStyle, textColor: theme.fileListTextColor?.color, bold: boldFileListText, isPinned: isPinned(note))
-                                    .padding(.vertical, listDensity.rowVerticalPadding)
-                                    .padding(.horizontal, 8)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                    .background(
-                                        RoundedRectangle(cornerRadius: 6, style: .continuous)
-                                            .fill(isSelected(note) ? Color(nsColor: theme.resolvedSelectionColor) : Color.clear)
-                                    )
-                                    .contentShape(Rectangle())
-                                    .onTapGesture {
-                                        if NSEvent.modifierFlags.contains(.shift) {
-                                            selectRange(to: note)
-                                        } else if NSEvent.modifierFlags.contains(.command) {
-                                            toggleMultiSelect(note)
-                                        } else {
-                                            selectSingle(note)
-                                        }
-                                    }
-                                    .contextMenu {
-                                        if fullSelection.count > 1 && fullSelection.contains(note.id) {
-                                            bulkContextMenuItems
-                                        } else {
-                                            singleContextMenuItems(for: note)
-                                        }
-                                    }
-                                    .id(note.id)
-                            }
-                        }
-                    }
-                    .padding(.horizontal, 4)
-                }
-                .onChange(of: selectedID) { _, newValue in
-                    if let newValue {
-                        proxy.scrollTo(newValue)
-                    }
-                }
-                // Makes the list itself a real stop for Focus Next/Previous
-                // Area, not just something you tap into — arrow keys move the
-                // selection the same as they do from the search box, and
-                // Return drops straight into the editor.
-                .focusable()
-                // The system's own default focus ring would otherwise show up
-                // here too, on top of the custom border below — and unlike
-                // that border, it's drawn by AppKit itself, so it ignores the
-                // fade entirely and just sits there permanently.
-                .focusEffectDisabled()
-                .focused($focusedField, equals: .list)
-                .onKeyPress(.downArrow) {
-                    if isTemplateQuery { moveTemplateSelection(1) } else { moveSelection(1) }
-                    return .handled
-                }
-                .onKeyPress(.upArrow) {
-                    if isTemplateQuery { moveTemplateSelection(-1) } else { moveSelection(-1) }
-                    return .handled
-                }
-                .onKeyPress(.return) {
-                    if isTemplateQuery { actOnHighlightedTemplate() } else { focusedField = .editor }
-                    return .handled
-                }
-                .focusHighlight(
-                    isFocused: focusedField == .list,
-                    fadeOut: fadeFocusHighlight,
-                    color: Color(nsColor: theme.resolvedFocusHighlightColor),
-                    lineWidth: CGFloat(theme.focusHighlightThickness),
-                    shape: Rectangle()
-                )
-            }
-            .background(fileListBackground)
-            if !query.trimmingCharacters(in: .whitespaces).isEmpty && !isSearchOperatorQuery && store.exactTitleMatch(for: query) == nil {
-                Text("Press \u{23CE} to create \"\(query)\"")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 6)
-                    .glassEffect(.regular, in: Capsule())
-                    .padding(.bottom, 10)
-            }
-        }
-    }
-
-    private var editorPane: some View {
-        VStack(spacing: 0) {
-            Group {
-                if let editingTemplate {
-                    TemplateEditorView(
-                        store: store,
-                        template: editingTemplate,
-                        theme: theme,
-                        requireModifierForLinkClick: requireModifierForLinkClick,
-                        showTitleHeader: showEditorTitleHeader,
-                        fontZoom: CGFloat(editorFontZoom),
-                        plainTextMode: plainTextMode,
-                        noteTitles: store.notes.sorted { $0.modifiedDate > $1.modifiedDate }.map(\.title),
-                        focusedField: $focusedField,
-                        onDone: { self.editingTemplate = nil }
-                    )
-                    .id(editingTemplate.id)
-                } else if let selectedID, store.notes.contains(where: { $0.id == selectedID }) {
-                    NoteEditorView(
-                        store: store,
-                        noteID: selectedID,
-                        focusedField: $focusedField,
-                        onNavigate: navigateToNote,
-                        onRename: { newTitle in renameSelectedNote(to: newTitle) },
-                        onTagSearch: searchByTag,
-                        theme: theme,
-                        requireModifierForLinkClick: requireModifierForLinkClick,
-                        searchQuery: query,
-                        showTitleHeader: showEditorTitleHeader,
-                        showTagsInTitleBar: showTagsInTitleBar,
-                        fontZoom: CGFloat(editorFontZoom),
-                        plainTextMode: plainTextMode,
-                        onStatsChange: { words, characters in
-                            editorWordCount = words
-                            editorCharacterCount = characters
-                        }
-                    )
-                    // Forces a fresh NoteEditorView (and its underlying NSTextView)
-                    // per note instead of patching the same instance in place —
-                    // patching relied on noteID and content always updating in the
-                    // same render pass, which isn't guaranteed and could show one
-                    // note's content inside another's editor.
-                    .id(selectedID)
-                } else {
-                    ContentUnavailableView("No Note Selected", systemImage: "note.text")
-                }
-            }
-            .frame(maxHeight: .infinity)
-            .focusHighlight(
-                isFocused: focusedField == .editor,
-                fadeOut: fadeFocusHighlight,
-                color: Color(nsColor: theme.resolvedFocusHighlightColor),
-                lineWidth: CGFloat(theme.focusHighlightThickness),
-                shape: Rectangle()
-            )
-            // Lives here (not inside NoteEditorView) specifically so it stays
-            // visible — clock included — even when no note is selected and
-            // NoteEditorView isn't in the view hierarchy at all.
-            Divider()
-            // Sits directly above the footer bar (rather than the bar
-            // growing to contain it) so expanding the list grows the panel
-            // upward into the editor instead of pushing the footer down.
-            if backlinksExpanded && !currentBacklinkNotes.isEmpty && editingTemplate == nil {
-                backlinksExpandedList
-                Divider()
-            }
-            editorFooter
-        }
-        // Opaque, not the window's translucent backdrop — in horizontal
-        // layout this is the detail column of a NavigationSplitView, which
-        // (unlike the sidebar's search/sort chrome) had nothing of its own
-        // covering the strip between the opaque native title bar and where
-        // NoteEditorView's own background starts, letting the blur show
-        // through there and reading as a stray transparent gap.
-        .background(Color(nsColor: .windowBackgroundColor).ignoresSafeArea(edges: .top))
-        .onChange(of: selectedID) { _, newValue in
-            if newValue == nil {
-                editorWordCount = 0
-                editorCharacterCount = 0
-            }
-            recomputeBacklinkNotes()
-        }
-    }
-
-    private var editorFooter: some View {
-        ZStack {
-            // The clock is centered on the whole bar via this overlay
-            // rather than sitting between two Spacers in the HStack below —
-            // a Spacer-based center only looks centered when both sides
-            // happen to be the same width, and the right side now varies
-            // (backlinks toggle present or not).
-            if showFooterClock && (!showFooterClockOnlyWhenFullScreen || isFullScreen) {
-                // TimelineView instead of a plain Text so the clock actually
-                // ticks forward — a static Text computed once in body would
-                // freeze at whatever time the view last happened to redraw.
-                TimelineView(.periodic(from: .now, by: 30)) { context in
-                    Text(clockString(for: context.date))
-                        .foregroundStyle(.secondary)
-                        .font(.caption2)
-                }
-            }
-            HStack {
-                HStack(spacing: 10) {
-                    // Lives here (rather than floating above the notes list,
-                    // where it used to be) so it doesn't shift that list's
-                    // layout every time it appears/disappears — a scan over
-                    // several thousand notes is common enough (external
-                    // sync, bulk import) that the old spot was popping in
-                    // and out distractingly often.
-                    if showLoadingIndicator {
-                        HStack(spacing: 6) {
-                            ProgressView()
-                                .controlSize(.small)
-                            Text("Loading notes…")
-                                .font(.caption2)
-                                .foregroundStyle(.secondary)
-                        }
-                        .transition(.opacity)
-                    }
-                    if selectedID != nil, showBacklinks, !currentBacklinkNotes.isEmpty {
-                        Button {
-                            withAnimation(.easeInOut(duration: 0.15)) { backlinksExpanded.toggle() }
-                        } label: {
-                            HStack(spacing: 4) {
-                                // Points where the panel will move on the next
-                                // tap — up to expand (the list grows upward),
-                                // down to collapse back.
-                                Image(systemName: backlinksExpanded ? "chevron.down" : "chevron.up")
-                                    .font(.caption2)
-                                Text("\(currentBacklinkNotes.count) Backlink\(currentBacklinkNotes.count == 1 ? "" : "s")")
-                                    .font(.caption2)
-                            }
-                            .foregroundStyle(.secondary)
-                            .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-                Spacer()
-                if selectedID != nil {
-                    Text("\(editorWordCount) words, \(editorCharacterCount) characters")
-                        .foregroundStyle(.secondary)
-                        .font(.caption2)
-                }
-            }
-        }
-        // A touch more than the usual 10pt — this bar runs edge-to-edge at
-        // the bottom of the window, where the screen/window corner
-        // curvature can clip content sitting right at 10pt.
-        .padding(.horizontal, 16)
-        .padding(.vertical, 4)
-        .background(.bar)
-        .animation(.easeInOut(duration: 0.15), value: showLoadingIndicator)
-    }
-
-    private var backlinksExpandedList: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            ForEach(currentBacklinkNotes) { linked in
-                Button {
-                    navigateToNote(titled: linked.title)
-                } label: {
-                    Text(linked.title)
-                        .font(.body)
-                        .foregroundStyle(Color(nsColor: theme.resolvedLinkColor))
-                        .lineLimit(1)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-            }
-        }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 8)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.bar)
-    }
-
-    private func clockString(for date: Date) -> String {
-        let time = date.formatted(date: .omitted, time: .shortened)
-        guard showFooterClockDate else { return time }
-        return "\(footerClockDateFormat.format(date)) · \(time)"
-    }
-
-    /// The top title-prefix match for the current search text, if any —
-    /// what the inline ghost-text completion offers and ⇾ accepts.
-    private var suggestionNote: Note? {
-        guard !query.isEmpty else { return nil }
-        let lowered = query.lowercased()
-        return filteredNotes.first {
-            $0.title.lowercased().hasPrefix(lowered) && $0.title.count > query.count
-        }
-    }
-
-    private var suggestionRemainder: String? {
-        guard let note = suggestionNote else { return nil }
-        let startIndex = note.title.index(note.title.startIndex, offsetBy: query.count)
-        return String(note.title[startIndex...])
-    }
-
-    private var listSortHeader: some View {
-        HStack(spacing: 0) {
-            sortHeaderButton(field: .name, label: "Name")
-                .frame(maxWidth: .infinity, alignment: .leading)
-            sortHeaderButton(field: .date, label: "Date")
-        }
-        .padding(.horizontal, 12)
-        .padding(.top, 10)
-        .padding(.bottom, 6)
-    }
-
-    /// Non-nil only when there's actually more than one folder configured —
-    /// with just a single folder total, scoping isn't a meaningful concept,
-    /// so the window title shows no scope suffix at all. Otherwise "All
-    /// Notes", or a specific folder's name if scoped to exactly one via
-    /// ⌥→/⌥← or unchecking others in Settings.
-    private var folderScopeLabel: String? {
-        let allDirectories = NotesDirectoryPreference.decode(notesDirectoryPathsRaw)
-        guard allDirectories.count > 1 else { return nil }
-        let disabled = NotesDirectoryPreference.decodeDisabled(disabledDirectoryPathsRaw)
-        let enabled = allDirectories.filter { !disabled.contains($0.path) }
-        if enabled.count == 1 {
-            return enabled[0].lastPathComponent
-        }
-        return "All Notes"
-    }
-
-    private func sortHeaderButton(field: NoteSortField, label: String) -> some View {
-        Button {
-            if sortField == field {
-                sortAscending.toggle()
-            } else {
-                sortFieldRaw = field.rawValue
-                sortAscending = field.defaultAscending
-            }
-        } label: {
-            HStack(spacing: 3) {
-                Text(label)
-                if sortField == field {
-                    Image(systemName: sortAscending ? "chevron.up" : "chevron.down")
-                        .font(.system(size: 9, weight: .bold))
-                }
-            }
-            .font(.caption.weight(.semibold))
-            .foregroundStyle(sortField == field ? .primary : .secondary)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-    }
-
-    private var searchField: some View {
-        ZStack(alignment: .leading) {
-            if let suggestionRemainder {
-                (Text(query).foregroundColor(.clear) + Text(suggestionRemainder).foregroundColor(.secondary))
-                    .font(.body)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 6)
-                    .allowsHitTesting(false)
-            }
-            // Only shown (and only makes the real field's own text invisible
-            // below) once there's an actual recognized prefix — leaves the
-            // common case of an empty field or a plain search completely
-            // untouched, including the TextField's native placeholder.
-            if isSearchOperatorQuery {
-                styledQueryText
-                    .font(.body)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 6)
-                    .allowsHitTesting(false)
-            }
-            TextField("Search or Create Note", text: $query)
-                .textFieldStyle(.plain)
-                .font(.body)
-                .foregroundColor(isSearchOperatorQuery ? .clear : nil)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
-        }
-        .focused($focusedField, equals: .search)
-        .onKeyPress(.downArrow) {
-            if isTemplateQuery { moveTemplateSelection(1) } else { moveSelection(1) }
-            return .handled
-        }
-        .onKeyPress(.upArrow) {
-            if isTemplateQuery { moveTemplateSelection(-1) } else { moveSelection(-1) }
-            return .handled
-        }
-        .onKeyPress(.rightArrow) {
-            guard let suggestionNote else { return .ignored }
-            query = suggestionNote.title
-            return .handled
-        }
-        .onSubmit { handleEnter() }
-        .onChange(of: query) { _, _ in
-            // Debounced rather than recomputed inline — with several
-            // thousand notes even the fast path below is real work, and
-            // running it synchronously on every single keystroke was
-            // competing with the search field's own text-insertion
-            // rendering for the same main-thread frame. 60ms is well under
-            // the threshold where typing itself starts to feel delayed,
-            // but coalesces anything faster than that (fast typing bursts,
-            // rapid backspacing) into one recompute instead of many.
-            searchDebounceTask?.cancel()
-            searchDebounceTask = Task { @MainActor in
-                try? await Task.sleep(for: .milliseconds(60))
-                guard !Task.isCancelled else { return }
-                recomputeFilteredNotes()
-                reconcileSelection()
-                reconcileTemplateHighlight()
-            }
-        }
-        // A plain .glassEffect alone reads as barely-there against the
-        // search/sort header's own opaque .windowBackgroundColor (see
-        // listPane below) — this fill sits behind the glass so the search
-        // field is reliably a touch lighter than its surroundings no matter
-        // the appearance, blur setting, or file-list color customization,
-        // none of which reach this deliberately opaque header area anyway.
-        .background(Capsule().fill(searchFieldBackground))
-        .glassEffect(.regular, in: Capsule())
-        // A resting-state outline — without it the search field barely
-        // reads as a distinct control against the header in Light mode,
-        // where the lightened fill above and the header's own background
-        // are close in value. .separatorColor (the system's own dynamic
-        // divider color) was tried first but read as too faint; a fixed
-        // black/white blend at a deliberately higher opacity, via the
-        // dynamic-resolver-closure pattern below, is more pronounced.
-        .overlay(Capsule().strokeBorder(Color(nsColor: Self.searchFieldBorderColor), lineWidth: 1.5))
-        .focusHighlight(
-            isFocused: focusedField == .search,
-            fadeOut: fadeFocusHighlight,
-            color: Color(nsColor: theme.resolvedFocusHighlightColor),
-            lineWidth: CGFloat(theme.focusHighlightThickness),
-            shape: Capsule()
-        )
-        .padding(.horizontal, 10)
-        .padding(.top, 10)
-    }
-
-    /// Cycles keyboard focus through search → list → editor (and back around),
-    /// wrapping in both directions. When nothing is focused yet, "next" lands
-    /// on search and "previous" lands on editor, so either direction always
-    /// does something sensible from a cold start.
-    private func cycleFocus(by direction: Int) {
-        let order: [FocusField] = [.search, .list, .editor]
-        if let current = focusedField, let currentIndex = order.firstIndex(of: current) {
-            let newIndex = (currentIndex + direction + order.count) % order.count
-            focusedField = order[newIndex]
-        } else {
-            focusedField = direction > 0 ? order.first : order.last
-        }
-    }
-
-    private func moveSelection(_ delta: Int) {
-        editingTemplate = nil
-        multiSelectedIDs.removeAll()
-        let list = filteredNotes
-        guard !list.isEmpty else { return }
-        if let currentID = selectedID, let idx = list.firstIndex(where: { $0.id == currentID }) {
-            let newIdx = max(0, min(list.count - 1, idx + delta))
-            selectedID = list[newIdx].id
-        } else {
-            selectedID = delta > 0 ? list.first?.id : list.last?.id
-        }
-    }
-
-    private func reconcileSelection() {
-        let list = filteredNotes
-        if let selectedID, list.contains(where: { $0.id == selectedID }) { return }
-        selectedID = list.first?.id
-    }
-
-    private func moveTemplateSelection(_ delta: Int) {
-        let list = matchingTemplatesForQuery
-        guard !list.isEmpty else { return }
-        if let currentID = highlightedTemplateID, let idx = list.firstIndex(where: { $0.id == currentID }) {
-            let newIdx = max(0, min(list.count - 1, idx + delta))
-            highlightedTemplateID = list[newIdx].id
-        } else {
-            highlightedTemplateID = delta > 0 ? list.first?.id : list.last?.id
-        }
-    }
-
-    /// Same shape as reconcileSelection(), but for the highlighted template
-    /// — clears it outright once the query stops being a "template:" one,
-    /// and re-settles it onto the first match whenever the narrowing
-    /// fragment leaves the previously highlighted template out.
-    private func reconcileTemplateHighlight() {
-        guard isTemplateQuery else {
-            highlightedTemplateID = nil
-            return
-        }
-        let list = matchingTemplatesForQuery
-        if let highlightedTemplateID, list.contains(where: { $0.id == highlightedTemplateID }) { return }
-        highlightedTemplateID = list.first?.id
-    }
-
-    private var fullSelection: Set<String> {
-        multiSelectedIDs.union(selectedID.map { [$0] } ?? [])
-    }
-
-    private func isSelected(_ note: Note) -> Bool {
-        fullSelection.contains(note.id)
-    }
-
-    private func selectSingle(_ note: Note) {
-        editingTemplate = nil
-        selectedID = note.id
-        multiSelectedIDs.removeAll()
-        selectionAnchorID = note.id
-    }
-
-    /// ⇧-click range selection — selects every note between the fixed
-    /// anchor (see selectionAnchorID) and the clicked note, inclusive, in
-    /// the list's current sorted/filtered order. The clicked note becomes
-    /// the primary selection driving the editor, matching how ⌘-click
-    /// already updates selectedID when it lands on a new note.
-    private func selectRange(to note: Note) {
-        let list = filteredNotes
-        guard let anchorID = selectionAnchorID ?? selectedID,
-              let anchorIndex = list.firstIndex(where: { $0.id == anchorID }),
-              let targetIndex = list.firstIndex(where: { $0.id == note.id }) else {
-            selectSingle(note)
-            return
-        }
-        let range = anchorIndex < targetIndex ? anchorIndex...targetIndex : targetIndex...anchorIndex
-        editingTemplate = nil
-        selectedID = note.id
-        multiSelectedIDs = Set(list[range].map(\.id)).subtracting([note.id])
-    }
-
-    /// Toggles a note's membership in the selection. Demoting the current
-    /// primary (selectedID) promotes another selected note to take its place
-    /// if one exists, since selectedID always drives the editor pane and
-    /// must stay in sync with "is anything selected at all".
-    private func toggleMultiSelect(_ note: Note) {
-        editingTemplate = nil
-        if note.id == selectedID {
-            if let newPrimary = multiSelectedIDs.first {
-                multiSelectedIDs.remove(newPrimary)
-                selectedID = newPrimary
-            } else {
-                selectedID = nil
-            }
-        } else if multiSelectedIDs.contains(note.id) {
-            multiSelectedIDs.remove(note.id)
-        } else {
-            multiSelectedIDs.insert(note.id)
-        }
-    }
-
-    private func selectDefaultIfNeeded() {
-        if selectedID == nil {
-            selectedID = store.notes.first?.id
-        }
-    }
-
-    /// Seeds the default folder with a welcome note (and a small companion note
-    /// it links to) the very first time the app launches, and opens it. Gated by
-    /// a persisted flag rather than "notes list is empty" so it only ever fires
-    /// once, even if the user later deletes every note.
-    private func createWelcomeNoteIfNeeded() {
-        guard !hasCreatedWelcomeNote else { return }
-        hasCreatedWelcomeNote = true
-
-        let linked = store.create(title: WelcomeContent.linkedNoteTitle)
-        var linkedWithBody = linked
-        linkedWithBody.content = WelcomeContent.linkedNoteBody
-        store.save(linkedWithBody)
-
-        let welcome = store.create(title: WelcomeContent.title)
-        var welcomeWithBody = welcome
-        welcomeWithBody.content = WelcomeContent.welcomeBody
-        store.save(welcomeWithBody)
-
-        selectedID = welcome.id
-    }
-
-    private var currentAppVersion: String {
-        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? ""
-    }
-
-    private func showWhatsNewIfUpdated() {
-        let version = currentAppVersion
-        guard !version.isEmpty, version != lastSeenWhatsNewVersion else { return }
-        lastSeenWhatsNewVersion = version
-        // This fires from the main window's own onAppear, which can race
-        // with AppDelegate's launch-time makeKeyAndOrderFront on that same
-        // main window (applicationDidFinishLaunching is a separate AppKit
-        // callback with no guaranteed ordering against SwiftUI's view
-        // lifecycle) — without the delay and explicit refocus below, the
-        // new window can end up opened behind the main one instead of
-        // in front of it.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-            openWindow(id: "whatsnew")
-            NSApp.activate(ignoringOtherApps: true)
-            NSApp.windows.first(where: { $0.title == "What's New" })?.makeKeyAndOrderFront(nil)
-        }
-    }
-
-    private func navigateToNote(titled title: String) {
-        let target = store.exactTitleMatch(for: title) ?? store.create(title: title)
-        editingTemplate = nil
-        selectedID = target.id
-        query = ""
-    }
-
-    /// Clicking a tag chip in the editor's title bar — searches for it like
-    /// typing "tag:whatever" would, without disturbing the currently open
-    /// note. reconcileSelection() (already run from query's own .onChange)
-    /// only clears selectedID if it's no longer in the filtered results;
-    /// since this note itself has the tag being searched, it's always still
-    /// in that list, so it stays selected with no extra handling needed here.
-    private func searchByTag(_ tag: String) {
-        query = "tag:\(tag)"
-        focusedField = .search
-    }
-
-    /// "template:xyz" creates from whichever template is highlighted (arrow
-    /// keys move highlightedTemplateID same as selectedID does for a plain
-    /// note search), falling back to the top match if nothing's highlighted
-    /// yet — shared by both the search field's Return and the note list's
-    /// own Return, so either one acts on the template list the same way.
-    private func actOnHighlightedTemplate() {
-        if let template = matchingTemplatesForQuery.first(where: { $0.id == highlightedTemplateID }) ?? matchingTemplatesForQuery.first {
-            createFromTemplate(template, title: template.name)
-        } else if let fragment = templateNameFragment?.trimmingCharacters(in: .whitespaces), !fragment.isEmpty {
-            createTemplate(named: fragment)
-        }
-    }
-
-    private func handleEnter() {
-        if isTemplateQuery {
-            actOnHighlightedTemplate()
-            return
-        }
-        // A search operator's "highlighted note" is whatever
-        // reconcileSelection() already settled selectedID on as the list
-        // narrowed — Enter just moves into it, same as the empty-query case
-        // below, rather than falling through to the exact-match/create-new-
-        // note logic (which would otherwise create a note literally titled
-        // "tag:xyz" or "date:xyz").
-        if isSearchOperatorQuery {
-            if selectedID != nil, moveFocusToEditorOnEnter { focusedField = .editor }
-            return
-        }
-        if let exact = store.exactTitleMatch(for: query) {
-            editingTemplate = nil
-            selectedID = exact.id
-            if moveFocusToEditorOnEnter { focusedField = .editor }
-            return
-        }
-
-        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else {
-            if selectedID != nil, moveFocusToEditorOnEnter { focusedField = .editor }
-            return
-        }
-
-        let newNote = store.create(title: trimmed)
-        editingTemplate = nil
-        selectedID = newNote.id
-        query = ""
-        if moveFocusToEditorOnEnter { focusedField = .editor }
-    }
-
-    private func createBlankNote() {
-        let note = store.create(title: "")
-        editingTemplate = nil
-        selectedID = note.id
-        query = ""
-        focusedField = .editor
-    }
-
-    private func createFromTemplate(_ template: NoteTemplate, title: String) {
-        let note = store.create(title: title, fromTemplate: template, dateText: templateDateText)
-        editingTemplate = nil
-        selectedID = note.id
-        query = ""
-        if moveFocusToEditorOnEnter { focusedField = .editor }
-    }
-
-    /// "template:xyz" with no existing match — same shape as a plain search
-    /// offering to create a note from unmatched text, just creating a new
-    /// (empty) template and dropping straight into editing it instead.
-    /// query resets to the bare "template:" prefix (not ""), so the list
-    /// keeps showing templates — including the one just created — rather
-    /// than snapping back to the regular note list.
-    private func createTemplate(named name: String) {
-        let template = store.createTemplate(named: name)
-        editingTemplate = template
-        query = "template:"
-        if moveFocusToEditorOnEnter { focusedField = .editor }
-    }
-
-    /// Trashed (not permanently removed) — same recoverable-via-Finder
-    /// safety margin as a deleted note gets from NoteStore.delete(_:).
-    private func deleteTemplate(_ template: NoteTemplate) {
-        store.suppressReloadForExternalWrite()
-        try? FileManager.default.trashItem(at: template.url, resultingItemURL: nil)
-        if editingTemplate?.id == template.id {
-            editingTemplate = nil
-        }
-        if highlightedTemplateID == template.id {
-            highlightedTemplateID = nil
-        }
-    }
-
-    private func convertNoteToTemplate(_ note: Note) {
-        guard store.convertToTemplate(note) != nil else { return }
-        if selectedID == note.id {
-            selectedID = nil
-        }
-        multiSelectedIDs.remove(note.id)
-    }
-
-    /// Lands back in sourceDirectory (or defaultDirectory if that folder's
-    /// no longer configured) and opens right in the editor as a regular
-    /// note — see NoteStore.convertToNote(_:) for the fallback logic.
-    private func convertTemplateToNote(_ template: NoteTemplate) {
-        guard let note = store.convertToNote(template) else { return }
-        if editingTemplate?.id == template.id {
-            editingTemplate = nil
-        }
-        if highlightedTemplateID == template.id {
-            highlightedTemplateID = nil
-        }
-        selectedID = note.id
-        query = ""
-        if moveFocusToEditorOnEnter { focusedField = .editor }
-    }
-
-    /// Seeds Templates/ with a few starter templates the very first time the
-    /// app launches — same gated-by-a-persisted-flag pattern as
-    /// createWelcomeNoteIfNeeded(), and written directly rather than via
-    /// store.create() since templates are never part of the visible notes
-    /// list.
-    private func seedSampleTemplatesIfNeeded() {
-        guard !hasSeededSampleTemplates else { return }
-        hasSeededSampleTemplates = true
-
-        let templatesDirectory = store.defaultDirectory.appendingPathComponent("Templates", isDirectory: true)
-        try? FileManager.default.createDirectory(at: templatesDirectory, withIntermediateDirectories: true)
-        for sample in TemplateContent.samples {
-            let url = templatesDirectory.appendingPathComponent("\(sample.name).md")
-            guard !FileManager.default.fileExists(atPath: url.path) else { continue }
-            try? sample.body.write(to: url, atomically: true, encoding: .utf8)
-        }
-    }
-
-    private func deleteSelected() {
-        if fullSelection.count > 1 {
-            bulkDelete()
-            return
-        }
-        guard let currentID = selectedID, let note = store.notes.first(where: { $0.id == currentID }) else { return }
-        deleteNote(note)
-    }
-
-    private func deleteNote(_ note: Note) {
-        store.delete(note)
-        if selectedID == note.id {
-            selectedID = filteredNotes.first?.id
-        }
-        focusedField = .search
-    }
-
-    private func otherDirectories(for note: Note) -> [URL] {
-        let currentDirectory = note.url.deletingLastPathComponent()
-        return store.noteDirectories.filter { $0 != currentDirectory }
-    }
-
-    @ViewBuilder
-    private func singleContextMenuItems(for note: Note) -> some View {
-        Button(isPinned(note) ? "Unpin Note" : "Pin Note") {
-            togglePin(note)
-        }
-        Button(isMenuBarPinned(note) ? "Unpin from Menu Bar" : "Pin to Menu Bar") {
-            toggleMenuBarPin(note)
-        }
-        Button("Rename") {
-            renameText = note.title
-            renamingNote = note
-        }
-        Button("Open in Finder") {
-            NSWorkspace.shared.activateFileViewerSelecting([note.url])
-        }
-        let otherFolders = otherDirectories(for: note)
-        if !otherFolders.isEmpty {
-            Menu("Move to Folder") {
-                ForEach(otherFolders, id: \.self) { directory in
-                    Button(directory.lastPathComponent) {
-                        moveNote(note, to: directory)
-                    }
-                }
-            }
-        }
-        Button("Make This Note a Template") {
-            convertNoteToTemplate(note)
-        }
-        Button("Delete", role: .destructive) {
-            deleteNote(note)
-        }
-    }
-
-    @ViewBuilder
-    private var bulkContextMenuItems: some View {
-        let count = fullSelection.count
-        Button("Open \(count) Notes in Finder") {
-            bulkOpenInFinder()
-        }
-        if !store.noteDirectories.isEmpty {
-            Menu("Move \(count) Notes to Folder") {
-                ForEach(store.noteDirectories, id: \.self) { directory in
-                    Button(directory.lastPathComponent) {
-                        bulkMove(to: directory)
-                    }
-                }
-            }
-        }
-        Button("Delete \(count) Notes", role: .destructive) {
-            bulkDelete()
-        }
-    }
-
-    private func selectedNotes() -> [Note] {
-        let ids = fullSelection
-        return store.notes.filter { ids.contains($0.id) }
-    }
-
-    private func bulkOpenInFinder() {
-        NSWorkspace.shared.activateFileViewerSelecting(selectedNotes().map(\.url))
-    }
-
-    /// Moved notes get new ids (Note.id is the file path), so the old
-    /// selection can't carry over meaningfully — just clear it.
-    private func bulkMove(to directory: URL) {
-        for note in selectedNotes() {
-            let moved = store.move(note, to: directory)
-            carryPinnedStatus(from: note.id, to: moved.id)
-        }
-        multiSelectedIDs.removeAll()
-        selectedID = nil
-    }
-
-    private func bulkDelete() {
-        // A single call so the whole selection is recorded as one delete
-        // action — restoring afterward brings back every note, not just
-        // the last one a loop of individual deletes would have remembered.
-        store.delete(selectedNotes())
-        multiSelectedIDs.removeAll()
-        selectedID = filteredNotes.first?.id
-        focusedField = .search
-    }
-
-    private func restoreLastDeleted() {
-        let restored = store.restoreLastDeleted()
-        guard let first = restored.first else { return }
-        if restored.count == 1 {
-            selectedID = first.id
-        }
-        focusedField = .search
-    }
-
-    private func moveNote(_ note: Note, to directory: URL) {
-        let moved = store.move(note, to: directory)
-        carryPinnedStatus(from: note.id, to: moved.id)
-        if selectedID == note.id {
-            selectedID = moved.id
-        }
-    }
-
-    private func renameNote(_ note: Note, to newTitle: String) {
-        let renamed = store.rename(note, to: newTitle)
-        carryPinnedStatus(from: note.id, to: renamed.id)
-        if selectedID == note.id {
-            selectedID = renamed.id
-        }
-    }
-
-    private func renameSelectedNote(to newTitle: String) {
-        guard let currentID = selectedID, let note = store.notes.first(where: { $0.id == currentID }) else { return }
-        renameNote(note, to: newTitle)
-    }
-
-    private func switchNotesDirectories() {
-        let allDirectories = NotesDirectoryPreference.decode(notesDirectoryPathsRaw)
-        let disabled = NotesDirectoryPreference.decodeDisabled(disabledDirectoryPathsRaw)
-        let enabledDirectories = allDirectories.filter { !disabled.contains($0.path) }
-        // Falls back to the full list rather than letting NoteStore's own
-        // "no directories" handling silently switch to an unrelated default
-        // folder if every configured folder happens to be disabled.
-        store.setDirectories(enabledDirectories.isEmpty ? allDirectories : enabledDirectories)
-        query = ""
-        // Deliberately NOT touching selectedID here: setDirectories() reloads
-        // asynchronously, so store.notes at this exact point is still the
-        // *previous* folder's notes — picking .first from it here would grab
-        // a note that's about to disappear. Keeping the current selection
-        // (still valid until the reload actually replaces store.notes) means
-        // the editor keeps showing it right up until the swap, instead of a
-        // premature flash to "No Note Selected" and back. The onChange(of:
-        // store.notes) below reconciles it once the new notes actually land.
-        focusedField = .search
-        applyWindowTitleVisibility()
-    }
-
-    /// Reuses the enable/disable checkboxes from Settings rather than a
-    /// separate transient "view filter" — cycling enables exactly one
-    /// folder (or all of them) and disables the rest, persisting like any
-    /// other checkbox change. "All Folders" is itself one of the stops in
-    /// the cycle (state 0), sitting between the last folder and the first —
-    /// so cycling forward from "all" goes to folder 1, and cycling forward
-    /// from the last folder wraps back around to "all", same the other way.
-    /// If the current enabled set doesn't match any single stop exactly
-    /// (e.g. an arbitrary subset checked by hand in Settings), treats that
-    /// as "all" rather than guessing which folder was meant.
-    private func cycleActiveFolder(by direction: Int) {
-        let allDirectories = NotesDirectoryPreference.decode(notesDirectoryPathsRaw)
-        guard allDirectories.count > 1 else { return }
-        let disabled = NotesDirectoryPreference.decodeDisabled(disabledDirectoryPathsRaw)
-        let enabledDirectories = allDirectories.filter { !disabled.contains($0.path) }
-
-        let stateCount = allDirectories.count + 1 // 0 = all folders, 1...N = single folder N-1
-        let currentState: Int
-        if enabledDirectories.count == 1, let index = allDirectories.firstIndex(where: { $0.path == enabledDirectories[0].path }) {
-            currentState = index + 1
-        } else {
-            currentState = 0
-        }
-
-        let newState = (currentState + direction + stateCount) % stateCount
-
-        if newState == 0 {
-            disabledDirectoryPathsRaw = ""
-        } else {
-            let target = allDirectories[newState - 1]
-            let newDisabled = Set(allDirectories.map(\.path)).subtracting([target.path])
-            disabledDirectoryPathsRaw = NotesDirectoryPreference.encodeDisabled(newDisabled)
-        }
-    }
-
-    /// Blanks the title text rather than toggling titleVisibility — with a
-    /// unified/fullSizeContentView toolbar, .hidden makes AppKit recompute the
-    /// toolbar's space distribution and the trailing items visibly jump toward
-    /// center. Keeping the title slot reserved (just empty) avoids that.
-    private func applyWindowTitleVisibility() {
-        guard let window = NSApp.windows.first else { return }
-        if cachedWindowTitle == nil {
-            cachedWindowTitle = window.title.isEmpty ? "Envy" : window.title
-        }
-        window.titleVisibility = .visible
-        // Shown *alone*, not appended after "Envy —": AppKit centers the
-        // title string as a whole, so prefixing it with a fixed "Envy —"
-        // pushed the actually-meaningful part (the scope name) off to the
-        // right of true center instead of centering it.
-        window.title = folderScopeLabel ?? cachedWindowTitle ?? "Envy"
-    }
-}
-
-/// Split out of ContentView's body purely to keep the compiler's type-checking
-/// time reasonable — too many chained `.onReceive` modifiers in one expression
-/// has repeatedly hit "unable to type-check in reasonable time" as more were
-/// added, and splitting into a separate modifier lets the compiler solve this
-/// batch independently of the rest.
-/// Split out of notificationHandledLayout for the same reason
-/// FocusAndFullScreenNotifications is its own modifier below — one
-/// .onReceive chain covering every editor-view toggle/adjustment notification
-/// got long enough to blow the type checker's budget ("unable to type-check
-/// this expression in reasonable time") once backlinks joined zoom, settings,
-/// folder cycling, and plain-text mode.
-private struct EditorViewNotifications: ViewModifier {
-    let zoomIn: () -> Void
-    let zoomOut: () -> Void
-    let zoomReset: () -> Void
-    let openSettings: () -> Void
-    let nextFolder: () -> Void
-    let previousFolder: () -> Void
-    let togglePlainTextMode: () -> Void
-    let toggleBacklinks: () -> Void
-
-    func body(content: Content) -> some View {
-        content
-            .onReceive(NotificationCenter.default.publisher(for: .zoomInRequested)) { _ in zoomIn() }
-            .onReceive(NotificationCenter.default.publisher(for: .zoomOutRequested)) { _ in zoomOut() }
-            .onReceive(NotificationCenter.default.publisher(for: .zoomResetRequested)) { _ in zoomReset() }
-            .onReceive(NotificationCenter.default.publisher(for: .openSettingsRequested)) { _ in openSettings() }
-            .onReceive(NotificationCenter.default.publisher(for: .nextFolderRequested)) { _ in nextFolder() }
-            .onReceive(NotificationCenter.default.publisher(for: .previousFolderRequested)) { _ in previousFolder() }
-            .onReceive(NotificationCenter.default.publisher(for: .togglePlainTextModeRequested)) { _ in togglePlainTextMode() }
-            .onReceive(NotificationCenter.default.publisher(for: .toggleBacklinksRequested)) { _ in toggleBacklinks() }
-    }
-}
-
-private struct FocusAndFullScreenNotifications: ViewModifier {
-    let cycleFocus: (Int) -> Void
-    @Binding var isFullScreen: Bool
-
-    func body(content: Content) -> some View {
-        content
-            .onReceive(NotificationCenter.default.publisher(for: .focusNextAreaRequested)) { _ in
-                cycleFocus(1)
-            }
-            .onReceive(NotificationCenter.default.publisher(for: .focusPreviousAreaRequested)) { _ in
-                cycleFocus(-1)
-            }
-            .onReceive(NotificationCenter.default.publisher(for: NSWindow.didEnterFullScreenNotification)) { note in
-                guard (note.object as? NSWindow) === NSApp.windows.first else { return }
-                isFullScreen = true
-            }
-            .onReceive(NotificationCenter.default.publisher(for: NSWindow.didExitFullScreenNotification)) { note in
-                guard (note.object as? NSWindow) === NSApp.windows.first else { return }
-                isFullScreen = false
-            }
-    }
-}
-
-/// Draws a stroked border around whichever pane currently has keyboard focus
-/// (search box or editor). With "Fade out focus highlight" off, it just
-/// tracks focus directly — on while focused, off the moment focus leaves.
-/// With it on, the border appears the same way but fades away on its own
-/// after a moment, so it reads as a brief "you're here now" cue rather than
-/// a persistent outline around wherever the cursor happens to be.
-private struct FocusHighlight<S: Shape>: ViewModifier {
-    let isFocused: Bool
-    let fadeOut: Bool
-    let color: Color
-    let lineWidth: CGFloat
-    let shape: S
-
-    @State private var visible = false
-    @State private var fadeTask: Task<Void, Never>?
-
-    func body(content: Content) -> some View {
-        content
-            .overlay(shape.stroke(color, lineWidth: lineWidth).opacity(visible ? 1 : 0))
-            .onChange(of: isFocused) { _, focused in
-                fadeTask?.cancel()
-                if focused {
-                    withAnimation(.easeInOut(duration: 0.15)) { visible = true }
-                    if fadeOut {
-                        fadeTask = Task {
-                            try? await Task.sleep(for: .milliseconds(400))
-                            guard !Task.isCancelled else { return }
-                            withAnimation(.easeInOut(duration: 0.2)) { visible = false }
-                        }
-                    }
-                } else {
-                    withAnimation(.easeInOut(duration: 0.15)) { visible = false }
-                }
-            }
-    }
-}
-
-private extension View {
-    func focusHighlight<S: Shape>(isFocused: Bool, fadeOut: Bool, color: Color, lineWidth: CGFloat, shape: S) -> some View {
-        modifier(FocusHighlight(isFocused: isFocused, fadeOut: fadeOut, color: color, lineWidth: lineWidth, shape: shape))
     }
 }

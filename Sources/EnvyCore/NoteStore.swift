@@ -537,10 +537,14 @@ public final class NoteStore: ObservableObject {
 
     // MARK: - Search
 
+    /// Called from ContentView's body on every render while a query is
+    /// typed, so it reads the cached lowercased title rather than
+    /// re-lowercasing every note's title (a fresh string allocation per
+    /// note per keystroke) just to compare it.
     public func exactTitleMatch(for query: String) -> Note? {
         let q = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         guard !q.isEmpty else { return nil }
-        return notes.first { $0.title.lowercased() == q }
+        return notes.first { $0.lowercasedTitle == q }
     }
 
     // Swift's native String.contains(_:) does a Unicode-correct,
@@ -552,7 +556,7 @@ public final class NoteStore: ObservableObject {
     // faster for the same check. The bridge to NSString is O(1)
     // (copy-on-write, no copy) since these strings are never mutated
     // here, so there's no cost to doing it inline per call.
-    private static func fastContains(_ haystack: String, _ needle: String) -> Bool {
+    nonisolated private static func fastContains(_ haystack: String, _ needle: String) -> Bool {
         (haystack as NSString).range(of: needle).location != NSNotFound
     }
 
@@ -563,6 +567,16 @@ public final class NoteStore: ObservableObject {
     /// query that never had commas in it to begin with. A note matching
     /// more than one group keeps whichever group's score ranked it higher.
     public func filtered(query: String) -> [Note] {
+        Self.filtered(notes, query: query)
+    }
+
+    /// The full search over an explicit snapshot, callable from off the
+    /// main actor — with a large library the scan-and-rank is real work
+    /// (the first typed character matches nearly everything), and running
+    /// it on the main thread visibly delayed the keystrokes queued behind
+    /// it. The UI captures `notes` and runs this on a background task,
+    /// assigning only the result back on the main actor.
+    nonisolated public static func filtered(_ notes: [Note], query: String) -> [Note] {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return notes }
 
@@ -570,24 +584,24 @@ public final class NoteStore: ObservableObject {
         guard !groups.isEmpty else { return notes }
 
         if groups.count == 1 {
-            return matched(forGroup: groups[0]).sorted(by: Self.rankedHigherFirst).map(\.0)
+            return matched(in: notes, forGroup: groups[0]).sorted(by: rankedHigherFirst).map(\.0)
         }
 
         var bestScoreByID: [String: Int] = [:]
         var noteByID: [String: Note] = [:]
         for group in groups {
-            for (note, score) in matched(forGroup: group) {
+            for (note, score) in matched(in: notes, forGroup: group) {
                 noteByID[note.id] = note
                 bestScoreByID[note.id] = max(bestScoreByID[note.id] ?? Int.min, score)
             }
         }
         return noteByID.values
             .map { ($0, bestScoreByID[$0.id] ?? 0) }
-            .sorted(by: Self.rankedHigherFirst)
+            .sorted(by: rankedHigherFirst)
             .map(\.0)
     }
 
-    private static func rankedHigherFirst(_ lhs: (Note, Int), _ rhs: (Note, Int)) -> Bool {
+    nonisolated private static func rankedHigherFirst(_ lhs: (Note, Int), _ rhs: (Note, Int)) -> Bool {
         if lhs.1 != rhs.1 { return lhs.1 > rhs.1 }
         return lhs.0.modifiedDate > rhs.0.modifiedDate
     }
@@ -597,7 +611,7 @@ public final class NoteStore: ObservableObject {
     /// and free terms all combine with AND semantics *within* a group,
     /// same as the whole query used to before groups existed. Returns
     /// (Note, score) pairs for whatever survives every filter in this group.
-    private func matched(forGroup group: String) -> [(Note, Int)] {
+    nonisolated private static func matched(in notes: [Note], forGroup group: String) -> [(Note, Int)] {
         let q = group.lowercased()
         let tokens = q.split(separator: " ").map(String.init).filter { !$0.isEmpty }
 
@@ -697,7 +711,7 @@ public final class NoteStore: ObservableObject {
     /// from both title and content entirely. An empty terms list always
     /// "matches" with a score of 0 — used when a tag:/date: filter has no
     /// free text alongside it.
-    private static func scoreByTermPresence(note: Note, terms: [String]) -> Int? {
+    nonisolated private static func scoreByTermPresence(note: Note, terms: [String]) -> Int? {
         guard !terms.isEmpty else { return 0 }
         let titleLower = note.lowercasedTitle
         let contentLower = note.lowercasedContent
@@ -717,7 +731,7 @@ public final class NoteStore: ObservableObject {
     /// window ending now for "week"/"month". nil for anything unrecognized,
     /// which filtered(query:) treats as "show everything" rather than
     /// silently returning zero results for a typo.
-    private static func dateRange(for dateQuery: String) -> (start: Date, end: Date)? {
+    nonisolated private static func dateRange(for dateQuery: String) -> (start: Date, end: Date)? {
         guard !dateQuery.isEmpty else { return nil }
         let calendar = Calendar.current
         let now = Date()
@@ -745,7 +759,7 @@ public final class NoteStore: ObservableObject {
     /// — disambiguated by whether the first component has 4 digits, which
     /// unambiguously identifies the ISO year-first form. A 2-digit year is
     /// assumed to be 2000+, reasonable for a notes app.
-    private static func parseFlexibleDate(_ input: String) -> DateComponents? {
+    nonisolated private static func parseFlexibleDate(_ input: String) -> DateComponents? {
         let parts = input.components(separatedBy: CharacterSet(charactersIn: "-/")).filter { !$0.isEmpty }
         guard parts.count == 3,
               let a = Int(parts[0]), let b = Int(parts[1]), let c = Int(parts[2]) else { return nil }
@@ -775,7 +789,7 @@ public final class NoteStore: ObservableObject {
     /// filtering and column sorting, so pinned notes stay on top regardless
     /// of sort — but a pinned note that the search doesn't match is still
     /// excluded, since this only ever reorders whatever's already in `notes`.
-    public static func applyPinning(_ notes: [Note], pinnedIDs: Set<String>) -> [Note] {
+    nonisolated public static func applyPinning(_ notes: [Note], pinnedIDs: Set<String>) -> [Note] {
         guard !pinnedIDs.isEmpty else { return notes }
         let pinned = notes.filter { pinnedIDs.contains($0.id) }
         let unpinned = notes.filter { !pinnedIDs.contains($0.id) }

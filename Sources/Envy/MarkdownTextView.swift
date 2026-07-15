@@ -445,6 +445,15 @@ struct MarkdownTextView: NSViewRepresentable {
         /// textDidChange. Anything that isn't a plain single-char insert
         /// (paste, deletion, replacing a selection) is left alone entirely.
         func textView(_ textView: NSTextView, shouldChangeTextIn affectedCharRange: NSRange, replacementString: String?) -> Bool {
+            // Every edit funnels through here — user typing, and every
+            // programmatic replaceCharacters site in this file (checkbox
+            // toggles, emoji expansion, list renumbering, bold/italic
+            // wrapping) explicitly calls shouldChangeText first. Recording
+            // the edit's span is what lets windowedRestyleRange cover an
+            // edit that lands far from the cursor. Covers both the old text
+            // (affected range) and the incoming replacement's extent.
+            let replacementLength = (replacementString as NSString?)?.length ?? 0
+            noteRestyleInvalidation(NSRange(location: affectedCharRange.location, length: max(affectedCharRange.length, replacementLength)))
             guard !parent.plainTextMode else {
                 pendingAutoCloseTrigger = nil
                 pendingBackspaceTrigger = nil
@@ -857,6 +866,7 @@ struct MarkdownTextView: NSViewRepresentable {
                 updateCheckboxOverlays(in: textView)
                 return
             }
+            let window = windowedRestyleRange(for: textView)
             MarkdownStyler.style(
                 textStorage: textStorage,
                 text: textView.string,
@@ -864,9 +874,68 @@ struct MarkdownTextView: NSViewRepresentable {
                 revealedLinkRange: hoveredLinkRange,
                 searchQuery: parent.searchQuery,
                 cursorSelection: MarkdownTextView.currentSelection(of: textView),
-                fontSizeAdjustment: parent.fontZoom
+                fontSizeAdjustment: parent.fontZoom,
+                restyleRange: window
             )
+            lastRestyleCursorLocation = textView.selectedRange().location
+            pendingRestyleInvalidationRange = nil
             updateCheckboxOverlays(in: textView)
+        }
+
+        /// Everything restyle() runs on is per-keystroke (typing, arrow
+        /// keys, checkbox clicks all land here), so on a large note the
+        /// full-document pass — ~20 regex scans plus attribute churn over
+        /// the whole text, which in turn invalidates the whole document's
+        /// layout — was the last real typing-latency scaling risk in the
+        /// app. Styling rules are all line-local, so a paragraph-snapped
+        /// window around everything that could have changed since the last
+        /// pass is exactly as correct as the full pass, except when
+        /// something document-global is in play; each of those cases just
+        /// declines the window and keeps the previous full-restyle behavior:
+        /// - small documents (windowing overhead isn't worth it, and full
+        ///   is already imperceptible)
+        /// - an active search (matches highlight document-wide)
+        /// - any fenced code block (its opening/closing ``` changes what
+        ///   everything after it means — the one non-line-local construct)
+        private static let windowedRestyleThreshold = 30_000
+        private static let windowedRestyleMargin = 2_000
+
+        /// The union of "places other than the cursor whose styling may be
+        /// stale" — edit locations captured in shouldChangeTextIn (a
+        /// checkbox clicked far from the cursor, a renumbered list), plus
+        /// hover reveal/unreveal ranges. Consumed (reset) by each restyle.
+        private var pendingRestyleInvalidationRange: NSRange?
+        /// Where the cursor was when styling last ran — markers reveal
+        /// around the cursor, so the span it *left* needs re-collapsing,
+        /// not just the span it entered.
+        private var lastRestyleCursorLocation = 0
+
+        func noteRestyleInvalidation(_ range: NSRange) {
+            pendingRestyleInvalidationRange = pendingRestyleInvalidationRange.map { NSUnionRange($0, range) } ?? range
+        }
+
+        @MainActor
+        private func windowedRestyleRange(for textView: NSTextView) -> NSRange? {
+            let nsText = textView.string as NSString
+            let length = nsText.length
+            guard length > Self.windowedRestyleThreshold else { return nil }
+            guard parent.searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+            guard nsText.range(of: "```").location == NSNotFound else { return nil }
+
+            let cursor = min(textView.selectedRange().location, length)
+            var low = min(cursor, min(lastRestyleCursorLocation, length))
+            var high = max(cursor, min(lastRestyleCursorLocation, length))
+            if let pending = pendingRestyleInvalidationRange {
+                low = min(low, pending.location)
+                high = max(high, min(pending.location + pending.length, length))
+            }
+            low = max(0, low - Self.windowedRestyleMargin)
+            high = min(length, high + Self.windowedRestyleMargin)
+            // Paragraph-snapped so the window's edges are real line
+            // boundaries — every pattern in MarkdownStyler is either
+            // line-anchored or can't span a newline, so a window that only
+            // ever starts/ends at line breaks can't cut a construct in half.
+            return nsText.paragraphRange(for: NSRange(location: low, length: high - low))
         }
 
         /// Repositions/recreates one floating label per checkbox in the
@@ -886,18 +955,32 @@ struct MarkdownTextView: NSViewRepresentable {
                 checkboxOverlayLabels.forEach { $0.isHidden = true }
                 return
             }
+            let checkboxes = MarkdownStyler.taskCheckboxRanges(in: textView.string)
+            // The common case — a note with no checkboxes at all — pays for
+            // nothing here beyond the one regex scan above. This runs on
+            // every keystroke (restyle calls it), and the forced layout
+            // below used to run unconditionally over the whole document,
+            // making it the single largest fixed per-keystroke cost.
+            guard !checkboxes.isEmpty else {
+                checkboxOverlayLabels.forEach { $0.isHidden = true }
+                return
+            }
             // NSLayoutManager lays out lazily — glyph/line-fragment queries
             // below only reflect layout that's actually been generated yet,
             // which (particularly for the very first note opened after
             // launch) can still be based on a provisional container width
             // from before SwiftUI's surrounding layout has settled. This
-            // forces layout to be fully current for the whole container
-            // before reading any position from it, rather than trusting
-            // whatever's already cached — the root cause of checkboxes
-            // showing misaligned until something else (like clicking into
-            // the editor) happened to trigger a fresh layout pass.
-            layoutManager.ensureLayout(for: textContainer)
-            let checkboxes = MarkdownStyler.taskCheckboxRanges(in: textView.string)
+            // forces layout to be current before reading any position from
+            // it, rather than trusting whatever's already cached — the root
+            // cause of checkboxes showing misaligned until something else
+            // (like clicking into the editor) happened to trigger a fresh
+            // layout pass. Forced only through the last checkbox, though,
+            // not the whole container: layout generates front-to-back, so
+            // anything past the final checkbox is layout no position query
+            // below ever reads.
+            let textLength = (textView.string as NSString).length
+            let lastCheckboxEnd = checkboxes.map { $0.glyphRange.location + $0.glyphRange.length }.max() ?? textLength
+            layoutManager.ensureLayout(forCharacterRange: NSRange(location: 0, length: min(lastCheckboxEnd, textLength)))
             while checkboxOverlayLabels.count < checkboxes.count {
                 let label = CheckboxOverlayLabel()
                 label.isEditable = false
@@ -1014,7 +1097,7 @@ struct MarkdownTextView: NSViewRepresentable {
                 return true
             }
 
-            guard url.scheme == "velocity" || url.scheme == "http" || url.scheme == "https" else {
+            guard url.scheme == "envy" || url.scheme == "http" || url.scheme == "https" else {
                 return false
             }
 
@@ -1022,13 +1105,13 @@ struct MarkdownTextView: NSViewRepresentable {
                 guard let event = NSApp.currentEvent, event.modifierFlags.contains(.command) else {
                     // Handled (as a no-op) rather than declined — declining makes
                     // NSTextView fall back to opening the URL itself via NSWorkspace,
-                    // which for "velocity://" fails loudly (no registered handler)
+                    // which for "envy://" fails loudly (no registered handler)
                     // and for http(s) would bypass this modifier requirement entirely.
                     return true
                 }
             }
 
-            if url.scheme == "velocity" {
+            if url.scheme == "envy" {
                 let encoded = url.path.hasPrefix("/") ? String(url.path.dropFirst()) : url.path
                 let title = encoded.removingPercentEncoding ?? encoded
                 parent.onNavigate(title)
@@ -1130,6 +1213,11 @@ struct MarkdownTextView: NSViewRepresentable {
             let hit = ranges.first { NSLocationInRange(charIndex, $0) }
 
             guard hit != hoveredLinkRange else { return }
+            // Both the link being revealed and the one being un-revealed
+            // can sit far from the cursor — a windowed restyle needs told
+            // about them explicitly or their markers would stay stuck.
+            if let previous = hoveredLinkRange { noteRestyleInvalidation(previous) }
+            if let hit { noteRestyleInvalidation(hit) }
             hoveredLinkRange = hit
             restyle(textView)
         }
@@ -1137,6 +1225,7 @@ struct MarkdownTextView: NSViewRepresentable {
         @MainActor
         func clearHover() {
             guard hoveredLinkRange != nil, let textView else { return }
+            if let previous = hoveredLinkRange { noteRestyleInvalidation(previous) }
             hoveredLinkRange = nil
             restyle(textView)
         }

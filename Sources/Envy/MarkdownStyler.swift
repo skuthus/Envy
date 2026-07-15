@@ -246,6 +246,15 @@ enum MarkdownStyler {
         textStorage.endEditing()
     }
 
+    /// `restyleRange` restricts every styling pass to that slice of the
+    /// document instead of the whole thing — the per-keystroke path on a
+    /// large note passes a paragraph-snapped window around the edit, since
+    /// every rule below is line-local and re-deriving the other 99% of an
+    /// unchanged document on each keystroke is pure waste. The one
+    /// document-global construct (a fenced code block, whose opening ```
+    /// changes the meaning of everything after it) is the caller's problem:
+    /// Coordinator.windowedRestyleRange only ever offers a window when the
+    /// note contains no fences at all. nil means style everything.
     static func style(
         textStorage: NSTextStorage,
         text: String,
@@ -253,9 +262,11 @@ enum MarkdownStyler {
         revealedLinkRange: NSRange? = nil,
         searchQuery: String = "",
         cursorSelection: NSRange? = nil,
-        fontSizeAdjustment: CGFloat = 0
+        fontSizeAdjustment: CGFloat = 0,
+        restyleRange: NSRange? = nil
     ) {
-        let full = NSRange(location: 0, length: (text as NSString).length)
+        let wholeDocument = NSRange(location: 0, length: (text as NSString).length)
+        let full = restyleRange.map { NSIntersectionRange($0, wholeDocument) } ?? wholeDocument
         guard full.length > 0 else { return }
 
         let unadjustedFont = theme.resolvedFont
@@ -596,7 +607,7 @@ enum MarkdownStyler {
             }
             textStorage.addAttribute(.foregroundColor, value: linkColor, range: titleRange)
             textStorage.addAttribute(.underlineStyle, value: NSUnderlineStyle.single.rawValue, range: titleRange)
-            if let url = URL(string: "velocity:///\(encoded)") {
+            if let url = URL(string: "envy:///\(encoded)") {
                 textStorage.addAttribute(.link, value: url, range: titleRange)
             }
         }

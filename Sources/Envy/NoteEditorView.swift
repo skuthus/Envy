@@ -16,6 +16,11 @@ struct NoteEditorView: View {
     var showTagsInTitleBar: Bool
     var fontZoom: CGFloat
     var plainTextMode: Bool
+    /// Passed in (ContentView caches it) rather than derived from `store`
+    /// here — building it inline meant an O(n log n) sort plus a title copy
+    /// per note inside this body, which re-evaluates on every
+    /// keystroke-triggered render.
+    var noteTitles: [String]
     var onStatsChange: (Int, Int) -> Void
 
     @State private var content: String
@@ -61,6 +66,7 @@ struct NoteEditorView: View {
         showTagsInTitleBar: Bool,
         fontZoom: CGFloat,
         plainTextMode: Bool,
+        noteTitles: [String],
         onStatsChange: @escaping (Int, Int) -> Void
     ) {
         self.store = store
@@ -76,6 +82,7 @@ struct NoteEditorView: View {
         self.showTagsInTitleBar = showTagsInTitleBar
         self.fontZoom = fontZoom
         self.plainTextMode = plainTextMode
+        self.noteTitles = noteTitles
         self.onStatsChange = onStatsChange
         // Seeded here rather than in .onAppear: with .id(noteID) forcing a
         // fresh instance per note, .onAppear runs AFTER the first body
@@ -102,7 +109,7 @@ struct NoteEditorView: View {
                 searchQuery: searchQuery,
                 fontZoom: fontZoom,
                 plainTextMode: plainTextMode,
-                noteTitles: store.notes.sorted { $0.modifiedDate > $1.modifiedDate }.map(\.title),
+                noteTitles: noteTitles,
                 externalReloadToken: externalReloadToken,
                 highlightRange: pendingHighlightRange,
                 highlightTrigger: highlightTrigger
@@ -120,8 +127,12 @@ struct NoteEditorView: View {
         // Fires when the note's on-disk content changed outside this view —
         // another app editing the same file, or a folder-level reload. Our
         // own edits also flow through here once the debounced save in
-        // scheduleSave lands, but by then `content` already equals the new
-        // value, so the first guard below is a no-op for that case.
+        // scheduleSave lands: usually `content` still equals the saved
+        // value (first guard, no-op), and if the user has already typed
+        // further inside the delivery gap, lastSyncedContent was updated at
+        // save time (see scheduleSave), so the second guard correctly reads
+        // the situation as local-edits-in-flight rather than adopting our
+        // own echo as if it were an external change.
         .onChange(of: note?.content) { _, newContent in
             guard let newContent, newContent != content else {
                 if let newContent { lastSyncedContent = newContent }
@@ -235,6 +246,19 @@ struct NoteEditorView: View {
             try? await Task.sleep(for: .milliseconds(400))
             guard !Task.isCancelled else { return }
             store.save(updated)
+            // Recorded at the moment the store adopts our value — in the
+            // same main-actor turn, before any later keystroke can run.
+            // The onChange(of: note?.content) echo of this save is
+            // delivered by SwiftUI a render pass *later*, and if the user
+            // edits again inside that gap (a fast backspace after typing,
+            // an immediate re-click of a checkbox), the old comparison
+            // there ("store value differs from content, and content still
+            // matches the last agreed value") misread our own echo as an
+            // external file edit and pushed the just-deleted text back
+            // into the editor. With lastSyncedContent already equal to the
+            // echo's value by then, that check correctly sees the newer
+            // local edit as unsaved work in flight and leaves it alone.
+            lastSyncedContent = updated.content
         }
     }
 }

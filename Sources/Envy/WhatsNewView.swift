@@ -28,12 +28,12 @@ struct WhatsNewView: View {
             }
 
             VStack(spacing: 10) {
-                Image(systemName: "paintpalette.fill")
+                Image(systemName: "bolt.fill")
                     .font(.system(size: 44))
                     .foregroundStyle(EnvyLogoView.irisColor)
-                Text("A Full Theme System")
+                Text("Lagless, Even at 10,000 Notes")
                     .font(.title3.bold())
-                Text("Settings → Theme now has a gallery of ready-made looks — Tokyo Night, Dracula, Monokai, Solarized, and two new Velocity themes — plus your own saved themes, with save, duplicate, import, and export. Every color is always editable, right down to tag colors, the note title bar, and text selection, with automatic legibility fixes when a color choice would otherwise be hard to read.")
+                Text("Search now runs entirely off the main thread, so typing in the OmniBar stays instant no matter how big your library is — and typing in very large notes got faster too. Also fixed a fast backspace (or a quick checkbox re-click) occasionally restoring just-deleted text, and gave every color swatch in Settings its own reset button.")
                     .font(.body)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)

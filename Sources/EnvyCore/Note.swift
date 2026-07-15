@@ -16,51 +16,87 @@ import Foundation
 // a cheap file-read pass, and repeated search/tag/backlink lookups still hit
 // a cache instead of recomputing every time.
 //
-// Backed by a class (not stored directly on the struct) so the lazy
+// Backed by a class (not stored directly on the struct) so the
 // memoization can happen without Note itself needing to be `var`/mutating —
 // a `let note = ...` or a `for note in notes` loop can still trigger and
 // benefit from the cache. Copying a Note copies the reference, not the
 // cache's contents, which is exactly right: two copies with identical
 // content/url can safely share one cache, and content/url's own didSet
 // swaps in a fresh cache the moment either actually changes.
+//
+// Lock-guarded compute-once properties rather than `lazy var`: search now
+// runs on a background task over a snapshot of the same Note values the
+// main thread keeps rendering (NoteRow reads title/preview while a search
+// reads lowercasedContent), and Swift's `lazy` is not thread-safe — two
+// threads racing the first access can compute twice or, worse, tear the
+// write. The lock is uncontended in practice (nanoseconds per access);
+// compute still happens at most once per property.
 private final class NoteDerivedCache: @unchecked Sendable {
     let url: URL
     let content: String
+
+    private let lock = NSLock()
+    private var _title: String?
+    private var _lowercasedTitle: String?
+    private var _lowercasedContent: String?
+    private var _tags: Set<String>?
+    private var _wikiLinks: Set<String>?
+    private var _hasUncheckedTask: Bool?
+    private var _preview: String?
 
     init(url: URL, content: String) {
         self.url = url
         self.content = content
     }
 
-    // Only ever touched from the main actor in practice (NoteStore, the sole
-    // consumer, is @MainActor) — scanDirectories() constructs Notes on a
-    // background thread but never reads these lazy properties itself, so
-    // there's no real concurrent access despite the class not being
-    // inherently thread-safe on its own.
-    lazy var title: String = {
-        let name = url.deletingPathExtension().lastPathComponent
-        return name.isEmpty ? "Untitled" : name
-    }()
+    private func memoized<T>(_ storage: inout T?, compute: () -> T) -> T {
+        lock.lock()
+        defer { lock.unlock() }
+        if let value = storage { return value }
+        let value = compute()
+        storage = value
+        return value
+    }
 
-    lazy var lowercasedTitle: String = title.lowercased()
-    lazy var lowercasedContent: String = content.lowercased()
+    var title: String {
+        memoized(&_title) {
+            let name = url.deletingPathExtension().lastPathComponent
+            return name.isEmpty ? "Untitled" : name
+        }
+    }
 
-    lazy var tags: Set<String> = {
-        let matches = Note.tagRegex.matches(in: content, range: NSRange(content.startIndex..., in: content))
-        return Set(matches.compactMap { match -> String? in
-            guard let range = Range(match.range(at: 1), in: content) else { return nil }
-            return content[range].lowercased()
-        })
-    }()
+    var lowercasedTitle: String {
+        // `title` resolved before entering memoized — its accessor takes
+        // the same (non-recursive) lock, so reading it inside the compute
+        // closure would deadlock.
+        let resolvedTitle = title
+        return memoized(&_lowercasedTitle) { resolvedTitle.lowercased() }
+    }
 
-    lazy var wikiLinks: Set<String> = {
-        let matches = Note.wikiLinkRegex.matches(in: content, range: NSRange(content.startIndex..., in: content))
-        return Set(matches.compactMap { match -> String? in
-            guard let range = Range(match.range(at: 1), in: content) else { return nil }
-            let title = content[range].trimmingCharacters(in: .whitespaces).lowercased()
-            return title.isEmpty ? nil : title
-        })
-    }()
+    var lowercasedContent: String {
+        memoized(&_lowercasedContent) { content.lowercased() }
+    }
+
+    var tags: Set<String> {
+        memoized(&_tags) {
+            let matches = Note.tagRegex.matches(in: content, range: NSRange(content.startIndex..., in: content))
+            return Set(matches.compactMap { match -> String? in
+                guard let range = Range(match.range(at: 1), in: content) else { return nil }
+                return content[range].lowercased()
+            })
+        }
+    }
+
+    var wikiLinks: Set<String> {
+        memoized(&_wikiLinks) {
+            let matches = Note.wikiLinkRegex.matches(in: content, range: NSRange(content.startIndex..., in: content))
+            return Set(matches.compactMap { match -> String? in
+                guard let range = Range(match.range(at: 1), in: content) else { return nil }
+                let title = content[range].trimmingCharacters(in: .whitespaces).lowercased()
+                return title.isEmpty ? nil : title
+            })
+        }
+    }
 
     // Only needs to know whether at least one exists, for the "todo:"
     // search operator — firstMatch stops at the first hit rather than
@@ -72,9 +108,38 @@ private final class NoteDerivedCache: @unchecked Sendable {
     // this doesn't need) — just "is there a literal, unchecked '[ ]' task
     // marker at the start of some line," matching the same dash-optional
     // shape MarkdownStyler recognizes.
-    lazy var hasUncheckedTask: Bool = {
-        Note.uncheckedTaskRegex.firstMatch(in: content, range: NSRange(content.startIndex..., in: content)) != nil
-    }()
+    var hasUncheckedTask: Bool {
+        memoized(&_hasUncheckedTask) {
+            Note.uncheckedTaskRegex.firstMatch(in: content, range: NSRange(content.startIndex..., in: content)) != nil
+        }
+    }
+
+    // The list row shows the preview as a single truncated line, so only
+    // roughly the first line's worth of characters can ever render —
+    // building it used to split the note's *entire* content on every access
+    // anyway, and (being the one derived property left as a plain computed
+    // property on Note) it did so on every list-row render while scrolling,
+    // twice per row. Capped and cached here with the rest. The manual
+    // line walk (rather than content.split) is what makes the cap real:
+    // split would still scan and allocate every line of the whole note
+    // before the first one could be looked at.
+    var preview: String {
+        memoized(&_preview) {
+            let cap = 200
+            var result = ""
+            var index = content.startIndex
+            while index < content.endIndex, result.count < cap {
+                let lineEnd = content[index...].firstIndex(of: "\n") ?? content.endIndex
+                let line = content[index..<lineEnd]
+                if !line.isEmpty {
+                    if !result.isEmpty { result += " " }
+                    result += line
+                }
+                index = lineEnd < content.endIndex ? content.index(after: lineEnd) : content.endIndex
+            }
+            return result
+        }
+    }
 }
 
 public struct Note: Identifiable, Sendable {
@@ -101,11 +166,9 @@ public struct Note: Identifiable, Sendable {
     public var lowercasedTitle: String { cache.lowercasedTitle }
     public var lowercasedContent: String { cache.lowercasedContent }
 
-    public var preview: String {
-        content
-            .split(separator: "\n", omittingEmptySubsequences: true)
-            .joined(separator: " ")
-    }
+    /// A single-line snippet for the note list row — cached and capped, see
+    /// NoteDerivedCache.preview.
+    public var preview: String { cache.preview }
 
     /// `#word`-style hashtags found anywhere in the note's content, lowercased
     /// for case-insensitive matching. The negative lookbehind excludes "#"

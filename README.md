@@ -64,7 +64,7 @@ Every shortcut below can be remapped in Settings → Shortcuts.
 - `Sources/EnvyCore` — the note model and `NoteStore` data layer (platform-agnostic)
 - `Sources/Envy` — the SwiftUI app
 - `Sources/IconGenerator` — standalone tool that renders the app icon
-- `Sources/VelocitySelfCheck` — a manual assertion-based check suite (used in place of Swift Testing, which doesn't run reliably without a full Xcode install)
+- `Sources/EnvySelfCheck` — a manual assertion-based check suite (used in place of Swift Testing, which doesn't run reliably without a full Xcode install)
 
 ## License
 
