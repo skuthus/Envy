@@ -288,7 +288,14 @@ private struct HoverScrollingTitleLabel: View {
         // on hover immediately filled that leftover space with real
         // characters before the scroll animation below even started,
         // instead of revealing them by scrolling.
-        let boxWidth = Self.measuredWidth(of: truncated)
+        //
+        // +2 past the raw measurement: measuredWidth uses a plain NSFont
+        // approximation of .headline (see measuringFont's own comment on
+        // why this can't be exact), and without this margin that estimate
+        // occasionally landed a hair narrower than SwiftUI's actual
+        // .headline layout — clipped() then sliced off the last character
+        // of the title, even well under the 25-character truncation point.
+        let boxWidth = Self.measuredWidth(of: truncated) + 2
         GeometryReader { proxy in
             Text(isHovering ? text : truncated)
                 .font(.headline)

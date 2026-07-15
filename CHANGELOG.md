@@ -2,6 +2,10 @@
 
 Also published at [envynote.app/changelog.html](https://envynote.app/changelog.html).
 
+## 1.1.8 — unreleased
+
+- Fixed the pinned note popup's title clipping the last character at rest, even on titles well under the 25-character truncation limit — the label's fixed width was measured with a font approximation that occasionally landed a hair narrower than what actually got rendered.
+
 ## 1.1.7 — July 15, 2026
 
 **Lagless at any library size.** The whole search pipeline (matching, ranking, sorting, pinning) now runs off the main thread over a snapshot of your notes — typing in the OmniBar stays instant even with tens of thousands of notes. First-character searches, previously the worst case (one letter matches nearly everything), no longer block anything.
