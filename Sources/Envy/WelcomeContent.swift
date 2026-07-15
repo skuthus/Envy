@@ -109,10 +109,12 @@ enum WelcomeContent {
 
     ## 🎨 Customizing the Look
 
-    - Settings → Appearance lets you pick your own font and colors.
+    - Settings → Theme has a gallery of ready-made looks — Tokyo Night, Dracula, Monokai, both Solarized themes, and Velocity Light/Dark (modeled on the original Notational Velocity) — plus any themes you've saved yourself. Click one to apply it instantly.
+    - Every color swatch is always editable. Change one and it becomes a custom variation of whatever theme you started from — save it as a new named theme, duplicate it, rename it, or reset any single swatch back to its default.
+    - Colors are grouped by where they show up: Editor (text, background, links, code, tags, and more), List (file list background/text, the note editor's own title bar), and Highlight (search matches, focus border, text selection).
+    - Export a theme to a file to share it, or import one someone else made.
     - A blur strength control adjusts how translucent the window background is.
     - A note list density picker controls how much space each note takes up in the list.
-    - A file list highlight color picker changes what the selected note looks like.
     - A mode setting matches System, Light, or Dark, independent of your custom colors.
     - Moving focus to the search box, note list, or editor (by clicking, or with ⌥↓/⌥↑) highlights it with a border. A "Fade out focus highlight" toggle controls whether that border stays as long as it's focused or fades away after a moment, and its color and thickness are both customizable too.
 
@@ -127,7 +129,7 @@ enum WelcomeContent {
     - Settings → General has a toggle for whether pressing Return in the search box also moves your cursor into the editor, in case you'd rather stay in the search box instead.
     - Settings → General can also show a small clock in the editor's footer, with an optional date in a few different formats, and an option to only show it while in full screen.
     - Every shortcut above (plus the global summon key) can be changed in Settings → Shortcuts. Click a shortcut, then press a new combination to save it right away. A Reset button sits next to each one, plus a "Reset All to Defaults" for starting over.
-    - Edit a note in another app while it's open in Envy, and the change appears here automatically. The part that changed briefly flashes green so you don't miss it.
+    - Edit a note in another app while it's open in Envy, and the change appears here automatically. The part that changed briefly flashes so you don't miss it, in the same color as your theme's search highlight.
 
     ## 📚 Reference
 

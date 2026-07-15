@@ -176,6 +176,7 @@ struct NoteEditorView: View {
                 .onChange(of: isTitleFocused) { _, focused in
                     if !focused { commitRename() }
                 }
+                .foregroundStyle(theme.noteTitleBarTextColor?.color ?? Color.primary)
             Spacer()
             if showTagsInTitleBar, let note, !note.tags.isEmpty {
                 HStack(spacing: 6) {
@@ -199,7 +200,13 @@ struct NoteEditorView: View {
         }
         .padding(.horizontal)
         .padding(.vertical, 8)
-        .background(.bar)
+        .background {
+            if let color = theme.noteTitleBarBackgroundColor?.color {
+                color
+            } else {
+                Rectangle().fill(.bar)
+            }
+        }
     }
 
     private func commitRename() {

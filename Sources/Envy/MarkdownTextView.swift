@@ -331,6 +331,26 @@ struct MarkdownTextView: NSViewRepresentable {
         scrollView.drawsBackground = true
         scrollView.backgroundColor = theme.resolvedBackgroundColor
         textView.insertionPointColor = theme.resolvedTextColor
+        // NSTextView's own default selection color otherwise wins — a
+        // system-derived light blue, regardless of anything else in the
+        // theme.
+        let selectedTextBackground = theme.resolvedSelectedTextColor
+        var selectedTextAttributes: [NSAttributedString.Key: Any] = [.backgroundColor: selectedTextBackground]
+        // Checked against the base text color specifically, not every
+        // possible per-character color (links, tags, etc.) — selectedTextAttributes
+        // is one fixed attribute set applied to whatever's selected, not
+        // something that can vary per character the way the static text
+        // storage's own attributes can. Covers the common case (selecting
+        // plain body text) that a poor selection-color choice would
+        // otherwise make invisible; only sets .foregroundColor at all when
+        // it's actually needed, so an already-fine pairing still shows
+        // each selected character's own real color underneath.
+        let perceivedSelectedTextBackground = MarkdownStyler.compositedColor(selectedTextBackground, over: theme.resolvedBackgroundColor)
+        let adjustedTextColor = MarkdownStyler.legibleForeground(theme.resolvedTextColor, over: perceivedSelectedTextBackground)
+        if adjustedTextColor != theme.resolvedTextColor {
+            selectedTextAttributes[.foregroundColor] = adjustedTextColor
+        }
+        textView.selectedTextAttributes = selectedTextAttributes
         // NSTextView renders `.link`-attributed ranges with its own default color
         // (system blue), ignoring any per-range `.foregroundColor` we set in
         // MarkdownStyler, unless this is overridden explicitly.
@@ -930,7 +950,7 @@ struct MarkdownTextView: NSViewRepresentable {
                 let lineRect = layoutManager.lineFragmentRect(forGlyphAt: glyphRange.location, effectiveRange: nil)
 
                 label.font = symbolFont
-                label.textColor = checkbox.isChecked ? .systemGreen : uncheckedColor
+                label.textColor = checkbox.isChecked ? parent.theme.resolvedCheckedCheckboxColor : uncheckedColor
                 label.stringValue = checkbox.isChecked ? "☑" : "☐"
                 label.sizeToFit()
                 let verticalOffset = (lineRect.height - label.frame.height) / 2
@@ -940,19 +960,21 @@ struct MarkdownTextView: NSViewRepresentable {
         }
 
         /// Briefly flags an externally-changed range so the user notices it
-        /// without having to spot the diff themselves. Green, distinct from
-        /// the (yellow-ish) search-match highlight, so the two don't read as
-        /// the same kind of thing. Steps the alpha down manually rather than
-        /// a single delayed cut — text attributes aren't Core Animation
-        /// properties, so there's nothing to animate implicitly — then
-        /// reverts with a normal restyle pass rather than just stripping the
-        /// attribute, so a flash landing over (say) a code span's own
-        /// background doesn't leave it wrong afterward.
+        /// without having to spot the diff themselves. Same highlight color
+        /// as search matches — one theme-controlled "highlight" concept for
+        /// everything in the editor, rather than a second, separately
+        /// hardcoded color the user has no way to change. Steps the alpha
+        /// down manually rather than a single delayed cut — text attributes
+        /// aren't Core Animation properties, so there's nothing to animate
+        /// implicitly — then reverts with a normal restyle pass rather than
+        /// just stripping the attribute, so a flash landing over (say) a
+        /// code span's own background doesn't leave it wrong afterward.
         func flashHighlight(range: NSRange, in textView: NSTextView) {
             guard let textStorage = textView.textStorage else { return }
             highlightFadeTask?.cancel()
             let peakAlpha = 0.4
-            textStorage.addAttribute(.backgroundColor, value: NSColor.systemGreen.withAlphaComponent(peakAlpha), range: range)
+            let highlightColor = parent.theme.resolvedHighlightColor
+            textStorage.addAttribute(.backgroundColor, value: highlightColor.withAlphaComponent(peakAlpha), range: range)
             highlightFadeTask = Task { [weak self, weak textView] in
                 try? await Task.sleep(for: .milliseconds(120))
                 guard !Task.isCancelled, let textView else { return }
@@ -962,7 +984,7 @@ struct MarkdownTextView: NSViewRepresentable {
                     guard !Task.isCancelled, let textStorage = textView.textStorage,
                           range.location + range.length <= textStorage.length else { break }
                     let alpha = peakAlpha * (1 - Double(step) / Double(steps))
-                    textStorage.addAttribute(.backgroundColor, value: NSColor.systemGreen.withAlphaComponent(alpha), range: range)
+                    textStorage.addAttribute(.backgroundColor, value: highlightColor.withAlphaComponent(alpha), range: range)
                     try? await Task.sleep(for: .milliseconds(35))
                 }
 

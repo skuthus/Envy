@@ -281,6 +281,10 @@ enum MarkdownStyler {
         let tagColor = theme.resolvedTagColor
         let tagBackground = theme.resolvedTagBackgroundColor
         let tagFont = NSFontManager.shared.convert(baseFont, toHaveTrait: .boldFontMask)
+        // Hoisted out of the hashtag loop below — same two inputs on every
+        // match, so recomputing this per-tag was wasted color-space work on
+        // notes with many hashtags.
+        let legibleTagForeground = legibleForeground(tagColor, over: compositedColor(tagBackground, over: theme.resolvedBackgroundColor))
 
         textStorage.beginEditing()
         textStorage.setAttributes([.font: baseFont, .foregroundColor: theme.resolvedTextColor], range: full)
@@ -306,7 +310,7 @@ enum MarkdownStyler {
         for match in hashtagRegex.matches(in: text, range: full) {
             guard !isClaimed(match.range) else { continue }
             textStorage.addAttribute(.font, value: tagFont, range: match.range)
-            textStorage.addAttribute(.foregroundColor, value: tagColor, range: match.range)
+            textStorage.addAttribute(.foregroundColor, value: legibleTagForeground, range: match.range)
             textStorage.addAttribute(.backgroundColor, value: tagBackground, range: match.range)
         }
 
@@ -364,7 +368,7 @@ enum MarkdownStyler {
             // only ever apply the marker color to the marker's own range,
             // never its content. secondaryLabelColor still reads as quieter
             // than body text without being borderline invisible.
-            textStorage.addAttribute(.foregroundColor, value: NSColor.secondaryLabelColor, range: contentRange)
+            textStorage.addAttribute(.foregroundColor, value: theme.resolvedBlockquoteColor, range: contentRange)
 
             if touches(match.range, cursorSelection) {
                 textStorage.addAttribute(.foregroundColor, value: markerColor, range: markerRange)
@@ -393,7 +397,7 @@ enum MarkdownStyler {
             let contentRange = NSRange(location: contentStart, length: max(0, lineRange.location + lineRange.length - contentStart))
             if contentRange.length > 0 {
                 textStorage.addAttribute(.font, value: smallFont, range: contentRange)
-                textStorage.addAttribute(.foregroundColor, value: NSColor.secondaryLabelColor, range: contentRange)
+                textStorage.addAttribute(.foregroundColor, value: theme.resolvedFootnoteColor, range: contentRange)
             }
             if touches(markerRange, cursorSelection) {
                 textStorage.addAttribute(.foregroundColor, value: markerColor, range: markerRange)
@@ -479,7 +483,7 @@ enum MarkdownStyler {
 
             if isChecked {
                 textStorage.addAttribute(.strikethroughStyle, value: NSUnderlineStyle.single.rawValue, range: contentRange)
-                textStorage.addAttribute(.foregroundColor, value: NSColor.secondaryLabelColor, range: contentRange)
+                textStorage.addAttribute(.foregroundColor, value: theme.resolvedCompletedTaskColor, range: contentRange)
             }
             claimed.append(match.range(at: 1))
             claimed.append(checkboxRange)
@@ -597,7 +601,7 @@ enum MarkdownStyler {
             }
         }
 
-        highlightMatches(of: searchQuery, in: text, textStorage: textStorage, color: theme.resolvedHighlightColor)
+        highlightMatches(of: searchQuery, in: text, textStorage: textStorage, color: theme.resolvedHighlightColor, backdrop: theme.resolvedBackgroundColor)
 
         textStorage.endEditing()
     }
@@ -650,17 +654,81 @@ enum MarkdownStyler {
         }
     }
 
-    private static func highlightMatches(of query: String, in text: String, textStorage: NSTextStorage, color: NSColor) {
+    // WCAG-style relative luminance (0 = black, 1 = white) — used only to
+    // decide whether text drawn over a highlight-style background (search
+    // matches, tag chips, selected-text background) needs to flip to pure
+    // black/white for legibility. Theme colors are fully independent user
+    // choices (a highlight color and the text color it sits under aren't
+    // picked as a pair), so a combination that reads as invisible is a
+    // real, reachable case, not just a hypothetical one. Not private —
+    // MarkdownTextView's own selected-text handling reuses it too.
+    static func relativeLuminance(of color: NSColor) -> CGFloat {
+        let rgb = color.usingColorSpace(.deviceRGB) ?? NSColor(white: 0.5, alpha: 1)
+        func channel(_ c: CGFloat) -> CGFloat {
+            c <= 0.03928 ? c / 12.92 : pow((c + 0.055) / 1.055, 2.4)
+        }
+        return 0.2126 * channel(rgb.redComponent) + 0.7152 * channel(rgb.greenComponent) + 0.0722 * channel(rgb.blueComponent)
+    }
+
+    /// Flattens a translucent color against an opaque backdrop into the
+    /// solid color it actually reads as. Tag/highlight backgrounds are
+    /// usually a low-alpha tint (e.g. systemGreen at 15%), not a solid
+    /// fill — reading such a color's own RGB components directly (as
+    /// `relativeLuminance` does) ignores the alpha and measures it as if
+    /// it were fully saturated and opaque, which is far darker than the
+    /// pale wash it's actually perceived as once composited over the
+    /// editor background. That mismatch was wrongly triggering the
+    /// black/white flip below on perfectly legible tag text.
+    static func compositedColor(_ color: NSColor, over backdrop: NSColor) -> NSColor {
+        guard let c = color.usingColorSpace(.deviceRGB) else { return color }
+        guard c.alphaComponent < 1, let b = backdrop.usingColorSpace(.deviceRGB) else { return c }
+        let alpha = c.alphaComponent
+        let r = c.redComponent * alpha + b.redComponent * (1 - alpha)
+        let g = c.greenComponent * alpha + b.greenComponent * (1 - alpha)
+        let bl = c.blueComponent * alpha + b.blueComponent * (1 - alpha)
+        return NSColor(red: r, green: g, blue: bl, alpha: 1)
+    }
+
+    /// Returns `foreground` unchanged if it already reads clearly enough
+    /// against `background`; otherwise flips to pure black or white,
+    /// whichever contrasts more. The 2.2 threshold is deliberately looser
+    /// than WCAG's own 4.5:1 AA minimum — this is a last-resort fix for
+    /// genuinely poor pairings (highlight ≈ text color), not a general
+    /// accessibility pass, so it stays out of the way of combinations that
+    /// are merely a little low-contrast by choice.
+    static func legibleForeground(_ foreground: NSColor, over background: NSColor) -> NSColor {
+        let bg = relativeLuminance(of: background)
+        let fg = relativeLuminance(of: foreground)
+        let contrast = (max(bg, fg) + 0.05) / (min(bg, fg) + 0.05)
+        guard contrast < 2.2 else { return foreground }
+        return bg > 0.5 ? .black : .white
+    }
+
+    private static func highlightMatches(of query: String, in text: String, textStorage: NSTextStorage, color: NSColor, backdrop: NSColor) {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
         let nsText = text as NSString
         guard nsText.length > 0 else { return }
         let fullRange = NSRange(location: 0, length: nsText.length)
+        let perceivedColor = compositedColor(color, over: backdrop)
 
         func highlightMatches(ofPattern pattern: String) {
             guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else { return }
             for match in regex.matches(in: text, range: fullRange) {
                 textStorage.addAttribute(.backgroundColor, value: color, range: match.range)
+                // Reads whatever foreground color the rest of styling
+                // already settled on (this runs last, right before
+                // endEditing) so it can tell whether the highlight would
+                // make that specific span unreadable — a search match
+                // landing on bold text, a link, a tag, or plain body text
+                // each already has its own color by this point.
+                textStorage.enumerateAttribute(.foregroundColor, in: match.range, options: []) { existing, subrange, _ in
+                    let current = (existing as? NSColor) ?? .labelColor
+                    let adjusted = legibleForeground(current, over: perceivedColor)
+                    if adjusted != current {
+                        textStorage.addAttribute(.foregroundColor, value: adjusted, range: subrange)
+                    }
+                }
             }
         }
         func highlightLiteral(_ literal: String) {

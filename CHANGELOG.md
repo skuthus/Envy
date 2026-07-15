@@ -2,6 +2,15 @@
 
 Also published at [envynote.app/changelog.html](https://envynote.app/changelog.html).
 
+## 1.1.6 — July 14, 2026
+
+**A full theme system.** Settings → Theme now has a gallery of ready-made looks — Tokyo Night, Dracula, Monokai, both Solarized themes, and two new Velocity Light/Dark themes modeled on the original Notational Velocity — plus your own saved themes, with save, duplicate, rename, delete, import, and export.
+
+- Every color is always editable, right down to the note editor's own title bar, tag colors, and text-selection highlight — no more toggling "Use Custom Theme" first.
+- Search-match highlighting, tag chips, and selected text now automatically flip to black or white when the theme's own color choice would otherwise be unreadable against its background.
+- Fixed tag text rendering in the wrong color: the legibility check above was reading a tag's translucent background as if it were fully opaque, which could wrongly trigger that black/white flip on perfectly readable tag colors.
+- Fixed text selection (dragging to select text) losing its highlight entirely in some cases — the selection color was being frozen at whatever the system happened to resolve at app launch instead of tracking it live.
+
 ## 1.1.5 — July 13, 2026
 
 - Fixed hiding Envy (hotkey, menu bar icon, or the red button) sometimes snapping an unrelated window — occasionally a minimized one — to the foreground while AeroSpace is running. Turned out not to be AeroSpace-specific at all: ordering out Envy's only visible window makes AppKit auto-activate the "next" window in the global window-server order, and AeroSpace keeps off-workspace windows parked in that order even though they're off-screen, so AppKit's pick routinely landed on a window from a different workspace. Fixed by capturing whichever app was frontmost right before summoning Envy and explicitly reactivating it after hiding — a plain macOS app activation, not routed through AeroSpace at all, so it can't un-minimize anything and helps even without a window manager running.
