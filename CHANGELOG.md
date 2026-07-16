@@ -7,6 +7,7 @@ Also published at [envynote.app/changelog.html](https://envynote.app/changelog.h
 - Fixed a note with multiple due dates reporting whichever one happened to be typed first in the text as "the" due date, rather than the actual earliest/most urgent one.
 - The due-date pill (note list and title bar) now shows a "+N" badge when a note has more than one active due date, so it's clear there's more than the one shown.
 - `@tomorrow` and `@yesterday` now work as due-date tokens, matching `due:tomorrow`/`due:yesterday`, which already worked as search operators.
+- Fixed the note list showing a due date landing on today as "Today, 12:00 AM" — due dates never have a real time-of-day, so the file list no longer shows one for any due date, in any date display style.
 
 ## 1.1.9 — July 16, 2026
 

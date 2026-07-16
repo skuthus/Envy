@@ -86,10 +86,20 @@ struct NoteRow: View {
 
     @ViewBuilder
     private func dateText(_ date: Date) -> some View {
-        if dateDisplayStyle == .relative {
-            Text(date, style: .relative) + Text(dueCountSuffix)
+        if sortField == .due {
+            // Never the live-ticking Text(_:style:.relative) below, even
+            // when dateDisplayStyle is .relative — a due date is a
+            // calendar-day value with no meaningful time-of-day or
+            // sub-day granularity to tick (SwiftUI's own relative style
+            // compares exact instants, so it showed "in 14 hours" for a
+            // note due tomorrow, or "10 hours ago" for one due today).
+            // formatDueDate handles every style's due-specific formatting
+            // statically instead — see its own comment for the full story.
+            Text(dateDisplayStyle.formatDueDate(date) + dueCountSuffix)
+        } else if dateDisplayStyle == .relative {
+            Text(date, style: .relative)
         } else {
-            Text(dateDisplayStyle.format(date) + dueCountSuffix)
+            Text(dateDisplayStyle.format(date))
         }
     }
 }
