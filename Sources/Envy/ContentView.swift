@@ -63,10 +63,13 @@ struct ContentView: View {
     @AppStorage("backgroundBlurStrength") var backgroundBlurStrengthRaw = BlurStrength.strong.rawValue
     @AppStorage("showNotePreview") var showNotePreview = false
     @AppStorage("showDateModified") var showDateModified = true
+    @AppStorage("showDueSort") var showDueSort = true
     @AppStorage("dateDisplayStyle") var dateDisplayStyleRaw = DateDisplayStyle.smart.rawValue
     @AppStorage("requireModifierForLinkClick") var requireModifierForLinkClick = true
+    @AppStorage("linkPreviewTrigger") var linkPreviewTriggerRaw = LinkPreviewTrigger.optionClick.rawValue
     @AppStorage("showEditorTitleHeader") var showEditorTitleHeader = true
     @AppStorage("showTagsInTitleBar") var showTagsInTitleBar = false
+    @AppStorage("showDuePill") var showDuePill = true
     @AppStorage(NotesDirectoryPreference.storageKey) var notesDirectoryPathsRaw = ""
     @AppStorage(NotesDirectoryPreference.disabledStorageKey) var disabledDirectoryPathsRaw = ""
     @AppStorage("hasCreatedWelcomeNote") var hasCreatedWelcomeNote = false
@@ -90,6 +93,18 @@ struct ContentView: View {
     @AppStorage("hasSeededSampleTemplates") var hasSeededSampleTemplates = false
     @State var editingTemplate: NoteTemplate?
     @State var highlightedTemplateID: String?
+    /// Shares WikilinkPreviewController with the editor's own wikilinks —
+    /// same panel, same rounded-corner/positioning/dismissal logic, just a
+    /// different (button-shaped, not text-range-shaped) anchor. Persists
+    /// across renders via @State the same way store/theme do, even though
+    /// it isn't itself an ObservableObject — it's a plain reference type
+    /// this view just needs to keep alive and call into.
+    @State var backlinkPreviewController = WikilinkPreviewController()
+    /// One real NSView per currently-rendered backlink row, keyed by note
+    /// id — WikilinkAnchorProbe populates this as SwiftUI inserts each row
+    /// into the view hierarchy; the controller needs an actual NSView to
+    /// anchor the panel to and to compare later clicks against.
+    @State var backlinkAnchorViews: [String: NSView] = [:]
     // Newline-joined note ids (paths), matching the encoding NotesDirectoryPreference
     // already uses for a list of paths in one AppStorage string.
     @AppStorage("pinnedNotePaths") var pinnedNotePathsRaw = ""
@@ -102,8 +117,19 @@ struct ContentView: View {
         LayoutMode(rawValue: layoutModeRaw) ?? .horizontal
     }
 
+    /// Falls back to .date rather than reading sortFieldRaw as-is when
+    /// due-sort has been turned off in Settings — the stored raw value is
+    /// left untouched (so a later re-enable naturally restores whatever the
+    /// user last had it sorted by), this just guards every *read* of
+    /// sortField so nothing tries to render or sort by a column Settings
+    /// says shouldn't be offered anymore.
     var sortField: NoteSortField {
-        NoteSortField(rawValue: sortFieldRaw) ?? .date
+        let field = NoteSortField(rawValue: sortFieldRaw) ?? .date
+        return (field == .due && !showDueSort) ? .date : field
+    }
+
+    var linkPreviewTrigger: LinkPreviewTrigger {
+        LinkPreviewTrigger(rawValue: linkPreviewTriggerRaw) ?? .optionClick
     }
 
     var dateDisplayStyle: DateDisplayStyle {
@@ -426,6 +452,11 @@ struct ContentView: View {
         }
         .onChange(of: showBacklinks) { _, _ in recomputeBacklinkNotes() }
         .onChange(of: sortFieldRaw) { _, _ in Task { await recomputeFilteredNotes() } }
+        // Toggling this off in Settings changes what sortField *resolves
+        // to* (falls back to .date) without touching sortFieldRaw itself —
+        // needs its own trigger since the .onChange above only fires when
+        // the raw stored value changes, which this doesn't.
+        .onChange(of: showDueSort) { _, _ in Task { await recomputeFilteredNotes() } }
         .onChange(of: sortAscending) { _, _ in Task { await recomputeFilteredNotes() } }
         .onChange(of: pinnedNotePathsRaw) { _, _ in Task { await recomputeFilteredNotes() } }
         .onChange(of: store.isLoading) { _, isLoading in

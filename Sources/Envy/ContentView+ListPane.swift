@@ -265,8 +265,10 @@ extension ContentView {
         HStack(spacing: 0) {
             sortHeaderButton(field: .name, label: "Name")
                 .frame(maxWidth: .infinity, alignment: .leading)
-            sortHeaderButton(field: .due, label: "Due")
-                .padding(.trailing, 12)
+            if showDueSort {
+                sortHeaderButton(field: .due, label: "Due")
+                    .padding(.trailing, 12)
+            }
             sortHeaderButton(field: .date, label: "Date")
         }
         .padding(.horizontal, 12)

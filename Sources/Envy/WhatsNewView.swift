@@ -28,12 +28,12 @@ struct WhatsNewView: View {
             }
 
             VStack(spacing: 10) {
-                Image(systemName: "bolt.fill")
+                Image(systemName: "arrow.up.right.and.arrow.down.left.rectangle")
                     .font(.system(size: 44))
                     .foregroundStyle(EnvyLogoView.irisColor)
-                Text("Lagless, Even at 10,000 Notes")
+                Text("Peek at Linked Notes")
                     .font(.title3.bold())
-                Text("Search now runs entirely off the main thread, so typing in the OmniBar stays instant no matter how big your library is — and typing in very large notes got faster too. Also fixed a fast backspace (or a quick checkbox re-click) occasionally restoring just-deleted text, and gave every color swatch in Settings its own reset button.")
+                Text("Option-click any [[wikilink]] — in the editor or the backlinks list — to open a floating preview you can click straight into and edit, no navigating away required. Also new: due dates. Write due@04-16-26 in a note, search it with due:today, due:week, due:overdue, and more, sort your notes by due date, and see it colored by urgency.")
                     .font(.body)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)

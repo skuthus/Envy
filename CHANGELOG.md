@@ -4,6 +4,10 @@ Also published at [envynote.app/changelog.html](https://envynote.app/changelog.h
 
 ## 1.1.8 — unreleased
 
+**Peek any linked note without leaving where you are.** Option-click a `[[wikilink]]` — in the editor or in the backlinks list — to open a small floating preview of that note, styled to match the menu bar's pinned-note popup. It opens read-only; click into it to edit right there without navigating away, and it won't ever open a second copy of a note you already have open.
+
+**Due dates.** Write `due@04-16-26` (or `due@2026-04-16`) anywhere in a note and Envy picks it up. Search for it with `due:today`, `due:tomorrow`/`due:yesterday`, `due:week`/`due:nextweek` (calendar-aligned, not a rolling 7 days), `due:overdue`/`due:past`, `due:future`, `due:month`, an exact date, or a bare `due:` for "has a due date at all." Sort the note list by due date, and see it colored by urgency — not-yet-due, due-soon, and overdue each get their own theme color, shown in the editor, the note list, and an optional due-date pill in the title bar. Both the due-date sort column and the title bar pill can be turned off in Settings → General.
+
 - Fixed the pinned note popup's title clipping the last character at rest, even on titles well under the 25-character truncation limit — the label's fixed width was measured with a font approximation that occasionally landed a hair narrower than what actually got rendered.
 
 ## 1.1.7 — July 15, 2026

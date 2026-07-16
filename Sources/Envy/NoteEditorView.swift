@@ -14,6 +14,8 @@ struct NoteEditorView: View {
     var searchQuery: String
     var showTitleHeader: Bool
     var showTagsInTitleBar: Bool
+    var showDuePill: Bool
+    var linkPreviewTrigger: LinkPreviewTrigger
     var fontZoom: CGFloat
     var plainTextMode: Bool
     /// Passed in (ContentView caches it) rather than derived from `store`
@@ -64,6 +66,8 @@ struct NoteEditorView: View {
         searchQuery: String,
         showTitleHeader: Bool,
         showTagsInTitleBar: Bool,
+        showDuePill: Bool,
+        linkPreviewTrigger: LinkPreviewTrigger,
         fontZoom: CGFloat,
         plainTextMode: Bool,
         noteTitles: [String],
@@ -80,6 +84,8 @@ struct NoteEditorView: View {
         self.searchQuery = searchQuery
         self.showTitleHeader = showTitleHeader
         self.showTagsInTitleBar = showTagsInTitleBar
+        self.showDuePill = showDuePill
+        self.linkPreviewTrigger = linkPreviewTrigger
         self.fontZoom = fontZoom
         self.plainTextMode = plainTextMode
         self.noteTitles = noteTitles
@@ -109,6 +115,11 @@ struct NoteEditorView: View {
                 searchQuery: searchQuery,
                 fontZoom: fontZoom,
                 plainTextMode: plainTextMode,
+                store: linkPreviewTrigger == .off ? nil : store,
+                linkPreviewTrigger: linkPreviewTrigger,
+                currentNoteID: noteID,
+                showDuePill: showDuePill,
+                showTagsInTitleBar: showTagsInTitleBar,
                 noteTitles: noteTitles,
                 externalReloadToken: externalReloadToken,
                 highlightRange: pendingHighlightRange,
@@ -190,7 +201,7 @@ struct NoteEditorView: View {
                 .foregroundStyle(theme.noteTitleBarTextColor?.color ?? Color.primary)
             Spacer()
             HStack(spacing: 6) {
-                if let note, let due = note.due {
+                if showDuePill, let note, let due = note.due {
                     Text("Due \(due.formatted(.dateTime.month(.abbreviated).day()))")
                         .font(.caption.bold())
                         .foregroundStyle(Color(nsColor: dueChipColor(for: due, theme: theme)))

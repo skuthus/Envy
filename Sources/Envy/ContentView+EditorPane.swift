@@ -37,6 +37,8 @@ extension ContentView {
                         searchQuery: editorSearchQuery,
                         showTitleHeader: showEditorTitleHeader,
                         showTagsInTitleBar: showTagsInTitleBar,
+                        showDuePill: showDuePill,
+                        linkPreviewTrigger: linkPreviewTrigger,
                         fontZoom: CGFloat(editorFontZoom),
                         plainTextMode: plainTextMode,
                         noteTitles: noteTitlesByRecencyCache,
@@ -167,7 +169,23 @@ extension ContentView {
         VStack(alignment: .leading, spacing: 2) {
             ForEach(currentBacklinkNotes) { linked in
                 Button {
-                    navigateToNote(titled: linked.title)
+                    // Same NSEvent.modifierFlags check ContentView+ListPane
+                    // already uses to distinguish shift/cmd-click on a note
+                    // row — a plain SwiftUI Button action has no modifier
+                    // info of its own to inspect otherwise. Only actually
+                    // means "open the preview instead" in .optionClick
+                    // trigger mode, and only for a note that isn't already
+                    // the one open in the main editor (see
+                    // WikilinkPreviewController.show's own note on why
+                    // previewing that note specifically is skipped) — every
+                    // other case, option-click is just an ordinary click
+                    // that navigates like any other.
+                    if linkPreviewTrigger == .optionClick, NSEvent.modifierFlags.contains(.option), linked.id != selectedID,
+                       let anchorView = backlinkAnchorViews[linked.id] {
+                        showBacklinkPreview(for: linked, anchorView: anchorView)
+                    } else {
+                        navigateToNote(titled: linked.title)
+                    }
                 } label: {
                     Text(linked.title)
                         .font(.body)
@@ -176,12 +194,46 @@ extension ContentView {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .background(
+                    WikilinkAnchorProbe(anchorView: Binding(
+                        get: { backlinkAnchorViews[linked.id] },
+                        set: { backlinkAnchorViews[linked.id] = $0 }
+                    ))
+                )
             }
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(.bar)
+    }
+
+    /// Same panel WikilinkPreviewController already shows for the editor's
+    /// inline wikilinks — just anchored to this row's own probe view
+    /// instead of a range within a shared NSTextView. The hit-test for "did
+    /// an outside click land back on this exact row" is a plain bounds
+    /// check rather than a character-index lookup (there's no shared text
+    /// view to disambiguate a position within), and unlike the editor's own
+    /// version it requires no modifier at all, matching how a backlink
+    /// already navigates on any plain click, not just ⌘-click.
+    private func showBacklinkPreview(for linked: Note, anchorView: NSView) {
+        backlinkPreviewController.configure(
+            store: store,
+            theme: theme,
+            requireModifierForLinkClick: requireModifierForLinkClick,
+            showDuePill: showDuePill,
+            showTagsInTitleBar: showTagsInTitleBar,
+            currentlyOpenNoteID: selectedID,
+            onNavigate: { [self] title in navigateToNote(titled: title) }
+        )
+        backlinkPreviewController.show(
+            title: linked.title,
+            anchorRect: anchorView.bounds,
+            in: anchorView,
+            shouldNavigateOnOutsideClick: { [weak anchorView] point, _ in
+                anchorView?.bounds.contains(point) ?? false
+            }
+        )
     }
 
     private func clockString(for date: Date) -> String {

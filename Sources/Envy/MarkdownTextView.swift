@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import EnvyCore
 
 final class HoverAwareTextView: NSTextView {
     var onHoverPoint: ((NSPoint) -> Void)?
@@ -15,10 +16,30 @@ final class HoverAwareTextView: NSTextView {
     /// addCursorRect (tried first; had no effect), so this sets NSCursor
     /// directly instead of relying on that system.
     var isOverClickTarget: ((NSPoint) -> Bool)?
+    /// Fired once, the moment a click lands while `isEditable` is false —
+    /// used by the wikilink hover preview, which starts non-editable and
+    /// switches to a live editor on first click. Left nil (the ordinary
+    /// case, isEditable always true) this never fires.
+    var onRequestEditable: (() -> Void)?
+    /// Returns true if an option-click on a wikilink was handled (opened
+    /// the preview popover) — only ever consulted when the option modifier
+    /// is actually held, and only meaningful when link previews are in
+    /// .optionClick trigger mode; nil/false otherwise. Option was chosen
+    /// over control specifically because control-click is macOS's
+    /// traditional secondary-click/right-click equivalent — using it here
+    /// collided with the standard context menu, where option-click has no
+    /// competing system meaning to collide with.
+    var onOptionClickPoint: ((NSPoint) -> Bool)?
     private var hoverTrackingArea: NSTrackingArea?
 
     override func mouseDown(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
+        if !isEditable {
+            isEditable = true
+            onRequestEditable?()
+            window?.makeFirstResponder(self)
+        }
+        if event.modifierFlags.contains(.option), onOptionClickPoint?(point) == true { return }
         if onClickPoint?(point) == true { return }
         super.mouseDown(with: event)
     }
@@ -86,6 +107,36 @@ struct MarkdownTextView: NSViewRepresentable {
     var searchQuery: String
     var fontZoom: CGFloat = 0
     var plainTextMode: Bool = false
+    /// False only for the wikilink hover preview's initial, click-to-edit
+    /// state — every other caller (the main editor, the pinned popup, the
+    /// template editor) leaves this at the default, always-editable.
+    var isEditable: Bool = true
+    /// Fires once when a click lands while `isEditable` is false — see
+    /// HoverAwareTextView.onRequestEditable.
+    var onRequestEditable: (() -> Void)? = nil
+    /// Shared NoteStore, used only to resolve a hovered wikilink's title to
+    /// an actual Note for the preview popover. nil for callers that don't
+    /// want link previews at all (the pinned popup and template editor
+    /// don't have — or don't want — a live NoteStore to share here; see
+    /// PinnedNotePopoverView's own doc comment on why it avoids one).
+    var store: NoteStore? = nil
+    /// Whether option-clicking a wikilink opens the preview popover —
+    /// irrelevant when `store` is nil (that caller doesn't want previews at
+    /// all).
+    var linkPreviewTrigger: LinkPreviewTrigger = .optionClick
+    /// The id of the note this text view is itself showing (NoteEditorView's
+    /// own noteID) — lets the preview popover recognize "this link points
+    /// right back at the note you're already looking at" and skip showing a
+    /// second, independent edit surface on the same content instead of
+    /// risking two competing unsaved buffers. nil for callers where this
+    /// doesn't apply (store is already nil for those too).
+    var currentNoteID: String? = nil
+    /// Passed straight through to the preview popover's own header chips —
+    /// same two Settings toggles the main editor's title bar itself
+    /// respects (NoteEditorView.header), so the preview never shows a chip
+    /// the user turned off there.
+    var showDuePill: Bool = true
+    var showTagsInTitleBar: Bool = false
     /// Existing note titles, offered as an inline ghost-text completion while
     /// typing inside an open "[[" — same prefix-match rule as the search
     /// box's own suggestion. Expected ordered most-recently-modified first,
@@ -125,7 +176,7 @@ struct MarkdownTextView: NSViewRepresentable {
         let textView = HoverAwareTextView()
         textView.delegate = context.coordinator
         textView.isRichText = false
-        textView.isEditable = true
+        textView.isEditable = isEditable
         textView.isSelectable = true
         textView.allowsUndo = true
         textView.textContainerInset = NSSize(width: 8, height: 8)
@@ -159,6 +210,12 @@ struct MarkdownTextView: NSViewRepresentable {
         }
         textView.onClickPoint = { [weak coordinator = context.coordinator] point in
             coordinator?.handleClick(at: point) ?? false
+        }
+        textView.onRequestEditable = { [weak coordinator = context.coordinator] in
+            coordinator?.parent.onRequestEditable?()
+        }
+        textView.onOptionClickPoint = { [weak coordinator = context.coordinator] point in
+            coordinator?.handleOptionClick(at: point) ?? false
         }
         textView.isOverClickTarget = { [weak coordinator = context.coordinator] point in
             // Plain-text mode never renders checkboxes/footnotes as anything
@@ -249,6 +306,10 @@ struct MarkdownTextView: NSViewRepresentable {
     func updateNSView(_ scrollView: NSScrollView, context: Context) {
         context.coordinator.parent = self
         guard let textView = context.coordinator.textView else { return }
+
+        if textView.isEditable != isEditable {
+            textView.isEditable = isEditable
+        }
 
         applyTheme(theme, to: textView, scrollView: scrollView)
 
@@ -365,6 +426,7 @@ struct MarkdownTextView: NSViewRepresentable {
         var parent: MarkdownTextView
         weak var textView: HoverAwareTextView?
         var hoveredLinkRange: NSRange?
+        let previewController = WikilinkPreviewController()
         var lastTheme: Theme?
         var lastSearchQuery: String = ""
         var lastFontZoom: CGFloat = 0
@@ -1204,6 +1266,63 @@ struct MarkdownTextView: NSViewRepresentable {
             textView.setSelectedRange(NSRange(location: selRange.location + markerLength, length: selRange.length))
         }
 
+        /// Full match is "[[Title]]" by construction of the regex that
+        /// produced these ranges — stripping the two-character brackets off
+        /// each end and trimming is the same title extraction
+        /// MarkdownStyler.style's own wikilink loop does with its capture
+        /// group, just without a capture group to hand it here.
+        private func wikilinkTitle(forFullRange range: NSRange, in text: String) -> String {
+            let matched = (text as NSString).substring(with: range)
+            return String(matched.dropFirst(2).dropLast(2)).trimmingCharacters(in: .whitespaces)
+        }
+
+        @MainActor
+        private func configurePreviewController(store: NoteStore) {
+            previewController.configure(
+                store: store,
+                theme: parent.theme,
+                requireModifierForLinkClick: parent.requireModifierForLinkClick,
+                showDuePill: parent.showDuePill,
+                showTagsInTitleBar: parent.showTagsInTitleBar,
+                currentlyOpenNoteID: parent.currentNoteID,
+                onNavigate: { [weak self] title in self?.parent.onNavigate(title) }
+            )
+        }
+
+        /// The only trigger for the preview popover — an explicit, deliberate
+        /// option-click (see makeNSView's onOptionClickPoint wiring, gated
+        /// in HoverAwareTextView.mouseDown behind the option modifier being
+        /// held), never hover. An earlier hover-triggered version could leave
+        /// a popover open exactly when the user tried a normal ⌘-click
+        /// through it, which is what caused a "no application set to open
+        /// the URL" failure — option-click has nothing else bound to it, so
+        /// it never competes with ⌘-click-to-navigate at all.
+        @MainActor
+        func handleOptionClick(at point: NSPoint) -> Bool {
+            guard parent.linkPreviewTrigger == .optionClick, let store = parent.store, let textView else { return false }
+            let charIndex = textView.characterIndexForInsertion(at: point)
+            let text = textView.string
+            guard let hit = wikiLinkRanges(for: text).first(where: { NSLocationInRange(charIndex, $0) }) else { return false }
+            configurePreviewController(store: store)
+            let title = wikilinkTitle(forFullRange: hit, in: text)
+            let requireModifier = parent.requireModifierForLinkClick
+            previewController.show(
+                title: title,
+                anchorRect: screenRect(for: hit, in: textView),
+                in: textView,
+                shouldNavigateOnOutsideClick: { [textView] clickPoint, modifiers in
+                    let clickCharIndex = textView.characterIndexForInsertion(at: clickPoint)
+                    let modifierSatisfied = !requireModifier || modifiers.contains(.command)
+                    return NSLocationInRange(clickCharIndex, hit) && modifierSatisfied
+                }
+            )
+            return true
+        }
+
+        /// Purely the bracket-reveal-on-hover effect ("[[" / "]]" becoming
+        /// visible while the mouse sits over a wikilink) — unrelated to and
+        /// unaffected by the preview popover, which option-click alone
+        /// triggers (see handleOptionClick above).
         @MainActor
         func handleHover(at point: NSPoint) {
             guard let textView else { return }
@@ -1228,6 +1347,22 @@ struct MarkdownTextView: NSViewRepresentable {
             if let previous = hoveredLinkRange { noteRestyleInvalidation(previous) }
             hoveredLinkRange = nil
             restyle(textView)
+        }
+
+        /// The on-screen rect (in `textView`'s own coordinate space, which
+        /// is what NSPopover.show(relativeTo:of:) expects) of a character
+        /// range — same glyph-bounds-plus-container-origin approach as
+        /// checkboxHitRects()/footnoteHitRects() below, just for a wikilink
+        /// range instead of a checkbox/footnote glyph.
+        @MainActor
+        private func screenRect(for range: NSRange, in textView: NSTextView) -> NSRect {
+            guard let layoutManager = textView.layoutManager, let textContainer = textView.textContainer else { return .zero }
+            let origin = textView.textContainerOrigin
+            let glyphRange = layoutManager.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
+            var rect = layoutManager.boundingRect(forGlyphRange: glyphRange, in: textContainer)
+            rect.origin.x += origin.x
+            rect.origin.y += origin.y
+            return rect
         }
 
         /// Toggles a task-list checkbox if the click landed on (or near) one.
