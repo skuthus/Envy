@@ -52,7 +52,9 @@ struct MarkupHelpView: View {
         ]),
         Group(title: "Due Dates", entries: [
             Entry(syntax: "@04-16-26", description: "Due date — also accepts \"@2026-04-16\". Shows as a colored pill (urgency-tinted) in the editor, title bar, and note list. Search \"due:today\", \"due:overdue\", \"due:week\", an exact date, or a bare \"due:\" for any due date at all. Sort the note list by it from the column headers."),
-            Entry(syntax: "@monday", description: "A day name instead of a date — always means the next occurrence of that day. Any day of the week works the same way."),
+            Entry(syntax: "@today", description: "Due today, literally."),
+            Entry(syntax: "@monday", description: "A day name instead of a date — always means the next occurrence of that day, even if today already is one. Any day of the week works the same way."),
+            Entry(syntax: "click a due date", description: "Toggles it crossed out — a crossed-out due date no longer shows a pill or matches \"due:\" searches. Click again to restore it. Checking off a task-list box whose text contains a due date does this automatically."),
         ]),
         Group(title: "Emoji", entries: [
             Entry(syntax: ":smile:", description: "Replaced with 😄 as soon as you finish typing it — the note just contains the emoji itself"),

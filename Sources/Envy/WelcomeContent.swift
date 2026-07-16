@@ -91,11 +91,13 @@ enum WelcomeContent {
 
     Envy picks it up automatically — no separate field to fill in. It shows as a colored pill wherever the note appears (the editor, the title bar, the note list), colored by urgency: not-yet-due, due-soon, and overdue each get their own color from your theme.
 
-    A day name works too, like `@monday` — it always means the *next* Monday, even if today already is one. Every day of the week works the same way.
+    A day name works too, like `@monday` — it always means the *next* Monday, even if today already is one. Every day of the week works the same way. Write `@today` for literally today.
 
     Search `due:today`, `due:tomorrow`, `due:yesterday`, `due:week`, `due:nextweek`, `due:month`, `due:overdue` (or `due:past`), or `due:future` for the matching bucket, an exact date the same way `date:` accepts one, or a bare `due:` for "has a due date at all, whenever it is."
 
     Sort the note list by due date from the column headers, same as Name or Date. Settings → General can turn the due-date sort option and the title bar pill off independently, if you'd rather not see either.
+
+    Done with it? Click the due date itself to cross it out — it stops counting as a due date the moment it's crossed out, so the pill disappears and `due:` searches stop matching it. Click it again to bring it back. Checking off a task-list box with a due date in its text does the same thing automatically, no click needed: `- [x] Ship the report @04-16-26` is retired the instant it's checked, and comes back the moment you uncheck it.
 
     ## 🏷️ Tags
 

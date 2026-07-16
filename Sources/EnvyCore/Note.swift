@@ -100,18 +100,42 @@ private final class NoteDerivedCache: @unchecked Sendable {
     }
 
     // Backs the "due:" search operator and the due-date chip/color in the
-    // editor. Only the first "@..." token found is honored — a due date is
-    // a single per-note property, not a list. Either an absolute date
-    // ("@04-16-26" / "@2026-04-16") or a day name ("@monday"), which always
-    // means the *next* occurrence of that day — see
-    // NoteStore.resolveDueToken for why that's fine to resolve fresh every
-    // time despite the general rule against live relative resolution
-    // (explained there): everything else (arbitrary phrases like "today")
-    // still belongs in the editor as a type-time transform that freezes
-    // into a literal absolute date before it's ever saved, not here.
+    // editor. Only the first ACTIVE "@..." token found is honored — a due
+    // date is a single per-note property, not a list — where "active"
+    // means neither of two ways a due token gets retired:
+    // - crossed out: a token anywhere inside a "~~...~~" span, the same
+    //   way marking a task done removes it from view. Broader than "did a
+    //   click specifically wrap just this token" (that exact shape is
+    //   MarkdownStyler.dueTokenRanges' own, narrower concern, for toggling
+    //   one token's wrap on click) — crossing out a whole sentence that
+    //   happens to contain a due token should retire it too.
+    // - on a checked task-list line: "- [x] Ship the report @04-16-26"
+    //   retires the due token without any "~~" ever being written to
+    //   disk — checking a box is a rendering-time overlay in
+    //   MarkdownStyler, not a text edit, so there's no strikethrough
+    //   markup for this property to see. Recognized directly here instead
+    //   via checkedTaskLineRegex, matching the same "[x]"/"[X]" shape
+    //   MarkdownStyler's own taskListRegex checks, restricted to the
+    //   checked state and the token's whole line (a due token can appear
+    //   anywhere after the checkbox marker, not just right after it).
+    // Each token is either an absolute date ("@04-16-26" / "@2026-04-16"),
+    // "@today", or a day name ("@monday"), which always means the *next*
+    // occurrence of that day — see NoteStore.resolveDueToken for why
+    // that's fine to resolve fresh every time despite the general rule
+    // against live relative resolution (explained there): everything else
+    // (arbitrary phrases like "next week") still belongs in the editor as
+    // a type-time transform that freezes into a literal absolute date
+    // before it's ever saved, not here.
     var due: Date? {
         memoized(&_due) {
-            guard let match = Note.dueRegex.firstMatch(in: content, range: NSRange(content.startIndex..., in: content)),
+            let fullRange = NSRange(content.startIndex..., in: content)
+            let strikethroughRanges = Note.strikethroughRegex.matches(in: content, range: fullRange).map(\.range)
+            let checkedTaskLineRanges = Note.checkedTaskLineRegex.matches(in: content, range: fullRange).map(\.range)
+            func isRetired(_ range: NSRange) -> Bool {
+                strikethroughRanges.contains { NSIntersectionRange($0, range).length > 0 }
+                    || checkedTaskLineRanges.contains { NSIntersectionRange($0, range).length > 0 }
+            }
+            guard let match = Note.dueRegex.matches(in: content, range: fullRange).first(where: { !isRetired($0.range) }),
                   let range = Range(match.range(at: 1), in: content) else { return nil }
             let token = String(content[range])
             return NoteStore.resolveDueToken(token)
@@ -241,8 +265,25 @@ public struct Note: Identifiable, Sendable {
     /// returns nil) just means no due date, not a crash — same forgiving
     /// failure mode as a malformed tag or wiki-link.
     fileprivate static let dueRegex = try! NSRegularExpression(
-        pattern: #"(?<![\w])@(monday|tuesday|wednesday|thursday|friday|saturday|sunday|[0-9/-]+)(?!\w)"#,
+        pattern: #"(?<![\w])@(today|monday|tuesday|wednesday|thursday|friday|saturday|sunday|[0-9/-]+)(?!\w)"#,
         options: [.caseInsensitive]
+    )
+
+    /// Matches MarkdownStyler's own strikethroughRegex in the Envy module
+    /// exactly (duplicated rather than shared — that one's private to its
+    /// own target, same reasoning as tagRegex/dueRegex above) — used only
+    /// to tell whether a due token falls inside a crossed-out span.
+    fileprivate static let strikethroughRegex = try! NSRegularExpression(pattern: #"~~([^~\n]+)~~"#)
+
+    /// A whole checked task-list line, start to end — same "[x]"/"[X]"
+    /// shape MarkdownStyler's own taskListRegex checks, restricted to the
+    /// checked state and capturing the full line (not just the marker)
+    /// since a due token can appear anywhere in the line's remaining text,
+    /// not necessarily right after the checkbox. Used only to tell whether
+    /// a due token sits on an already-completed task line — see `due`
+    /// above for why that retires it the same as being crossed out.
+    fileprivate static let checkedTaskLineRegex = try! NSRegularExpression(
+        pattern: #"^\s*(?:[-*+][ \t]+)?\[[xX]\][ \t]+.*$"#, options: [.anchorsMatchLines]
     )
 
     /// The name of the folder this note directly lives in — backs the

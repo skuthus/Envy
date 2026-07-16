@@ -948,18 +948,24 @@ public final class NoteStore: ObservableObject {
         return calendar.date(byAdding: .day, value: offset, to: today) ?? today
     }
 
-    /// Resolves one "@..." due token — either a day name ("@monday",
-    /// always the *next* occurrence of that day, per nextDate(forWeekday:)
-    /// above) or an absolute date in parseFlexibleDate's own accepted
-    /// formats — to the date it actually means right now. Called fresh
-    /// each time a note's derived-value cache is rebuilt (a fresh disk
-    /// read constructs a fresh Note, and with it a fresh cache — see
-    /// NoteDerivedCache's own comments), so a day-name token's answer
-    /// tracks the real calendar instead of freezing at whatever day
+    /// Resolves one "@..." due token — "@today" (literally today, the one
+    /// case that isn't "next" anything), a day name ("@monday", always the
+    /// *next* occurrence of that day, per nextDate(forWeekday:) above —
+    /// naming today's own weekday still means a week out, not today; write
+    /// "@today" for that), or an absolute date in parseFlexibleDate's own
+    /// accepted formats — to the date it actually means right now. Called
+    /// fresh each time a note's derived-value cache is rebuilt (a fresh
+    /// disk read constructs a fresh Note, and with it a fresh cache — see
+    /// NoteDerivedCache's own comments), so "@today"/a day-name token's
+    /// answer tracks the real calendar instead of freezing at whatever day
     /// happened to be current the first time it was read; an absolute
     /// date token, by construction, never depends on "when" at all.
     nonisolated public static func resolveDueToken(_ token: String) -> Date? {
-        if let weekday = weekdayNumbersByName[token.lowercased()] {
+        let lowered = token.lowercased()
+        if lowered == "today" {
+            return Calendar.current.startOfDay(for: Date())
+        }
+        if let weekday = weekdayNumbersByName[lowered] {
             return nextDate(forWeekday: weekday, after: Date())
         }
         guard let components = parseFlexibleDate(token) else { return nil }

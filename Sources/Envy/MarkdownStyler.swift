@@ -44,7 +44,7 @@ enum MarkdownStyler {
     // neither a day name nor a date. Same duplication reasoning as
     // hashtagRegex above (that one's private to its own target).
     private static let dueRegex = try! NSRegularExpression(
-        pattern: #"(?<![\w])@(monday|tuesday|wednesday|thursday|friday|saturday|sunday|[0-9/-]+)(?!\w)"#,
+        pattern: #"(?<![\w])@(today|monday|tuesday|wednesday|thursday|friday|saturday|sunday|[0-9/-]+)(?!\w)"#,
         options: [.caseInsensitive]
     )
 
@@ -92,6 +92,30 @@ enum MarkdownStyler {
             let toggleRange = NSRange(location: checkboxRange.location + 1, length: 1)
             let checkboxText = (text as NSString).substring(with: checkboxRange)
             return (glyphRange, toggleRange, checkboxText.lowercased() == "[x]")
+        }
+    }
+
+    /// Every due token's own range (just "@..." — never the surrounding
+    /// "~~" if any) paired with whether it's currently wrapped tightly in
+    /// its own "~~@token~~" (tildes immediately adjacent, nothing else
+    /// inside) — that specific shape is exactly what clicking a due token
+    /// toggles, in MarkdownTextView's handleClick. Deliberately narrower
+    /// than "is this token anywhere inside a strikethrough span" (which is
+    /// what Note.due in EnvyCore checks, to also recognize a due date
+    /// crossed out as part of a longer struck sentence) — a click can only
+    /// meaningfully add or remove a wrap it put there itself.
+    static func dueTokenRanges(in text: String) -> [(range: NSRange, isCrossedOut: Bool)] {
+        let nsText = text as NSString
+        let full = NSRange(location: 0, length: nsText.length)
+        let tildeLength = 2
+        return dueRegex.matches(in: text, range: full).map { match in
+            let range = match.range
+            let hasLeadingTildes = range.location >= tildeLength
+                && nsText.substring(with: NSRange(location: range.location - tildeLength, length: tildeLength)) == "~~"
+            let trailingStart = range.location + range.length
+            let hasTrailingTildes = trailingStart + tildeLength <= nsText.length
+                && nsText.substring(with: NSRange(location: trailingStart, length: tildeLength)) == "~~"
+            return (range, hasLeadingTildes && hasTrailingTildes)
         }
     }
 
@@ -325,6 +349,19 @@ enum MarkdownStyler {
             claimed.contains { NSIntersectionRange($0, range).length > 0 }
         }
 
+        // Computed once up front (rather than where strikethrough is
+        // actually styled, further down) since the due-coloring loop below
+        // also needs it — a struck-out due token should read as plain,
+        // completed text, not urgency-colored text with a line through it,
+        // matching how a checked task's own content already drops its
+        // normal styling. Reused at the strikethrough loop itself too,
+        // rather than re-running the same regex over the same range twice.
+        let strikethroughMatches = strikethroughRegex.matches(in: text, range: full)
+        let strikethroughRanges = strikethroughMatches.map(\.range)
+        func isCrossedOut(_ range: NSRange) -> Bool {
+            strikethroughRanges.contains { NSIntersectionRange($0, range).length > 0 }
+        }
+
         for match in fencedCodeBlockRegex.matches(in: text, range: full) {
             textStorage.addAttribute(.font, value: monoFont, range: match.range)
             textStorage.addAttribute(.backgroundColor, value: codeBackground, range: match.range)
@@ -353,7 +390,7 @@ enum MarkdownStyler {
         // of this file) but falls back to the plain dueColor, since there's
         // no date to classify.
         for match in dueRegex.matches(in: text, range: full) {
-            guard !isClaimed(match.range) else { continue }
+            guard !isClaimed(match.range), !isCrossedOut(match.range) else { continue }
             let tokenRange = match.range(at: 1)
             let token = (text as NSString).substring(with: tokenRange)
             let color: NSColor
@@ -584,7 +621,7 @@ enum MarkdownStyler {
             applyEmphasis(match: match, textStorage: textStorage, text: text, baseFont: baseFont, markerColor: markerColor, bold: false, italic: true, revealed: touches(match.range, cursorSelection))
         }
 
-        for match in strikethroughRegex.matches(in: text, range: full) {
+        for match in strikethroughMatches {
             guard !isClaimed(match.range) else { continue }
             let contentRange = match.range(at: 1)
             let leadingMarker = NSRange(location: match.range.location, length: 2)

@@ -218,11 +218,13 @@ struct MarkdownTextView: NSViewRepresentable {
             coordinator?.handleOptionClick(at: point) ?? false
         }
         textView.isOverClickTarget = { [weak coordinator = context.coordinator] point in
-            // Plain-text mode never renders checkboxes/footnotes as anything
-            // but literal characters, so there's nothing there to click.
+            // Plain-text mode never renders checkboxes/footnotes/due tokens
+            // as anything but literal characters, so there's nothing there
+            // to click.
             guard let coordinator, coordinator.parent.plainTextMode == false else { return false }
             return coordinator.checkboxHitRects().contains(where: { $0.contains(point) })
                 || coordinator.footnoteHitRects().contains(where: { $0.contains(point) })
+                || coordinator.dueTokenHitRects().contains(where: { $0.contains(point) })
         }
 
         let scrollView = NSScrollView()
@@ -1393,6 +1395,28 @@ struct MarkdownTextView: NSViewRepresentable {
                 return true
             }
 
+            if let due = dueTokenAndRect(at: point)?.due {
+                let nsText = textView.string as NSString
+                if due.isCrossedOut {
+                    // Remove exactly the two tildes on each side that made
+                    // it isCrossedOut in the first place — replacing the
+                    // whole "~~@token~~" span with just the bare token in
+                    // one edit, rather than two separate deletions either
+                    // side of it.
+                    let wrappedRange = NSRange(location: due.range.location - 2, length: due.range.length + 4)
+                    let token = nsText.substring(with: due.range)
+                    guard textView.shouldChangeText(in: wrappedRange, replacementString: token) else { return false }
+                    textView.textStorage?.replaceCharacters(in: wrappedRange, with: token)
+                } else {
+                    let token = nsText.substring(with: due.range)
+                    let wrapped = "~~" + token + "~~"
+                    guard textView.shouldChangeText(in: due.range, replacementString: wrapped) else { return false }
+                    textView.textStorage?.replaceCharacters(in: due.range, with: wrapped)
+                }
+                textView.didChangeText()
+                return true
+            }
+
             return false
         }
 
@@ -1477,6 +1501,48 @@ struct MarkdownTextView: NSViewRepresentable {
                 }
             }
             return best.map { ($0.footnote, $0.rect) }
+        }
+
+        /// Padded on-screen rect for every due token, same reasoning as
+        /// checkboxHitRects()/footnoteHitRects() — this is a small inline
+        /// span, and a click needs some margin around its exact glyphs to
+        /// land reliably.
+        @MainActor
+        func dueTokenHitRects() -> [NSRect] {
+            guard let textView, let layoutManager = textView.layoutManager, let textContainer = textView.textContainer else { return [] }
+            let origin = textView.textContainerOrigin
+            let padding: CGFloat = 4
+            return MarkdownStyler.dueTokenRanges(in: textView.string).map { due in
+                let glyphRange = layoutManager.glyphRange(forCharacterRange: due.range, actualCharacterRange: nil)
+                var rect = layoutManager.boundingRect(forGlyphRange: glyphRange, in: textContainer)
+                rect.origin.x += origin.x
+                rect.origin.y += origin.y
+                return rect.insetBy(dx: -padding, dy: -padding)
+            }
+        }
+
+        /// Closest due token to the click point among all whose padded rect
+        /// contains it — same reasoning as checkboxAndRect(at:)/
+        /// footnoteAndRect(at:).
+        @MainActor
+        private func dueTokenAndRect(at point: NSPoint) -> (due: (range: NSRange, isCrossedOut: Bool), rect: NSRect)? {
+            guard let textView, let layoutManager = textView.layoutManager, let textContainer = textView.textContainer else { return nil }
+            let origin = textView.textContainerOrigin
+            let padding: CGFloat = 4
+            var best: (due: (range: NSRange, isCrossedOut: Bool), rect: NSRect, distance: CGFloat)?
+            for due in MarkdownStyler.dueTokenRanges(in: textView.string) {
+                let glyphRange = layoutManager.glyphRange(forCharacterRange: due.range, actualCharacterRange: nil)
+                var rect = layoutManager.boundingRect(forGlyphRange: glyphRange, in: textContainer)
+                rect.origin.x += origin.x
+                rect.origin.y += origin.y
+                let padded = rect.insetBy(dx: -padding, dy: -padding)
+                guard padded.contains(point) else { continue }
+                let distance = hypot(point.x - rect.midX, point.y - rect.midY)
+                if best == nil || distance < best!.distance {
+                    best = (due, padded, distance)
+                }
+            }
+            return best.map { ($0.due, $0.rect) }
         }
 
         @MainActor

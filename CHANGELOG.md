@@ -5,7 +5,9 @@ Also published at [envynote.app/changelog.html](https://envynote.app/changelog.h
 ## 1.1.9 — unreleased
 
 - Simplified the due-date syntax: write `@04-16-26` instead of `due@04-16-26`. **Existing `due@` tokens in your notes will no longer be recognized** — re-typing them as `@date` picks them back up.
-- Added day names as a due-date shorthand: `@monday` (or any day of the week) always means the *next* occurrence of that day — naming today's own weekday still resolves a full week out, not to today.
+- Added day names as a due-date shorthand: `@monday` (or any day of the week) always means the *next* occurrence of that day — naming today's own weekday still resolves a full week out, not to today. `@today` means literally today.
+- Click a due date to cross it out — a crossed-out due date no longer shows a pill or matches `due:` searches. Click again to bring it back.
+- Checking off a task-list box whose text contains a due date retires it automatically, the same as crossing it out by hand — no `~~` needed. Unchecking the box brings it back.
 
 ## 1.1.8 — July 15, 2026
 

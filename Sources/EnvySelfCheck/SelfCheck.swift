@@ -505,7 +505,74 @@ struct SelfCheck {
             var partialWord = Note(id: "day-partial", url: URL(fileURLWithPath: "/tmp/day-partial.md"), content: "", modifiedDate: Date())
             partialWord.content = "@mondayish isn't a real day name"
             check("a day name followed by more letters doesn't partially match", partialWord.due == nil)
+
+            // "@today" is the one token that isn't "next" anything —
+            // literally today, distinct from naming today's own weekday
+            // (tested above), which deliberately means a week out instead.
+            var today_ = Note(id: "day-today", url: URL(fileURLWithPath: "/tmp/day-today.md"), content: "", modifiedDate: Date())
+            today_.content = "Follow up @today"
+            check("@today resolves to today, not a week out", today_.due == today)
+
+            var todayUpper = Note(id: "day-today-upper", url: URL(fileURLWithPath: "/tmp/day-today-upper.md"), content: "", modifiedDate: Date())
+            todayUpper.content = "@TODAY"
+            check("@TODAY matches case-insensitively", todayUpper.due == today)
         }
+
+        // noteDueIgnoresCrossedOutTokens
+        do {
+            let expected = Calendar.current.date(from: DateComponents(year: 2026, month: 4, day: 16))
+
+            var crossedOut = Note(id: "due-crossed", url: URL(fileURLWithPath: "/tmp/due-crossed.md"), content: "", modifiedDate: Date())
+            crossedOut.content = "Ship the report ~~@04-16-26~~ done already"
+            check("a due token tightly wrapped in ~~ isn't recognized as a due date", crossedOut.due == nil)
+
+            var crossedOutSentence = Note(id: "due-crossed-sentence", url: URL(fileURLWithPath: "/tmp/due-crossed-sentence.md"), content: "", modifiedDate: Date())
+            crossedOutSentence.content = "~~Ship the report @04-16-26~~"
+            check("a due token crossed out as part of a longer struck sentence isn't recognized either", crossedOutSentence.due == nil)
+
+            var notCrossedOut = Note(id: "due-not-crossed", url: URL(fileURLWithPath: "/tmp/due-not-crossed.md"), content: "", modifiedDate: Date())
+            notCrossedOut.content = "Ship the report @04-16-26, not done yet"
+            check("an ordinary (not crossed out) due token still resolves normally", notCrossedOut.due == expected)
+
+            // The first token is crossed out, but a second, later one isn't
+            // — the second should still be picked up rather than the whole
+            // note reading as having no due date at all.
+            var secondTokenActive = Note(id: "due-second-active", url: URL(fileURLWithPath: "/tmp/due-second-active.md"), content: "", modifiedDate: Date())
+            secondTokenActive.content = "~~@01-01-26~~ moved to @04-16-26"
+            check("a later, non-crossed-out token is used when the first is crossed out", secondTokenActive.due == expected)
+        }
+
+        // noteDueIgnoresTokensOnACheckedTaskLine
+        do {
+            let expected = Calendar.current.date(from: DateComponents(year: 2026, month: 4, day: 16))
+
+            var checkedWithDash = Note(id: "due-checked-dash", url: URL(fileURLWithPath: "/tmp/due-checked-dash.md"), content: "", modifiedDate: Date())
+            checkedWithDash.content = "- [x] Ship the report @04-16-26"
+            check("a due token on a checked \"- [x]\" line isn't recognized, no ~~ needed", checkedWithDash.due == nil)
+
+            var checkedNoDash = Note(id: "due-checked-no-dash", url: URL(fileURLWithPath: "/tmp/due-checked-no-dash.md"), content: "", modifiedDate: Date())
+            checkedNoDash.content = "[x] Ship the report @04-16-26"
+            check("a due token on a checked \"[x]\" line (no leading dash) isn't recognized either", checkedNoDash.due == nil)
+
+            var checkedUppercase = Note(id: "due-checked-upper", url: URL(fileURLWithPath: "/tmp/due-checked-upper.md"), content: "", modifiedDate: Date())
+            checkedUppercase.content = "- [X] Ship the report @04-16-26"
+            check("\"[X]\" (uppercase) counts as checked too", checkedUppercase.due == nil)
+
+            var uncheckedWithDue = Note(id: "due-unchecked", url: URL(fileURLWithPath: "/tmp/due-unchecked.md"), content: "", modifiedDate: Date())
+            uncheckedWithDue.content = "- [ ] Ship the report @04-16-26"
+            check("an unchecked task's due token still resolves normally", uncheckedWithDue.due == expected)
+
+            // Completing one task shouldn't blind the whole note to a due
+            // date that lives on a different, unrelated line.
+            var otherLineActive = Note(id: "due-other-line", url: URL(fileURLWithPath: "/tmp/due-other-line.md"), content: "", modifiedDate: Date())
+            otherLineActive.content = "- [x] Unrelated finished task\nFollow up @04-16-26"
+            check("a due token on a plain (non-task) line still resolves even when another line is checked", otherLineActive.due == expected)
+        }
+        // MarkdownStyler.dueTokenRanges (the click-toggle hit-testing/state
+        // logic) lives in the Envy module, not EnvyCore, and isn't reachable
+        // from this target — covered instead by manual testing in
+        // EnvyTest.app: wrap/unwrap via click, and confirm Note.due (tested
+        // above) agrees with what the pill/search show.
 
         // filteredDueQuerySupportsTodayOverdueAndWeekBuckets
         do {
