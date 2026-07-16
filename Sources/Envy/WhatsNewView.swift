@@ -28,12 +28,12 @@ struct WhatsNewView: View {
             }
 
             VStack(spacing: 10) {
-                Image(systemName: "arrow.up.right.and.arrow.down.left.rectangle")
+                Image(systemName: "checkmark.circle")
                     .font(.system(size: 44))
                     .foregroundStyle(EnvyLogoView.irisColor)
-                Text("Peek at Linked Notes")
+                Text("Simpler Due Dates")
                     .font(.title3.bold())
-                Text("Option-click any [[wikilink]] — in the editor or the backlinks list — to open a floating preview you can click straight into and edit, no navigating away required. Also new: due dates. Write @04-16-26 or @monday (always the next Monday) in a note, search it with due:today, due:week, due:overdue, and more, sort your notes by due date, and see it colored by urgency.")
+                Text("Due dates are now just @04-16-26 (was due@04-16-26 — retype any old ones). Day names work too: @monday always means the next Monday, and @today means today. Click a due date to cross it out — it stops counting the instant it's crossed, no more pill, no more due: match — or just check off a task-list box that has one, which does the same thing automatically.")
                     .font(.body)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
