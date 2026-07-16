@@ -12,7 +12,6 @@ struct NoteEditorView: View {
     var theme: Theme
     var requireModifierForLinkClick: Bool
     var searchQuery: String
-    var showTitleHeader: Bool
     var showTagsInTitleBar: Bool
     var showDuePill: Bool
     var linkPreviewTrigger: LinkPreviewTrigger
@@ -29,6 +28,14 @@ struct NoteEditorView: View {
     @State private var saveTask: Task<Void, Never>?
     @State private var titleText: String
     @FocusState private var isTitleFocused: Bool
+    /// Whether the title is currently showing as an editable TextField —
+    /// otherwise it's the hover-scrollable label below. Tapping the label
+    /// switches to editing; losing focus switches back. Same shape as
+    /// PinnedNotePopoverView's own title, needed for the same reason: a
+    /// live NSTextField can't be given the custom hover-scroll rendering
+    /// HoverScrollingText provides, so showing one requires swapping the
+    /// live field out entirely rather than layering on top of it.
+    @State private var isEditingTitle = false
     /// The content value this view last knew to be in sync with the store
     /// (either what we saved, or what we last pulled in from an external
     /// change). Comparing `content` against this — rather than directly
@@ -64,7 +71,6 @@ struct NoteEditorView: View {
         theme: Theme,
         requireModifierForLinkClick: Bool,
         searchQuery: String,
-        showTitleHeader: Bool,
         showTagsInTitleBar: Bool,
         showDuePill: Bool,
         linkPreviewTrigger: LinkPreviewTrigger,
@@ -82,7 +88,6 @@ struct NoteEditorView: View {
         self.theme = theme
         self.requireModifierForLinkClick = requireModifierForLinkClick
         self.searchQuery = searchQuery
-        self.showTitleHeader = showTitleHeader
         self.showTagsInTitleBar = showTagsInTitleBar
         self.showDuePill = showDuePill
         self.linkPreviewTrigger = linkPreviewTrigger
@@ -103,10 +108,8 @@ struct NoteEditorView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            if showTitleHeader {
-                header
-                Divider()
-            }
+            header
+            Divider()
             MarkdownTextView(
                 text: $content,
                 onNavigate: onNavigate,
@@ -189,17 +192,34 @@ struct NoteEditorView: View {
 
     private var header: some View {
         HStack {
-            TextField("Title", text: $titleText)
-                .font(.headline)
-                .textFieldStyle(.plain)
-                .lineLimit(1)
-                .focused($isTitleFocused)
-                .onSubmit { commitRename() }
-                .onChange(of: isTitleFocused) { _, focused in
-                    if !focused { commitRename() }
+            Group {
+                if isEditingTitle {
+                    TextField("Title", text: $titleText)
+                        .font(.headline)
+                        .textFieldStyle(.plain)
+                        .lineLimit(1)
+                        .focused($isTitleFocused)
+                        .onSubmit { commitRename(); isEditingTitle = false }
+                        .onChange(of: isTitleFocused) { _, focused in
+                            guard !focused else { return }
+                            commitRename()
+                            isEditingTitle = false
+                        }
+                        .onAppear { isTitleFocused = true }
+                } else {
+                    // No separate Spacer() anymore — this label's own
+                    // .frame(maxWidth: .infinity) below claims that role
+                    // directly, which is also exactly the width
+                    // HoverScrollingText needs to know to decide whether it
+                    // has to scroll at all.
+                    HoverScrollingText(text: titleText, font: .headline)
+                        .contentShape(Rectangle())
+                        .onTapGesture { isEditingTitle = true }
                 }
-                .foregroundStyle(theme.noteTitleBarTextColor?.color ?? Color.primary)
-            Spacer()
+            }
+            .frame(height: 20, alignment: .leading)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .foregroundStyle(theme.noteTitleBarTextColor?.color ?? Color.primary)
             HStack(spacing: 6) {
                 if showDuePill, let note, let due = note.due {
                     // "+N" once there's more than one active due date —

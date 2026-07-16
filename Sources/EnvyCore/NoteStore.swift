@@ -732,8 +732,8 @@ public final class NoteStore: ObservableObject {
     }
 
     /// One comma-separated group's own self-contained search — operators
-    /// (tag:/date:/todo:), exclusions (-word, -tag:x), and free terms
-    /// all combine with AND semantics *within* a group,
+    /// (tag:/date:/due:/todo:), exclusions (-word, -tag:x, -due:x, -todo:),
+    /// and free terms all combine with AND semantics *within* a group,
     /// same as the whole query used to before groups existed. Returns
     /// (Note, score) pairs for whatever survives every filter in this group.
     nonisolated private static func matched(in notes: [Note], forGroup group: String) -> [(Note, Int)] {
@@ -743,23 +743,26 @@ public final class NoteStore: ObservableObject {
         var tagFilter: String?
         var excludeTags: [String] = []
         var dateFilter: (start: Date, end: Date)?
-        var dueFilter: (start: Date, end: Date)?
-        var isDueOverdueOnly = false
-        var isDueFutureOnly = false
-        var isDueAnyOnly = false
+        var dueCondition: DueCondition?
+        var excludeDueCondition: DueCondition?
         var isDueInvalid = false
         var dueTokenSeen = false
+        var excludeDueTokenSeen = false
         var isTodoOnly = false
+        var isTodoExcluded = false
         var excludeTerms: [String] = []
         var freeTerms: [String] = []
 
-        // Only the first tag:/date: token is honored if more than one of
-        // the same kind appears — combining multiple has ambiguous
-        // AND-vs-OR semantics not worth guessing at (that's what the comma
-        // groups above are for). Every "-"-prefixed exclusion is honored,
-        // though — there's no such ambiguity in excluding more than one thing.
+        // Only the first tag:/date:/due: token (of each polarity) is
+        // honored if more than one of the same kind appears — combining
+        // multiple has ambiguous AND-vs-OR semantics not worth guessing at
+        // (that's what the comma groups above are for). Every "-"-prefixed
+        // exclusion is honored, though — there's no such ambiguity in
+        // excluding more than one thing.
         for token in tokens {
-            if token == "todo:" {
+            if token == "-todo:" {
+                isTodoExcluded = true
+            } else if token == "todo:" {
                 isTodoOnly = true
             } else if token.hasPrefix("-tag:") {
                 let name = String(token.dropFirst("-tag:".count))
@@ -773,14 +776,17 @@ public final class NoteStore: ObservableObject {
                 if dateFilter == nil {
                     dateFilter = Self.dateRange(for: String(token.dropFirst("date:".count)))
                 }
+            } else if token.hasPrefix("-due:") {
+                if !excludeDueTokenSeen {
+                    excludeDueTokenSeen = true
+                    let value = String(token.dropFirst("-due:".count))
+                    if let condition = Self.dueCondition(for: value) {
+                        excludeDueCondition = condition
+                    } else {
+                        isDueInvalid = true
+                    }
+                }
             } else if token.hasPrefix("due:") {
-                // "overdue" isn't a [start, end) window like the other
-                // buckets — it's "due before today," open-ended — so it's
-                // its own flag rather than something dueRange(for:) could
-                // express. A bare "due:" (no value) means "has a due date
-                // at all" — same shape as "todo:" meaning "has an unchecked
-                // task."
-                //
                 // Unlike date:, an unrecognized value here (not empty, not
                 // "overdue", not a bucket, not a parseable date — "due:cats")
                 // means "match nothing," not "no filter, show everything."
@@ -789,27 +795,16 @@ public final class NoteStore: ObservableObject {
                 // into a confusing empty list — but "due:cats" isn't a typo
                 // of a real bucket, it's simply invalid, and silently
                 // matching every note (due or not) hides that rather than
-                // surfacing it.
+                // surfacing it. Same reasoning applies to -due:cats above —
+                // an invalid value is invalid regardless of which polarity
+                // asked for it, so either one flags the whole group broken
+                // rather than inventing a separate meaning for a negated
+                // invalid condition.
                 if !dueTokenSeen {
                     dueTokenSeen = true
                     let value = String(token.dropFirst("due:".count))
-                    if value.isEmpty {
-                        isDueAnyOnly = true
-                    } else if value == "overdue" || value == "past" {
-                        // "past" is a plain alias for "overdue" — same
-                        // meaning, different word for anyone who reaches
-                        // for past/future as the natural opposite pair
-                        // rather than overdue/future.
-                        isDueOverdueOnly = true
-                    } else if value == "future" {
-                        // The exact complement of "overdue" — due today or
-                        // later, same threshold, flipped comparison. Like
-                        // overdue, a note with no due date matches neither:
-                        // "future" isn't "undated," it's "dated and not
-                        // yet due."
-                        isDueFutureOnly = true
-                    } else if let range = Self.dueRange(for: value) {
-                        dueFilter = range
+                    if let condition = Self.dueCondition(for: value) {
+                        dueCondition = condition
                     } else {
                         isDueInvalid = true
                     }
@@ -821,9 +816,9 @@ public final class NoteStore: ObservableObject {
             }
         }
 
-        let hasOperator = isTodoOnly || tagFilter != nil || !excludeTags.isEmpty
+        let hasOperator = isTodoOnly || isTodoExcluded || tagFilter != nil || !excludeTags.isEmpty
             || dateFilter != nil
-            || dueFilter != nil || isDueOverdueOnly || isDueFutureOnly || isDueAnyOnly || isDueInvalid
+            || dueCondition != nil || excludeDueCondition != nil || isDueInvalid
 
         // Computed once for the whole group rather than per-note — same
         // reasoning as dateRange's own `now`, just needing today's start
@@ -832,14 +827,13 @@ public final class NoteStore: ObservableObject {
 
         return notes.compactMap { note -> (Note, Int)? in
             if isTodoOnly, !note.hasUncheckedTask { return nil }
+            if isTodoExcluded, note.hasUncheckedTask { return nil }
             if let tagFilter, !note.tags.contains(where: { Self.fastContains($0, tagFilter) }) { return nil }
             if !excludeTags.isEmpty, note.tags.contains(where: { tag in excludeTags.contains { Self.fastContains(tag, $0) } }) { return nil }
             if let dateFilter, !(note.modifiedDate >= dateFilter.start && note.modifiedDate < dateFilter.end) { return nil }
             if isDueInvalid { return nil }
-            if isDueAnyOnly, note.due == nil { return nil }
-            if isDueOverdueOnly, !(note.due.map { $0 < overdueThreshold } ?? false) { return nil }
-            if isDueFutureOnly, !(note.due.map { $0 >= overdueThreshold } ?? false) { return nil }
-            if let dueFilter, !(note.due.map { $0 >= dueFilter.start && $0 < dueFilter.end } ?? false) { return nil }
+            if let dueCondition, !Self.dueConditionMatches(dueCondition, note: note, overdueThreshold: overdueThreshold) { return nil }
+            if let excludeDueCondition, Self.dueConditionMatches(excludeDueCondition, note: note, overdueThreshold: overdueThreshold) { return nil }
             if !excludeTerms.isEmpty {
                 let titleLower = note.lowercasedTitle
                 let contentLower = note.lowercasedContent
@@ -1002,6 +996,48 @@ public final class NoteStore: ObservableObject {
         default:
             guard let components = parseFlexibleDate(dueQuery), let start = calendar.date(from: components) else { return nil }
             return (start, calendar.date(byAdding: .day, value: 1, to: start) ?? start)
+        }
+    }
+
+    /// What a `due:` (or `-due:`) token's value resolved to — "overdue" and
+    /// "future" are open-ended, not a [start, end) window like the rest, so
+    /// they get their own cases rather than something dueRange(for:) could
+    /// express as a range.
+    private enum DueCondition {
+        case any
+        case overdue
+        case future
+        case range(start: Date, end: Date)
+    }
+
+    /// Parses a due:/-due: value into the condition it represents. nil means
+    /// invalid — see the "due:cats" reasoning at each call site — not "no
+    /// filter."
+    nonisolated private static func dueCondition(for value: String) -> DueCondition? {
+        if value.isEmpty { return .any }
+        // "past" is a plain alias for "overdue" — same meaning, different
+        // word for anyone who reaches for past/future as the natural
+        // opposite pair rather than overdue/future.
+        if value == "overdue" || value == "past" { return .overdue }
+        if value == "future" { return .future }
+        if let range = Self.dueRange(for: value) { return .range(start: range.start, end: range.end) }
+        return nil
+    }
+
+    nonisolated private static func dueConditionMatches(_ condition: DueCondition, note: Note, overdueThreshold: Date) -> Bool {
+        switch condition {
+        case .any:
+            return note.due != nil
+        case .overdue:
+            return note.due.map { $0 < overdueThreshold } ?? false
+        case .future:
+            // The exact complement of .overdue — due today or later, same
+            // threshold, flipped comparison. Like overdue, a note with no
+            // due date matches neither: "future" isn't "undated," it's
+            // "dated and not yet due."
+            return note.due.map { $0 >= overdueThreshold } ?? false
+        case .range(let start, let end):
+            return note.due.map { $0 >= start && $0 < end } ?? false
         }
     }
 

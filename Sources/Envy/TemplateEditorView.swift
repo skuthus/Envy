@@ -12,7 +12,6 @@ struct TemplateEditorView: View {
     let template: NoteTemplate
     var theme: Theme
     var requireModifierForLinkClick: Bool
-    var showTitleHeader: Bool
     var fontZoom: CGFloat
     var plainTextMode: Bool
     var noteTitles: [String]
@@ -28,7 +27,6 @@ struct TemplateEditorView: View {
         template: NoteTemplate,
         theme: Theme,
         requireModifierForLinkClick: Bool,
-        showTitleHeader: Bool,
         fontZoom: CGFloat,
         plainTextMode: Bool,
         noteTitles: [String],
@@ -40,7 +38,6 @@ struct TemplateEditorView: View {
         self.template = template
         self.theme = theme
         self.requireModifierForLinkClick = requireModifierForLinkClick
-        self.showTitleHeader = showTitleHeader
         self.fontZoom = fontZoom
         self.plainTextMode = plainTextMode
         self.noteTitles = noteTitles
@@ -52,10 +49,8 @@ struct TemplateEditorView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            if showTitleHeader {
-                header
-                Divider()
-            }
+            header
+            Divider()
             MarkdownTextView(
                 text: $content,
                 onNavigate: { _ in },

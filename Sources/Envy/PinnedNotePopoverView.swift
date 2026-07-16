@@ -64,13 +64,32 @@ struct PinnedNotePopoverView: View {
     /// this can't just live in memory the way it would for a view that
     /// stays alive across closes.
     @State private var initialSelectedRange: NSRange?
+    /// Feeds the wiki-link ghost-text autocomplete in the embedded editor —
+    /// this view deliberately has no live NoteStore (see the type's own doc
+    /// comment), so rather than standing one up just for this, it's a plain
+    /// one-time directory listing of the pinned note's own sibling `.md`
+    /// files, read synchronously at init the same way `content` above is.
+    private let noteTitles: [String]
 
     private static func cursorStorageKey(for url: URL) -> String {
         "pinnedNoteCursorLocation:\(url.path)"
     }
 
+    private static func siblingNoteTitles(of url: URL) -> [String] {
+        let directory = url.deletingLastPathComponent()
+        guard let entries = try? FileManager.default.contentsOfDirectory(
+            at: directory,
+            includingPropertiesForKeys: nil,
+            options: [.skipsHiddenFiles]
+        ) else { return [] }
+        return entries
+            .filter { $0.pathExtension.lowercased() == "md" }
+            .map { $0.deletingPathExtension().lastPathComponent }
+    }
+
     init(url: URL, onOpenInApp: @escaping () -> Void) {
         self.onOpenInApp = onOpenInApp
+        self.noteTitles = Self.siblingNoteTitles(of: url)
         _url = State(initialValue: url)
         _titleText = State(initialValue: url.deletingPathExtension().lastPathComponent)
         // Seeded here rather than loaded in .onAppear — NoteEditorView hit
@@ -191,6 +210,7 @@ struct PinnedNotePopoverView: View {
                     searchQuery: "",
                     fontZoom: CGFloat(fontZoom),
                     plainTextMode: plainTextMode,
+                    noteTitles: noteTitles,
                     initialSelectedRange: initialSelectedRange,
                     onSelectionChange: { range in
                         UserDefaults.standard.set(range.location, forKey: Self.cursorStorageKey(for: url))

@@ -23,7 +23,6 @@ extension ContentView {
                             template: template,
                             theme: theme,
                             requireModifierForLinkClick: requireModifierForLinkClick,
-                            showTitleHeader: showEditorTitleHeader,
                             fontZoom: CGFloat(editorFontZoom),
                             plainTextMode: plainTextMode,
                             noteTitles: noteTitlesByRecencyCache,
@@ -48,7 +47,6 @@ extension ContentView {
                         theme: theme,
                         requireModifierForLinkClick: requireModifierForLinkClick,
                         searchQuery: editorSearchQuery,
-                        showTitleHeader: showEditorTitleHeader,
                         showTagsInTitleBar: showTagsInTitleBar,
                         showDuePill: showDuePill,
                         linkPreviewTrigger: linkPreviewTrigger,
@@ -279,6 +277,7 @@ extension ContentView {
             requireModifierForLinkClick: requireModifierForLinkClick,
             showDuePill: showDuePill,
             showTagsInTitleBar: showTagsInTitleBar,
+            noteTitles: noteTitlesByRecencyCache,
             currentlyOpenNoteID: selectedID,
             onNavigate: { [self] title in navigateToNote(titled: title) }
         )

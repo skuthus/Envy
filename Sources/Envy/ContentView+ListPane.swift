@@ -193,8 +193,8 @@ extension ContentView {
             return .handled
         }
         .onKeyPress(.rightArrow) {
-            guard suggestionRemainder != nil, let note = suggestionNoteCache else { return .ignored }
-            query = note.title
+            guard suggestionRemainder != nil else { return .ignored }
+            completeSuggestion()
             return .handled
         }
         .onSubmit { handleEnter() }
@@ -616,12 +616,62 @@ extension ContentView {
     /// character that breaks the prefix match hides the ghost text
     /// immediately instead of showing a stale completion, and a character
     /// that extends the same match shrinks the remainder without waiting.
+    /// Tag completion (see tagSuggestionRemainder) takes priority whenever
+    /// the query's last word is actually a tag: operator, since a note
+    /// title match against the same text wouldn't mean anything there.
     private var suggestionRemainder: String? {
+        if let tagRemainder = tagSuggestionRemainder { return tagRemainder }
         guard let note = suggestionNoteCache, !query.isEmpty,
               note.title.count > query.count,
               note.lowercasedTitle.hasPrefix(query.lowercased()) else { return nil }
         let startIndex = note.title.index(note.title.startIndex, offsetBy: query.count)
         return String(note.title[startIndex...])
+    }
+
+    /// Whichever operator prefix ("tag:" or "-tag:") the last word currently
+    /// being typed starts with, if any, plus whatever's been typed after it
+    /// — ghost-text always assumes you're typing at the very end of the
+    /// query, same assumption the note-title suggestion above makes, so
+    /// only the trailing word is considered, not tag: operators earlier in
+    /// a multi-word query.
+    private var tagCompletionContext: (prefix: String, fragment: String)? {
+        guard let lastWord = query.split(separator: " ").last else { return nil }
+        let lowered = lastWord.lowercased()
+        for prefix in ["-tag:", "tag:"] {
+            if lowered.hasPrefix(prefix) {
+                return (prefix, String(lastWord.dropFirst(prefix.count)))
+            }
+        }
+        return nil
+    }
+
+    /// "tag:xyz"/"-tag:xyz" — the tag-name equivalent of the note-title
+    /// suggestion, completing against every tag used anywhere in The Index
+    /// (see allTagsByFrequencyCache), most-used first when several share a
+    /// prefix.
+    private var tagSuggestionRemainder: String? {
+        guard let (_, fragment) = tagCompletionContext, !fragment.isEmpty else { return nil }
+        let lowered = fragment.lowercased()
+        guard let match = allTagsByFrequencyCache.first(where: { $0.lowercased().hasPrefix(lowered) && $0.count > fragment.count }) else { return nil }
+        return String(match.dropFirst(fragment.count))
+    }
+
+    /// Accepts whichever suggestion is currently showing (⇥/→) — replaces
+    /// just the trailing word for a tag: completion (preserving any earlier
+    /// words in a multi-word query), or the whole query for a note-title
+    /// completion, matching how each kind of ghost text is displayed.
+    func completeSuggestion() {
+        if let (prefix, fragment) = tagCompletionContext, let remainder = tagSuggestionRemainder {
+            var words = query.split(separator: " ").map(String.init)
+            if !words.isEmpty {
+                words[words.count - 1] = prefix + fragment + remainder
+            }
+            query = words.joined(separator: " ")
+            return
+        }
+        if suggestionRemainder != nil, let note = suggestionNoteCache {
+            query = note.title
+        }
     }
 
     /// Column sort is authoritative over the list's order — it applies on

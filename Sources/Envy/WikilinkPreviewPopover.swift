@@ -42,6 +42,7 @@ struct WikilinkPreviewContentView: View {
     /// than always showing regardless of what the user configured there.
     var showDuePill: Bool
     var showTagsInTitleBar: Bool
+    var noteTitles: [String]
     var onNavigate: (String) -> Void
     var onEditableActivated: () -> Void
 
@@ -61,6 +62,7 @@ struct WikilinkPreviewContentView: View {
         requireModifierForLinkClick: Bool,
         showDuePill: Bool,
         showTagsInTitleBar: Bool,
+        noteTitles: [String],
         onNavigate: @escaping (String) -> Void,
         onEditableActivated: @escaping () -> Void
     ) {
@@ -70,6 +72,7 @@ struct WikilinkPreviewContentView: View {
         self.requireModifierForLinkClick = requireModifierForLinkClick
         self.showDuePill = showDuePill
         self.showTagsInTitleBar = showTagsInTitleBar
+        self.noteTitles = noteTitles
         self.onNavigate = onNavigate
         self.onEditableActivated = onEditableActivated
         let initial = store.notes.first { $0.id == noteID }
@@ -145,7 +148,8 @@ struct WikilinkPreviewContentView: View {
                 onRequestEditable: {
                     isEditable = true
                     onEditableActivated()
-                }
+                },
+                noteTitles: noteTitles
             )
         }
         .frame(width: 320, height: 240)
@@ -266,6 +270,7 @@ final class WikilinkPreviewController: NSObject {
     private var requireModifierForLinkClick = true
     private var showDuePill = true
     private var showTagsInTitleBar = false
+    private var noteTitles: [String] = []
     private var currentlyOpenNoteID: String?
     private var onNavigate: ((String) -> Void)?
 
@@ -280,6 +285,7 @@ final class WikilinkPreviewController: NSObject {
         requireModifierForLinkClick: Bool,
         showDuePill: Bool,
         showTagsInTitleBar: Bool,
+        noteTitles: [String],
         currentlyOpenNoteID: String?,
         onNavigate: @escaping (String) -> Void
     ) {
@@ -288,6 +294,7 @@ final class WikilinkPreviewController: NSObject {
         self.requireModifierForLinkClick = requireModifierForLinkClick
         self.showDuePill = showDuePill
         self.showTagsInTitleBar = showTagsInTitleBar
+        self.noteTitles = noteTitles
         self.currentlyOpenNoteID = currentlyOpenNoteID
         self.onNavigate = onNavigate
     }
@@ -360,6 +367,7 @@ final class WikilinkPreviewController: NSObject {
             requireModifierForLinkClick: requireModifierForLinkClick,
             showDuePill: showDuePill,
             showTagsInTitleBar: showTagsInTitleBar,
+            noteTitles: noteTitles,
             onNavigate: { [weak self] navigatedTitle in
                 self?.closePanel()
                 self?.onNavigate?(navigatedTitle)

@@ -1286,6 +1286,7 @@ struct MarkdownTextView: NSViewRepresentable {
                 requireModifierForLinkClick: parent.requireModifierForLinkClick,
                 showDuePill: parent.showDuePill,
                 showTagsInTitleBar: parent.showTagsInTitleBar,
+                noteTitles: parent.noteTitles,
                 currentlyOpenNoteID: parent.currentNoteID,
                 onNavigate: { [weak self] title in self?.parent.onNavigate(title) }
             )

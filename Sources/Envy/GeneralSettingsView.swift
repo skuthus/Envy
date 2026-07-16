@@ -10,7 +10,6 @@ struct GeneralSettingsView: View {
     @AppStorage("dateDisplayStyle") private var dateDisplayStyleRaw = DateDisplayStyle.smart.rawValue
     @AppStorage("requireModifierForLinkClick") private var requireModifierForLinkClick = true
     @AppStorage("linkPreviewTrigger") private var linkPreviewTriggerRaw = LinkPreviewTrigger.optionClick.rawValue
-    @AppStorage("showEditorTitleHeader") private var showEditorTitleHeader = true
     @AppStorage("showTagsInTitleBar") private var showTagsInTitleBar = false
     @AppStorage("showDuePill") private var showDuePill = true
     @AppStorage(IndexPreference.storageKey) private var indexPathRaw = ""
@@ -206,11 +205,8 @@ struct GeneralSettingsView: View {
             }
 
             Section("Editor") {
-                Toggle("Show title bar above note", isOn: $showEditorTitleHeader)
                 Toggle("Show tags in title bar", isOn: $showTagsInTitleBar)
-                    .disabled(!showEditorTitleHeader)
                 Toggle("Show due date pill in title bar", isOn: $showDuePill)
-                    .disabled(!showEditorTitleHeader)
                 Toggle("Require ⌘-click to open note links", isOn: $requireModifierForLinkClick)
                 Picker("Preview linked notes", selection: linkPreviewTrigger) {
                     ForEach(LinkPreviewTrigger.allCases) { trigger in

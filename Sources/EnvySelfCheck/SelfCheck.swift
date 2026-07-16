@@ -391,6 +391,11 @@ struct SelfCheck {
             check("todo: matches note with an unchecked task", results.contains { $0.id == withTodo.id })
             check("todo: excludes a fully-checked note", !results.contains { $0.id == allDone.id })
             check("todo: excludes a note with no tasks", !results.contains { $0.id == noTasks.id })
+
+            let excludeResults = store.filtered(query: "-todo:")
+            check("-todo: excludes a note with an unchecked task", !excludeResults.contains { $0.id == withTodo.id })
+            check("-todo: matches a fully-checked note", excludeResults.contains { $0.id == allDone.id })
+            check("-todo: matches a note with no tasks", excludeResults.contains { $0.id == noTasks.id })
         }
 
         // filteredExcludeTermRemovesMatchingNotes
@@ -856,6 +861,42 @@ struct SelfCheck {
 
             check("due: matches an exact ISO date", store.filtered(query: "due:2026-04-16").contains { $0.id == note.id })
             check("due: excludes a non-matching exact date", !store.filtered(query: "due:2026-04-17").contains { $0.id == note.id })
+        }
+
+        // filteredExcludeDueQueryInvertsTheMatchingBucket
+        do {
+            let store = await makeTempStore()
+            let calendar = Calendar.current
+            let now = Date()
+
+            func dueToken(daysFromNow: Int) -> String {
+                let date = calendar.date(byAdding: .day, value: daysFromNow, to: now)!
+                let comps = calendar.dateComponents([.year, .month, .day], from: date)
+                return String(format: "@%04d-%02d-%02d", comps.year!, comps.month!, comps.day!)
+            }
+
+            var overdue = store.create(title: "Overdue Note")
+            overdue.content = dueToken(daysFromNow: -1)
+            store.save(overdue)
+
+            var dueToday = store.create(title: "Due Today Note")
+            dueToday.content = dueToken(daysFromNow: 0)
+            store.save(dueToday)
+
+            let noDue = store.create(title: "No Due Date Note")
+
+            let excludeOverdueResults = store.filtered(query: "-due:overdue")
+            check("-due:overdue excludes an overdue note", !excludeOverdueResults.contains { $0.id == overdue.id })
+            check("-due:overdue keeps a note due today", excludeOverdueResults.contains { $0.id == dueToday.id })
+            check("-due:overdue keeps a note with no due date", excludeOverdueResults.contains { $0.id == noDue.id })
+
+            let excludeAnyResults = store.filtered(query: "-due:")
+            check("bare -due: excludes any note with a due date", !excludeAnyResults.contains { $0.id == overdue.id })
+            check("bare -due: excludes a note due today too", !excludeAnyResults.contains { $0.id == dueToday.id })
+            check("bare -due: keeps a note with no due date", excludeAnyResults.contains { $0.id == noDue.id })
+
+            let excludeInvalidResults = store.filtered(query: "-due:cats")
+            check("an unrecognized -due: value matches nothing, not everything", excludeInvalidResults.isEmpty)
         }
 
         // externalInPlaceEditIsPickedUpWithoutManualReload

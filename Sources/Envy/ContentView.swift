@@ -71,7 +71,6 @@ struct ContentView: View {
     @AppStorage("dateDisplayStyle") var dateDisplayStyleRaw = DateDisplayStyle.smart.rawValue
     @AppStorage("requireModifierForLinkClick") var requireModifierForLinkClick = true
     @AppStorage("linkPreviewTrigger") var linkPreviewTriggerRaw = LinkPreviewTrigger.optionClick.rawValue
-    @AppStorage("showEditorTitleHeader") var showEditorTitleHeader = true
     @AppStorage("showTagsInTitleBar") var showTagsInTitleBar = false
     @AppStorage("showDuePill") var showDuePill = true
     @AppStorage(IndexPreference.storageKey) var indexPathRaw = ""
@@ -274,6 +273,37 @@ struct ContentView: View {
         }
     }
 
+    /// Every distinct tag used anywhere in The Index, most-used first —
+    /// feeds `tag:`/`-tag:` ghost-text completion in the search field, the
+    /// same way noteTitlesByRecencyCache feeds note-title completion.
+    /// Recomputed on the same store.notes changes, but unlike note titles
+    /// this never needs the background search pipeline the results list
+    /// itself uses: there are always far fewer distinct tags than notes, so
+    /// a synchronous scan here is cheap even on a large library.
+    @State var allTagsByFrequencyCache: [String] = []
+    @State private var allTagsGeneration = 0
+
+    func recomputeAllTags() {
+        allTagsGeneration += 1
+        let generation = allTagsGeneration
+        let notesSnapshot = store.notes
+        Task { @MainActor in
+            let tags = await Task.detached(priority: .utility) {
+                var frequency: [String: Int] = [:]
+                for note in notesSnapshot {
+                    for tag in note.tags {
+                        frequency[tag, default: 0] += 1
+                    }
+                }
+                return frequency.keys.sorted {
+                    frequency[$0]! != frequency[$1]! ? frequency[$0]! > frequency[$1]! : $0 < $1
+                }
+            }.value
+            guard generation == allTagsGeneration else { return }
+            allTagsByFrequencyCache = tags
+        }
+    }
+
     /// The query the editor highlights matches for — trails `query` by the
     /// same 60ms debounce as the filtered list (it's updated in the same
     /// debounce task). Passing the live query instead meant every single
@@ -415,6 +445,7 @@ struct ContentView: View {
             Task { await recomputeFilteredNotes() }
             recomputeBacklinkNotes()
             recomputeNoteTitles()
+            recomputeAllTags()
             isFullScreen = NSApp.windows.first?.styleMask.contains(.fullScreen) ?? false
             // Captured before createWelcomeNoteIfNeeded() flips it to true —
             // that's the signal for "already had notes before this launch,"
@@ -473,6 +504,7 @@ struct ContentView: View {
             }
             recomputeBacklinkNotes()
             recomputeNoteTitles()
+            recomputeAllTags()
         }
         .onChange(of: showBacklinks) { _, _ in recomputeBacklinkNotes() }
         .onChange(of: sortFieldRaw) { _, _ in Task { await recomputeFilteredNotes() } }

@@ -22,7 +22,7 @@ enum WelcomeContent {
     - Press **↩** to open the highlighted note. If nothing matches, pressing **↩** creates a new note with that title instead.
     - Use **↑** and **↓** to move the highlighted note without leaving the search box.
     - **⌥↓** and **⌥↑** move keyboard focus between the search box, the note list, and the editor.
-    - If your search matches the start of an existing title, the rest of it shows up in grey. Press **→** to complete it.
+    - If your search matches the start of an existing title — or, typing `tag:`, the start of a tag you've already used — the rest shows up in grey. Press **→** to complete it.
     - **⌘N** creates a blank note directly.
     - **⌘⌫** deletes the selected note. It goes to a hidden `.trash` folder right next to it, not gone for good — Settings → General → Trash controls how often that gets swept into the real macOS Trash.
     - **⌘⇧⌫** restores the note(s) you just deleted, right back where they were.
