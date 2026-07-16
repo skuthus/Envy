@@ -158,6 +158,20 @@ extension ContentView {
 
     private var searchField: some View {
         ZStack(alignment: .leading) {
+            // The real field has to paint first (bottom of the stack) even
+            // though its own text is invisible in the operator-styled case
+            // below — its native text-selection highlight is part of that
+            // same paint pass, and drawing it *above* the styled/ghost
+            // overlay text would blot out the very characters a drag-select
+            // is meant to highlight. Underneath, the highlight box still
+            // shows through (nothing opaque covers it), it just no longer
+            // covers the readable text on top of it.
+            TextField("Search or Create Note", text: $query)
+                .textFieldStyle(.plain)
+                .font(.body)
+                .foregroundColor(isSearchOperatorQuery ? .clear : nil)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
             if let suggestionRemainder {
                 (Text(query).foregroundColor(.clear) + Text(suggestionRemainder).foregroundColor(.secondary))
                     .font(.body)
@@ -166,7 +180,7 @@ extension ContentView {
                     .allowsHitTesting(false)
             }
             // Only shown (and only makes the real field's own text invisible
-            // below) once there's an actual recognized prefix — leaves the
+            // above) once there's an actual recognized prefix — leaves the
             // common case of an empty field or a plain search completely
             // untouched, including the TextField's native placeholder.
             if isSearchOperatorQuery {
@@ -176,12 +190,6 @@ extension ContentView {
                     .padding(.vertical, 6)
                     .allowsHitTesting(false)
             }
-            TextField("Search or Create Note", text: $query)
-                .textFieldStyle(.plain)
-                .font(.body)
-                .foregroundColor(isSearchOperatorQuery ? .clear : nil)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
         }
         .focused($focusedField, equals: .search)
         .onKeyPress(keys: [.downArrow]) { press in
