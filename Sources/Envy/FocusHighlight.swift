@@ -50,15 +50,12 @@ extension View {
 /// added, and splitting into a separate modifier lets the compiler solve this
 /// batch independently of the rest. One .onReceive chain covering every
 /// editor-view toggle/adjustment notification got long enough to blow that
-/// budget once backlinks joined zoom, settings, folder cycling, and
-/// plain-text mode.
+/// budget once backlinks joined zoom, settings, and plain-text mode.
 struct EditorViewNotifications: ViewModifier {
     let zoomIn: () -> Void
     let zoomOut: () -> Void
     let zoomReset: () -> Void
     let openSettings: () -> Void
-    let nextFolder: () -> Void
-    let previousFolder: () -> Void
     let togglePlainTextMode: () -> Void
     let toggleBacklinks: () -> Void
 
@@ -68,8 +65,6 @@ struct EditorViewNotifications: ViewModifier {
             .onReceive(NotificationCenter.default.publisher(for: .zoomOutRequested)) { _ in zoomOut() }
             .onReceive(NotificationCenter.default.publisher(for: .zoomResetRequested)) { _ in zoomReset() }
             .onReceive(NotificationCenter.default.publisher(for: .openSettingsRequested)) { _ in openSettings() }
-            .onReceive(NotificationCenter.default.publisher(for: .nextFolderRequested)) { _ in nextFolder() }
-            .onReceive(NotificationCenter.default.publisher(for: .previousFolderRequested)) { _ in previousFolder() }
             .onReceive(NotificationCenter.default.publisher(for: .togglePlainTextModeRequested)) { _ in togglePlainTextMode() }
             .onReceive(NotificationCenter.default.publisher(for: .toggleBacklinksRequested)) { _ in toggleBacklinks() }
     }

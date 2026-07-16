@@ -27,7 +27,7 @@ struct SelfCheck {
         func makeTempStore() async -> NoteStore {
             let dir = FileManager.default.temporaryDirectory
                 .appendingPathComponent("EnvySelfCheck-\(UUID().uuidString)", isDirectory: true)
-            let store = NoteStore(directories: [dir])
+            let store = NoteStore(directory: dir)
             await waitForLoad(store)
             return store
         }
@@ -48,7 +48,7 @@ struct SelfCheck {
             note.content = "Draft\nSome body text."
             store.save(note)
 
-            let reloaded = NoteStore(directories: store.noteDirectories)
+            let reloaded = NoteStore(directory: store.noteDirectory)
             await waitForLoad(reloaded)
             check("save persists count", reloaded.notes.count == 1)
             check("save persists content", reloaded.notes.first?.content == "Draft\nSome body text.")
@@ -112,65 +112,20 @@ struct SelfCheck {
             check("rename preserves content", renamed.content == note.content)
         }
 
-        // moveRelocatesFileToAnotherConfiguredFolder
-        do {
-            let dirA = FileManager.default.temporaryDirectory
-                .appendingPathComponent("EnvySelfCheck-\(UUID().uuidString)", isDirectory: true)
-            let dirB = FileManager.default.temporaryDirectory
-                .appendingPathComponent("EnvySelfCheck-\(UUID().uuidString)", isDirectory: true)
-            let store = NoteStore(directories: [dirA, dirB])
-            await waitForLoad(store)
-
-            let note = store.create(title: "Relocate Me")
-            let oldURL = note.url
-            let moved = store.move(note, to: dirB)
-
-            check("move changes folder", moved.url.deletingLastPathComponent() == dirB)
-            check("move removes old file", !FileManager.default.fileExists(atPath: oldURL.path))
-            check("move creates new file", FileManager.default.fileExists(atPath: moved.url.path))
-            check("move preserves title", moved.title == "Relocate Me")
-            check("move updates store entry", store.notes.first { $0.title == "Relocate Me" }?.id == moved.id)
-
-            let noOp = store.move(moved, to: dirB)
-            check("move to same folder is a no-op", noOp.id == moved.id)
-        }
-
-        // setDirectoriesLoadsNewFoldersAndStopsWatchingOld
+        // setDirectoryLoadsNewFolderAndStopsWatchingOld
         do {
             let storeA = await makeTempStore()
-            storeA.create(title: "In Folder A")
+            storeA.create(title: "In The Index")
 
             let dirB = FileManager.default.temporaryDirectory
                 .appendingPathComponent("EnvySelfCheck-\(UUID().uuidString)", isDirectory: true)
-            storeA.setDirectories([dirB])
+            storeA.setDirectory(dirB)
             await waitForLoad(storeA)
-            check("setDirectories updates noteDirectories", storeA.noteDirectories == [dirB])
-            check("setDirectories clears old folder's notes", storeA.notes.isEmpty)
+            check("setDirectory updates noteDirectory", storeA.noteDirectory == dirB)
+            check("setDirectory clears old folder's notes", storeA.notes.isEmpty)
 
-            storeA.create(title: "In Folder B")
-            check("setDirectories create lands in new folder", FileManager.default.fileExists(atPath: dirB.appendingPathComponent("In Folder B.md").path))
-        }
-
-        // multipleFoldersAggregateIntoOneFlatListWithUniqueIDs
-        do {
-            let dirA = FileManager.default.temporaryDirectory
-                .appendingPathComponent("EnvySelfCheck-\(UUID().uuidString)", isDirectory: true)
-            let dirB = FileManager.default.temporaryDirectory
-                .appendingPathComponent("EnvySelfCheck-\(UUID().uuidString)", isDirectory: true)
-            let store = NoteStore(directories: [dirA, dirB])
-            await waitForLoad(store)
-
-            // Same filename in two different folders — ids must not collide.
-            try? "from A".write(to: dirA.appendingPathComponent("Same Name.md"), atomically: true, encoding: .utf8)
-            try? "from B".write(to: dirB.appendingPathComponent("Same Name.md"), atomically: true, encoding: .utf8)
-            store.reload()
-            await waitForLoad(store)
-
-            check("multi-folder aggregates both notes", store.notes.count == 2)
-            check("multi-folder ids are unique despite same filename", Set(store.notes.map(\.id)).count == 2)
-
-            let created = store.create(title: "New Note")
-            check("create defaults to first folder", created.url.deletingLastPathComponent() == dirA)
+            storeA.create(title: "In New Index")
+            check("setDirectory create lands in new folder", FileManager.default.fileExists(atPath: dirB.appendingPathComponent("In New Index.md").path))
         }
 
         // reloadInFlightAtLaunchDoesNotClobberAnImmediateCreate
@@ -180,7 +135,7 @@ struct SelfCheck {
             // Don't wait for the initial load — create immediately, racing the
             // in-flight background scan of what was (at construction time) an
             // empty folder.
-            let store = NoteStore(directories: [dir])
+            let store = NoteStore(directory: dir)
             let note = store.create(title: "Immediate")
             await waitForLoad(store)
             check("create survives in-flight initial reload", store.notes.contains { $0.id == note.id })
@@ -319,23 +274,6 @@ struct SelfCheck {
             check("todo: matches note with an unchecked task", results.contains { $0.id == withTodo.id })
             check("todo: excludes a fully-checked note", !results.contains { $0.id == allDone.id })
             check("todo: excludes a note with no tasks", !results.contains { $0.id == noTasks.id })
-        }
-
-        // filteredFolderQueryMatchesOnlyThatFoldersNotes
-        do {
-            let dirA = FileManager.default.temporaryDirectory
-                .appendingPathComponent("EnvySelfCheck-Work-\(UUID().uuidString)", isDirectory: true)
-            let dirB = FileManager.default.temporaryDirectory
-                .appendingPathComponent("EnvySelfCheck-Personal-\(UUID().uuidString)", isDirectory: true)
-            let store = NoteStore(directories: [dirA, dirB])
-            await waitForLoad(store)
-
-            let workNote = store.create(title: "Standup Notes")
-            let personalNote = store.move(store.create(title: "Grocery List"), to: dirB)
-
-            let results = store.filtered(query: "folder:\(dirA.lastPathComponent.lowercased())")
-            check("folder: matches notes in that folder", results.contains { $0.id == workNote.id })
-            check("folder: excludes notes in a different folder", !results.contains { $0.id == personalNote.id })
         }
 
         // filteredExcludeTermRemovesMatchingNotes

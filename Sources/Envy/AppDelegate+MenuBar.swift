@@ -283,7 +283,7 @@ extension AppDelegate {
     /// notes array.
     @MainActor
     private func makeScratchNoteStore() -> NoteStore {
-        NoteStore(directories: NotesDirectoryPreference.loadEnabled())
+        NoteStore(directory: IndexPreference.load())
     }
 
     @MainActor
@@ -295,8 +295,7 @@ extension AppDelegate {
     @MainActor
     private func templateSubmenu() -> NSMenu {
         let submenu = NSMenu()
-        let includeAllFolders = UserDefaults.standard.string(forKey: "templatesScope") == TemplatesScope.perFolder.rawValue
-        let templates = makeScratchNoteStore().templates(includeAllFolders: includeAllFolders)
+        let templates = makeScratchNoteStore().templates()
         if templates.isEmpty {
             let empty = NSMenuItem(title: "No Templates", action: nil, keyEquivalent: "")
             empty.isEnabled = false

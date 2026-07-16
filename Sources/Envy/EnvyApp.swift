@@ -140,17 +140,6 @@ struct EnvyApp: App {
                     NotificationCenter.default.post(name: .focusPreviousAreaRequested, object: nil)
                 }
             }
-            CommandMenu("Folders") {
-                Button("Next Folder") {
-                    NotificationCenter.default.post(name: .nextFolderRequested, object: nil)
-                }
-                .keyboardShortcut(binding(for: .nextFolder).keyEquivalent, modifiers: binding(for: .nextFolder).eventModifiers)
-
-                Button("Previous Folder") {
-                    NotificationCenter.default.post(name: .previousFolderRequested, object: nil)
-                }
-                .keyboardShortcut(binding(for: .previousFolder).keyEquivalent, modifiers: binding(for: .previousFolder).eventModifiers)
-            }
             CommandGroup(after: .windowArrangement) {
                 // No .keyboardShortcut here — its default (⌘↩) loses to
                 // AppKit's own default Return-key handling (which zooms/

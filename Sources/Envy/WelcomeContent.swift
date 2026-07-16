@@ -115,15 +115,9 @@ enum WelcomeContent {
 
     An exact date works too, in whichever format you'd naturally type it: `date:2026-04-15`, `date:4-15-26`, and `date:04-15-2026` all mean the same day.
 
-    ## 🗂️ Multiple Folders
+    ## 🗂️ The Index
 
-    Settings → General lets you add more than one notes folder. Envy merges them into a single searchable list. Which folder a note lives in doesn't affect search, but you can see and change it from a note's right-click menu.
-
-    Uncheck a folder in that list to hide its notes from the list without removing the folder itself. Check it again any time to bring them back.
-
-    **⌥→** and **⌥←** cycle through your folders one at a time, showing only that folder's notes. "All Folders" is one of the stops too, so cycling always brings you back to the merged view. It's the same checkbox from Settings, just faster.
-
-    The title bar always shows which you're looking at: a folder's name when scoped to one, or "All Notes" for the merged view.
+    Envy keeps all your notes in one folder, called The Index. Settings → General shows where it lives and lets you point it somewhere else at any time.
 
     ## 🎨 Customizing the Look
 

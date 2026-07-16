@@ -4,6 +4,8 @@ Also published at [envynote.app/changelog.html](https://envynote.app/changelog.h
 
 ## 1.2.0 — unreleased
 
+**The Index.** Envy now keeps notes in one folder, called The Index, instead of a list of configurable folders. Settings → General shows where it lives and lets you point it elsewhere at any time. This removes the `folder:`/`-folder:` search operators, the ⌥→/⌥← folder-cycling shortcuts, and "Move to Folder" — all meaningful only when more than one folder existed.
+
 - Fixed a note with multiple due dates reporting whichever one happened to be typed first in the text as "the" due date, rather than the actual earliest/most urgent one.
 - The due-date pill (note list and title bar) now shows a "+N" badge when a note has more than one active due date, so it's clear there's more than the one shown.
 - `@tomorrow` and `@yesterday` now work as due-date tokens, matching `due:tomorrow`/`due:yesterday`, which already worked as search operators.

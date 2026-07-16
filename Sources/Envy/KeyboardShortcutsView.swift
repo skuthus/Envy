@@ -56,10 +56,6 @@ struct KeyboardShortcutsView: View {
                 Entry(action: .togglePlainTextMode, description: "Toggle plain-text mode (ignores all markdown formatting)"),
                 Entry(action: .toggleBacklinks, description: "Show or hide the backlinks list in the footer"),
             ]),
-            Group(title: "Folders", entries: [
-                Entry(action: .nextFolder, description: "Show only the next folder's notes"),
-                Entry(action: .previousFolder, description: "Show only the previous folder's notes"),
-            ]),
             Group(title: "Font", entries: [
                 Entry(action: .bold, description: "Bold the selected text (wraps it in **, or unwraps it if already bold)"),
                 Entry(action: .italic, description: "Italicize the selected text (wraps it in *, or unwraps it if already italic)"),

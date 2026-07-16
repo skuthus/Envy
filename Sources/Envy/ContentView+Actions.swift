@@ -2,11 +2,11 @@ import SwiftUI
 import AppKit
 import EnvyCore
 
-// Everything that acts on notes, templates, and folders: create/rename/
-// move/delete (single and bulk), context menus, template CRUD, folder
-// switching/cycling, window-title scope, and the first-launch/what's-new
-// flows. Split out of ContentView.swift purely for file size/navigability —
-// same type, zero behavior change.
+// Everything that acts on notes and templates: create/rename/delete
+// (single and bulk), context menus, template CRUD, switching The Index to
+// a different folder, and the first-launch/what's-new flows. Split out of
+// ContentView.swift purely for file size/navigability — same type, zero
+// behavior change.
 extension ContentView {
     // MARK: - Enter & creation
 
@@ -153,7 +153,7 @@ extension ContentView {
         guard !hasSeededSampleTemplates else { return }
         hasSeededSampleTemplates = true
 
-        let templatesDirectory = store.defaultDirectory.appendingPathComponent("Templates", isDirectory: true)
+        let templatesDirectory = store.noteDirectory.appendingPathComponent("Templates", isDirectory: true)
         try? FileManager.default.createDirectory(at: templatesDirectory, withIntermediateDirectories: true)
         for sample in TemplateContent.samples {
             let url = templatesDirectory.appendingPathComponent("\(sample.name).md")
@@ -185,17 +185,6 @@ extension ContentView {
         NSWorkspace.shared.activateFileViewerSelecting(selectedNotes().map(\.url))
     }
 
-    /// Moved notes get new ids (Note.id is the file path), so the old
-    /// selection can't carry over meaningfully — just clear it.
-    func bulkMove(to directory: URL) {
-        for note in selectedNotes() {
-            let moved = store.move(note, to: directory)
-            carryPinnedStatus(from: note.id, to: moved.id)
-        }
-        multiSelectedIDs.removeAll()
-        selectedID = nil
-    }
-
     func bulkDelete() {
         // A single call so the whole selection is recorded as one delete
         // action — restoring afterward brings back every note, not just
@@ -215,14 +204,6 @@ extension ContentView {
         focusedField = .search
     }
 
-    func moveNote(_ note: Note, to directory: URL) {
-        let moved = store.move(note, to: directory)
-        carryPinnedStatus(from: note.id, to: moved.id)
-        if selectedID == note.id {
-            selectedID = moved.id
-        }
-    }
-
     func renameNote(_ note: Note, to newTitle: String) {
         let renamed = store.rename(note, to: newTitle)
         carryPinnedStatus(from: note.id, to: renamed.id)
@@ -237,11 +218,6 @@ extension ContentView {
     }
 
     // MARK: - Context menus
-
-    private func otherDirectories(for note: Note) -> [URL] {
-        let currentDirectory = note.url.deletingLastPathComponent()
-        return store.noteDirectories.filter { $0 != currentDirectory }
-    }
 
     @ViewBuilder
     func singleContextMenuItems(for note: Note) -> some View {
@@ -258,16 +234,6 @@ extension ContentView {
         Button("Open in Finder") {
             NSWorkspace.shared.activateFileViewerSelecting([note.url])
         }
-        let otherFolders = otherDirectories(for: note)
-        if !otherFolders.isEmpty {
-            Menu("Move to Folder") {
-                ForEach(otherFolders, id: \.self) { directory in
-                    Button(directory.lastPathComponent) {
-                        moveNote(note, to: directory)
-                    }
-                }
-            }
-        }
         Button("Make This Note a Template") {
             convertNoteToTemplate(note)
         }
@@ -282,32 +248,21 @@ extension ContentView {
         Button("Open \(count) Notes in Finder") {
             bulkOpenInFinder()
         }
-        if !store.noteDirectories.isEmpty {
-            Menu("Move \(count) Notes to Folder") {
-                ForEach(store.noteDirectories, id: \.self) { directory in
-                    Button(directory.lastPathComponent) {
-                        bulkMove(to: directory)
-                    }
-                }
-            }
-        }
         Button("Delete \(count) Notes", role: .destructive) {
             bulkDelete()
         }
     }
 
-    // MARK: - Folders
+    // MARK: - The Index
 
-    func switchNotesDirectories() {
-        let allDirectories = NotesDirectoryPreference.decode(notesDirectoryPathsRaw)
-        let disabled = NotesDirectoryPreference.decodeDisabled(disabledDirectoryPathsRaw)
-        let enabledDirectories = allDirectories.filter { !disabled.contains($0.path) }
-        // Falls back to the full list rather than letting NoteStore's own
-        // "no directories" handling silently switch to an unrelated default
-        // folder if every configured folder happens to be disabled.
-        store.setDirectories(enabledDirectories.isEmpty ? allDirectories : enabledDirectories)
+    /// Re-points the store at whatever folder Settings now has saved —
+    /// fires from the `indexPathRaw` AppStorage's own onChange, so this is
+    /// the one place a location change picked in Settings actually takes
+    /// effect on the live store.
+    func switchIndexDirectory() {
+        store.setDirectory(IndexPreference.load())
         query = ""
-        // Deliberately NOT touching selectedID here: setDirectories() reloads
+        // Deliberately NOT touching selectedID here: setDirectory() reloads
         // asynchronously, so store.notes at this exact point is still the
         // *previous* folder's notes — picking .first from it here would grab
         // a note that's about to disappear. Keeping the current selection
@@ -316,42 +271,6 @@ extension ContentView {
         // premature flash to "No Note Selected" and back. The onChange(of:
         // store.notes) reconciles it once the new notes actually land.
         focusedField = .search
-        applyWindowTitleVisibility()
-    }
-
-    /// Reuses the enable/disable checkboxes from Settings rather than a
-    /// separate transient "view filter" — cycling enables exactly one
-    /// folder (or all of them) and disables the rest, persisting like any
-    /// other checkbox change. "All Folders" is itself one of the stops in
-    /// the cycle (state 0), sitting between the last folder and the first —
-    /// so cycling forward from "all" goes to folder 1, and cycling forward
-    /// from the last folder wraps back around to "all", same the other way.
-    /// If the current enabled set doesn't match any single stop exactly
-    /// (e.g. an arbitrary subset checked by hand in Settings), treats that
-    /// as "all" rather than guessing which folder was meant.
-    func cycleActiveFolder(by direction: Int) {
-        let allDirectories = NotesDirectoryPreference.decode(notesDirectoryPathsRaw)
-        guard allDirectories.count > 1 else { return }
-        let disabled = NotesDirectoryPreference.decodeDisabled(disabledDirectoryPathsRaw)
-        let enabledDirectories = allDirectories.filter { !disabled.contains($0.path) }
-
-        let stateCount = allDirectories.count + 1 // 0 = all folders, 1...N = single folder N-1
-        let currentState: Int
-        if enabledDirectories.count == 1, let index = allDirectories.firstIndex(where: { $0.path == enabledDirectories[0].path }) {
-            currentState = index + 1
-        } else {
-            currentState = 0
-        }
-
-        let newState = (currentState + direction + stateCount) % stateCount
-
-        if newState == 0 {
-            disabledDirectoryPathsRaw = ""
-        } else {
-            let target = allDirectories[newState - 1]
-            let newDisabled = Set(allDirectories.map(\.path)).subtracting([target.path])
-            disabledDirectoryPathsRaw = NotesDirectoryPreference.encodeDisabled(newDisabled)
-        }
     }
 
     /// Blanks the title text rather than toggling titleVisibility — with a
@@ -364,11 +283,7 @@ extension ContentView {
             cachedWindowTitle = window.title.isEmpty ? "Envy" : window.title
         }
         window.titleVisibility = .visible
-        // Shown *alone*, not appended after "Envy —": AppKit centers the
-        // title string as a whole, so prefixing it with a fixed "Envy —"
-        // pushed the actually-meaningful part (the scope name) off to the
-        // right of true center instead of centering it.
-        window.title = folderScopeLabel ?? cachedWindowTitle ?? "Envy"
+        window.title = cachedWindowTitle ?? "Envy"
     }
 
     // MARK: - First launch & updates

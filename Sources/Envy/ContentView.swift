@@ -34,7 +34,7 @@ enum NoteSortField: String {
 struct ContentView: View {
     @Environment(\.openSettings) var openSettings
     @Environment(\.openWindow) var openWindow
-    @StateObject var store = NoteStore(directories: NotesDirectoryPreference.loadEnabled())
+    @StateObject var store = NoteStore(directory: IndexPreference.load())
     @State var query = ""
     @State var selectedID: String?
     /// Extra notes ⌘-selected alongside selectedID, for multi-select bulk
@@ -70,8 +70,7 @@ struct ContentView: View {
     @AppStorage("showEditorTitleHeader") var showEditorTitleHeader = true
     @AppStorage("showTagsInTitleBar") var showTagsInTitleBar = false
     @AppStorage("showDuePill") var showDuePill = true
-    @AppStorage(NotesDirectoryPreference.storageKey) var notesDirectoryPathsRaw = ""
-    @AppStorage(NotesDirectoryPreference.disabledStorageKey) var disabledDirectoryPathsRaw = ""
+    @AppStorage(IndexPreference.storageKey) var indexPathRaw = ""
     @AppStorage("hasCreatedWelcomeNote") var hasCreatedWelcomeNote = false
     @AppStorage("lastSeenWhatsNewVersion") var lastSeenWhatsNewVersion = ""
     @AppStorage("moveFocusToEditorOnEnter") var moveFocusToEditorOnEnter = true
@@ -88,7 +87,6 @@ struct ContentView: View {
     @AppStorage("boldFileListText") var boldFileListText = false
     @AppStorage("showBacklinks") var showBacklinks = true
     @AppStorage("restoreFocusOnSummon") var restoreFocusOnSummon = true
-    @AppStorage("templatesScope") var templatesScopeRaw = TemplatesScope.global.rawValue
     @AppStorage("templateDateFormatPattern") var templateDateFormatPattern = TemplateDateFormat.defaultPattern
     @AppStorage("hasSeededSampleTemplates") var hasSeededSampleTemplates = false
     @State var editingTemplate: NoteTemplate?
@@ -148,12 +146,8 @@ struct ContentView: View {
         BlurStrength(rawValue: backgroundBlurStrengthRaw) ?? .strong
     }
 
-    var templatesScope: TemplatesScope {
-        TemplatesScope(rawValue: templatesScopeRaw) ?? .global
-    }
-
     var availableTemplates: [NoteTemplate] {
-        store.templates(includeAllFolders: templatesScope == .perFolder)
+        store.templates()
     }
 
     /// The text {{date}} in a template (title or body) actually gets
@@ -391,8 +385,6 @@ struct ContentView: View {
             zoomOut: { editorFontZoom = max(-8, editorFontZoom - 1) },
             zoomReset: { editorFontZoom = 0 },
             openSettings: { openSettings() },
-            nextFolder: { cycleActiveFolder(by: 1) },
-            previousFolder: { cycleActiveFolder(by: -1) },
             togglePlainTextMode: { plainTextMode.toggle() },
             toggleBacklinks: { withAnimation(.easeInOut(duration: 0.15)) { backlinksExpanded.toggle() } }
         ))
@@ -430,11 +422,8 @@ struct ContentView: View {
             focusedField = .search
             applyWindowTitleVisibility()
         }
-        .onChange(of: notesDirectoryPathsRaw) { _, _ in
-            switchNotesDirectories()
-        }
-        .onChange(of: disabledDirectoryPathsRaw) { _, _ in
-            switchNotesDirectories()
+        .onChange(of: indexPathRaw) { _, _ in
+            switchIndexDirectory()
         }
         .onChange(of: store.notes) { _, _ in
             // Fires once a reload actually finishes (folder switch, note

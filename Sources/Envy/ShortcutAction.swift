@@ -90,8 +90,6 @@ enum ShortcutAction: String, CaseIterable, Identifiable {
     case zoomIn
     case zoomOut
     case actualSize
-    case nextFolder
-    case previousFolder
     case centerWindow
     case summonApp
     case togglePlainTextMode
@@ -115,8 +113,6 @@ enum ShortcutAction: String, CaseIterable, Identifiable {
         case .zoomIn: "Zoom In"
         case .zoomOut: "Zoom Out"
         case .actualSize: "Actual Size"
-        case .nextFolder: "Next Folder"
-        case .previousFolder: "Previous Folder"
         case .centerWindow: "Center Window"
         case .summonApp: "Show/Hide Envy (works from any app)"
         case .togglePlainTextMode: "Toggle Plain-Text Mode"
@@ -149,10 +145,6 @@ enum ShortcutAction: String, CaseIterable, Identifiable {
             ShortcutBinding(character: "-", keyCode: kVK_ANSI_Minus, modifiers: SwiftUI.EventModifiers.command.rawValue)
         case .actualSize:
             ShortcutBinding(character: "0", keyCode: kVK_ANSI_0, modifiers: SwiftUI.EventModifiers.command.rawValue)
-        case .nextFolder:
-            ShortcutBinding(character: String(KeyEquivalent.rightArrow.character), keyCode: kVK_RightArrow, modifiers: SwiftUI.EventModifiers.option.rawValue)
-        case .previousFolder:
-            ShortcutBinding(character: String(KeyEquivalent.leftArrow.character), keyCode: kVK_LeftArrow, modifiers: SwiftUI.EventModifiers.option.rawValue)
         case .centerWindow:
             ShortcutBinding(character: String(KeyEquivalent.return.character), keyCode: kVK_Return, modifiers: SwiftUI.EventModifiers.command.rawValue)
         case .summonApp:

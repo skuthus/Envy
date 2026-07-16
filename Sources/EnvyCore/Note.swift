@@ -308,11 +308,6 @@ public struct Note: Identifiable, Sendable {
         pattern: #"^\s*(?:[-*+][ \t]+)?\[[xX]\][ \t]+.*$"#, options: [.anchorsMatchLines]
     )
 
-    /// The name of the folder this note directly lives in — backs the
-    /// "folder:" search operator. A plain path-component lookup, not
-    /// cached like the regex-derived properties above: no scan involved,
-    /// so there's nothing expensive here to save by caching it.
-    public var folderName: String { url.deletingLastPathComponent().lastPathComponent }
 }
 
 extension Note: Equatable {

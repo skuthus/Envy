@@ -13,8 +13,7 @@ struct GeneralSettingsView: View {
     @AppStorage("showEditorTitleHeader") private var showEditorTitleHeader = true
     @AppStorage("showTagsInTitleBar") private var showTagsInTitleBar = false
     @AppStorage("showDuePill") private var showDuePill = true
-    @AppStorage(NotesDirectoryPreference.storageKey) private var notesDirectoryPathsRaw = ""
-    @AppStorage(NotesDirectoryPreference.disabledStorageKey) private var disabledDirectoryPathsRaw = ""
+    @AppStorage(IndexPreference.storageKey) private var indexPathRaw = ""
     @AppStorage("moveFocusToEditorOnEnter") private var moveFocusToEditorOnEnter = true
     @AppStorage("showFooterClock") private var showFooterClock = false
     @AppStorage("showFooterClockDate") private var showFooterClockDate = false
@@ -27,7 +26,6 @@ struct GeneralSettingsView: View {
     @AppStorage("appVisibility") private var appVisibilityRaw = AppVisibility.both.rawValue
     @AppStorage("menuBarClickAction") private var menuBarClickActionRaw = MenuBarClickAction.toggleWindow.rawValue
     @AppStorage("menuBarPinnedNotePath") private var menuBarPinnedNotePath = ""
-    @AppStorage("templatesScope") private var templatesScopeRaw = TemplatesScope.global.rawValue
     @AppStorage("templateDateFormatPattern") private var templateDateFormatPattern = TemplateDateFormat.defaultPattern
     @State private var showingMarkupHelp = false
     @State private var openAtLogin = SMAppService.mainApp.status == .enabled
@@ -53,13 +51,6 @@ struct GeneralSettingsView: View {
         )
     }
 
-    private var templatesScope: Binding<TemplatesScope> {
-        Binding(
-            get: { TemplatesScope(rawValue: templatesScopeRaw) ?? .global },
-            set: { templatesScopeRaw = $0.rawValue }
-        )
-    }
-
     private var appVisibility: Binding<AppVisibility> {
         Binding(
             get: { AppVisibility(rawValue: appVisibilityRaw) ?? .both },
@@ -81,37 +72,8 @@ struct GeneralSettingsView: View {
         return URL(fileURLWithPath: menuBarPinnedNotePath).deletingPathExtension().lastPathComponent
     }
 
-    private var directories: [URL] {
-        let decoded = NotesDirectoryPreference.decode(notesDirectoryPathsRaw)
-        return decoded.isEmpty ? NotesDirectoryPreference.load() : decoded
-    }
-
-    private var disabledPaths: Set<String> {
-        NotesDirectoryPreference.decodeDisabled(disabledDirectoryPathsRaw)
-    }
-
-    private func isEnabled(_ directory: URL) -> Bool {
-        !disabledPaths.contains(directory.path)
-    }
-
-    private func setEnabled(_ enabled: Bool, for directory: URL) {
-        var disabled = disabledPaths
-        if enabled {
-            disabled.remove(directory.path)
-        } else {
-            disabled.insert(directory.path)
-        }
-        disabledDirectoryPathsRaw = NotesDirectoryPreference.encodeDisabled(disabled)
-    }
-
-    private var enabledCount: Int {
-        directories.filter(isEnabled).count
-    }
-
-    /// The folder new notes actually land in — the first *enabled* one, not
-    /// necessarily index 0, since that could itself be disabled.
-    private var defaultDirectory: URL {
-        directories.first(where: isEnabled) ?? directories[0]
+    private var indexURL: URL {
+        indexPathRaw.isEmpty ? NoteStore.defaultDirectory() : URL(fileURLWithPath: indexPathRaw, isDirectory: true)
     }
 
     var body: some View {
@@ -144,74 +106,26 @@ struct GeneralSettingsView: View {
                 }
             }
 
-            Section("Storage") {
-                ForEach(Array(directories.enumerated()), id: \.element) { index, directory in
-                    HStack {
-                        Toggle("", isOn: Binding(
-                            get: { isEnabled(directory) },
-                            set: { setEnabled($0, for: directory) }
-                        ))
-                        .toggleStyle(.checkbox)
-                        .labelsHidden()
-                        // Can't turn off the last enabled folder — same
-                        // "always at least one active" guarantee as removal
-                        // already enforces, just without deleting anything.
-                        .disabled(isEnabled(directory) && enabledCount <= 1)
-
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(directory.lastPathComponent)
-                                .foregroundStyle(isEnabled(directory) ? .primary : .secondary)
-                            Text(directory.path)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .lineLimit(1)
-                                .truncationMode(.middle)
-                        }
-                        Spacer()
-                        if directory == defaultDirectory {
-                            Text("Default")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                        Button {
-                            moveDirectory(at: index, by: -1)
-                        } label: {
-                            Image(systemName: "chevron.up")
-                        }
-                        .disabled(index == 0)
-
-                        Button {
-                            moveDirectory(at: index, by: 1)
-                        } label: {
-                            Image(systemName: "chevron.down")
-                        }
-                        .disabled(index == directories.count - 1)
-
-                        Button(role: .destructive) {
-                            removeDirectory(at: index)
-                        } label: {
-                            Image(systemName: "trash")
-                        }
-                        .disabled(directories.count <= 1)
-                    }
+            Section("The Index") {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(indexURL.lastPathComponent)
+                    Text(indexURL.path)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
                 }
-
                 HStack {
-                    Button("Add Folder…") {
-                        addFolder()
+                    Button("Change Location…") {
+                        changeIndexLocation()
                     }
-                    Button("Reveal Default in Finder") {
-                        NSWorkspace.shared.activateFileViewerSelecting([defaultDirectory])
+                    Button("Reveal in Finder") {
+                        NSWorkspace.shared.activateFileViewerSelecting([indexURL])
                     }
                 }
             }
 
             Section("Templates") {
-                Picker("Templates Location", selection: templatesScope) {
-                    ForEach(TemplatesScope.allCases) { scope in
-                        Text(scope.label).tag(scope)
-                    }
-                }
                 VStack(alignment: .leading, spacing: 4) {
                     TextField("{{date}} Format", text: $templateDateFormatPattern)
                     HStack(spacing: 4) {
@@ -222,7 +136,7 @@ struct GeneralSettingsView: View {
                     .foregroundStyle(.secondary)
                 }
                 Button("Reveal Templates Folder in Finder") {
-                    let templatesDirectory = defaultDirectory.appendingPathComponent("Templates", isDirectory: true)
+                    let templatesDirectory = indexURL.appendingPathComponent("Templates", isDirectory: true)
                     try? FileManager.default.createDirectory(at: templatesDirectory, withIntermediateDirectories: true)
                     NSWorkspace.shared.activateFileViewerSelecting([templatesDirectory])
                 }
@@ -297,33 +211,15 @@ struct GeneralSettingsView: View {
         }
     }
 
-    private func addFolder() {
+    private func changeIndexLocation() {
         let panel = NSOpenPanel()
-        panel.title = "Add Notes Folder"
+        panel.title = "Choose The Index"
         panel.canChooseDirectories = true
         panel.canChooseFiles = false
         panel.canCreateDirectories = true
         panel.allowsMultipleSelection = false
 
         guard panel.runModal() == .OK, let url = panel.url else { return }
-        var updated = directories
-        guard !updated.contains(url) else { return }
-        updated.append(url)
-        notesDirectoryPathsRaw = NotesDirectoryPreference.encode(updated)
-    }
-
-    private func removeDirectory(at index: Int) {
-        var updated = directories
-        guard updated.count > 1, updated.indices.contains(index) else { return }
-        updated.remove(at: index)
-        notesDirectoryPathsRaw = NotesDirectoryPreference.encode(updated)
-    }
-
-    private func moveDirectory(at index: Int, by offset: Int) {
-        var updated = directories
-        let target = index + offset
-        guard updated.indices.contains(index), updated.indices.contains(target) else { return }
-        updated.swapAt(index, target)
-        notesDirectoryPathsRaw = NotesDirectoryPreference.encode(updated)
+        indexPathRaw = url.path
     }
 }

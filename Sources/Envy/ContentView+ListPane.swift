@@ -367,9 +367,9 @@ extension ContentView {
     private var containsSearchOperator: Bool {
         query.split(separator: " ").contains { word in
             let lowered = word.lowercased()
-            return lowered.hasPrefix("tag:") || lowered.hasPrefix("date:") || lowered.hasPrefix("folder:")
+            return lowered.hasPrefix("tag:") || lowered.hasPrefix("date:")
                 || lowered.hasPrefix("due:")
-                || lowered.hasPrefix("-tag:") || lowered.hasPrefix("-folder:")
+                || lowered.hasPrefix("-tag:")
                 || lowered == "todo:"
                 || (lowered.hasPrefix("-") && lowered.count > 1)
         }
@@ -426,8 +426,8 @@ extension ContentView {
                 let word = query[index..<end]
                 let lowered = word.lowercased()
                 let isOperator = lowered.hasPrefix("tag:") || lowered.hasPrefix("date:") || lowered.hasPrefix("template:")
-                    || lowered.hasPrefix("folder:") || lowered.hasPrefix("due:")
-                    || lowered.hasPrefix("-tag:") || lowered.hasPrefix("-folder:")
+                    || lowered.hasPrefix("due:")
+                    || lowered.hasPrefix("-tag:")
                     || lowered == "todo:" || (lowered.hasPrefix("-") && lowered.count > 1)
                 result = result + Text(word).foregroundColor(isOperator ? Color.primary.opacity(0.8) : .primary)
                 index = end
@@ -484,19 +484,4 @@ extension ContentView {
         }
     }
 
-    /// Non-nil only when there's actually more than one folder configured —
-    /// with just a single folder total, scoping isn't a meaningful concept,
-    /// so the window title shows no scope suffix at all. Otherwise "All
-    /// Notes", or a specific folder's name if scoped to exactly one via
-    /// ⌥→/⌥← or unchecking others in Settings.
-    var folderScopeLabel: String? {
-        let allDirectories = NotesDirectoryPreference.decode(notesDirectoryPathsRaw)
-        guard allDirectories.count > 1 else { return nil }
-        let disabled = NotesDirectoryPreference.decodeDisabled(disabledDirectoryPathsRaw)
-        let enabled = allDirectories.filter { !disabled.contains($0.path) }
-        if enabled.count == 1 {
-            return enabled[0].lastPathComponent
-        }
-        return "All Notes"
-    }
 }

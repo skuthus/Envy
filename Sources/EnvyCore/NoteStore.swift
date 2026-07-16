@@ -2,26 +2,28 @@ import Foundation
 import Combine
 import CoreServices
 
-/// A template is just a plain `.md` file living in a `Templates`
-/// subfolder of one of the configured notes folders — never a Note itself,
-/// since scanDirectories() only reads `.md` files directly inside each
-/// top-level folder and never recurses, so `Templates/` is already
-/// invisible to search/list/backlinks without any extra exclusion logic.
+/// A template is just a plain `.md` file living in The Index's own
+/// `Templates` subfolder — never a Note itself, since scanDirectory() only
+/// reads `.md` files directly inside the top level and never recurses, so
+/// `Templates/` is already invisible to search/list/backlinks without any
+/// extra exclusion logic.
 public struct NoteTemplate: Identifiable, Hashable, Sendable {
     public let id: String
     public let name: String
     public let url: URL
-    /// The notes folder this template's `Templates/` subfolder belongs to
-    /// — a note created from this template lands here, not necessarily in
-    /// `defaultDirectory`, so per-folder templates keep their notes
-    /// together with the template that made them.
-    public let sourceDirectory: URL
 }
 
 @MainActor
 public final class NoteStore: ObservableObject {
     @Published public private(set) var notes: [Note] = []
-    @Published public private(set) var noteDirectories: [URL] = []
+    /// The Index — the one folder Envy reads and watches. Singular by
+    /// design: Envy used to support several folders merged into one list,
+    /// but that flexibility mostly bought confusion (which folder does a
+    /// new note land in, what does "move to folder" even mean, does a
+    /// search span all of them) for a feature almost nobody used across
+    /// more than one. One well-known folder is simpler to reason about
+    /// and simpler to explain.
+    @Published public private(set) var noteDirectory: URL
     @Published public private(set) var isLoading = false
 
     // FSEventStreamRef (an OpaquePointer) isn't Sendable, which the compiler
@@ -33,19 +35,17 @@ public final class NoteStore: ObservableObject {
     private var reloadGeneration = 0
     private var reloadDebounceTask: Task<Void, Never>?
 
-    public init(directories: [URL]? = nil) {
-        let dirs = (directories?.isEmpty == false) ? directories! : [Self.defaultDirectory()]
-        for dir in dirs {
-            try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        }
+    public init(directory: URL? = nil) {
+        let dir = directory ?? Self.defaultDirectory()
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         // Resolved once here (after creation, so resolution has something to
         // resolve against) so every note's id/url and the FSEvents watch below
         // consistently agree on one path form — see the note on
-        // startWatchingAll for why a mismatch there is a real problem, not
+        // startWatching for why a mismatch there is a real problem, not
         // just a cosmetic one.
-        self.noteDirectories = dirs.map { $0.resolvingSymlinksInPath() }
+        self.noteDirectory = dir.resolvingSymlinksInPath()
         reload()
-        startWatchingAll()
+        startWatching()
     }
 
     deinit {
@@ -61,25 +61,17 @@ public final class NoteStore: ObservableObject {
         return docs.appendingPathComponent("Envy", isDirectory: true)
     }
 
-    /// New notes are created in the first configured folder.
-    public var defaultDirectory: URL {
-        noteDirectories.first ?? Self.defaultDirectory()
-    }
-
-    /// Re-points this store at a different set of folders without recreating it,
-    /// so SwiftUI views holding onto the store (and their selection state) don't
-    /// have to be torn down just to look at a different set of notes.
-    public func setDirectories(_ directories: [URL]) {
-        let normalized = directories.isEmpty ? [Self.defaultDirectory()] : directories
-        for dir in normalized {
-            try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        }
-        let resolved = normalized.map { $0.resolvingSymlinksInPath() }
-        guard resolved != noteDirectories else { return }
-        stopWatchingAll()
-        noteDirectories = resolved
+    /// Re-points The Index at a different folder without recreating the
+    /// store, so SwiftUI views holding onto it (and their selection state)
+    /// don't have to be torn down just to look at a different folder.
+    public func setDirectory(_ directory: URL) {
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let resolved = directory.resolvingSymlinksInPath()
+        guard resolved != noteDirectory else { return }
+        stopWatching()
+        noteDirectory = resolved
         reload()
-        startWatchingAll()
+        startWatching()
     }
 
     // MARK: - Loading
@@ -102,22 +94,23 @@ public final class NoteStore: ObservableObject {
         }
     }
 
-    /// Scans all configured folders and re-publishes `notes`. The actual file
-    /// reading happens off the main thread — with a folder full of notes, doing
+    /// Scans The Index and re-publishes `notes`. The actual file reading
+    /// happens off the main thread — with a folder full of notes, doing
     /// this synchronously on the main actor (as this used to) froze the UI.
     public func reload() {
         reloadGeneration += 1
         let generation = reloadGeneration
-        let directories = noteDirectories
+        let directory = noteDirectory
         isLoading = true
 
         Task {
             let loaded = await Task.detached(priority: .userInitiated) {
-                Self.scanDirectories(directories)
+                Self.scanDirectory(directory)
             }.value
 
-            // A newer reload may have been kicked off (e.g. folders changed
-            // again) while this scan was in flight — don't clobber its result.
+            // A newer reload may have been kicked off (e.g. the folder
+            // changed again) while this scan was in flight — don't clobber
+            // its result.
             guard generation == self.reloadGeneration else { return }
             self.notes = loaded
             self.isLoading = false
@@ -126,7 +119,7 @@ public final class NoteStore: ObservableObject {
 
     // A plain UnsafeMutableBufferPointer isn't Sendable as far as the
     // compiler's concerned, even though writing to disjoint, fixed indices
-    // from multiple threads (as scanDirectories does below) is genuinely
+    // from multiple threads (as scanDirectory does below) is genuinely
     // safe — this box exists purely to make that assertion explicit and
     // contained in one place, rather than silencing the warning at the call
     // site.
@@ -134,23 +127,14 @@ public final class NoteStore: ObservableObject {
         let buffer: UnsafeMutableBufferPointer<T>
     }
 
-    nonisolated private static func scanDirectories(_ directories: [URL]) -> [Note] {
+    nonisolated private static func scanDirectory(_ directory: URL) -> [Note] {
         let fm = FileManager.default
-        var mdURLs: [URL] = []
-
-        for directory in directories {
-            guard let entries = try? fm.contentsOfDirectory(
-                at: directory,
-                includingPropertiesForKeys: [.contentModificationDateKey],
-                options: [.skipsHiddenFiles]
-            ) else { continue }
-            mdURLs.append(contentsOf: entries.filter { $0.pathExtension.lowercased() == "md" })
-        }
-        // Reassigned as a `let` before the concurrent section below —
-        // Swift 6 flags capturing a `var` in concurrently-executing code
-        // even for read-only access, since it can't prove no one mutates
-        // it meanwhile; this one in particular never is past this point.
-        let urls = mdURLs
+        guard let entries = try? fm.contentsOfDirectory(
+            at: directory,
+            includingPropertiesForKeys: [.contentModificationDateKey],
+            options: [.skipsHiddenFiles]
+        ) else { return [] }
+        let urls = entries.filter { $0.pathExtension.lowercased() == "md" }
 
         // Reading each file is its own independent syscall (open/read/close),
         // and doing that one file at a time in a loop means paying each
@@ -170,8 +154,6 @@ public final class NoteStore: ObservableObject {
                 let url = urls[index]
                 guard let content = try? String(contentsOf: url, encoding: .utf8) else { return }
                 let modified = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? Date()
-                // Filename alone isn't unique across multiple folders, so the id
-                // has to be the full path.
                 box.buffer[index] = Note(id: url.path, url: url, content: content, modifiedDate: modified)
             }
         }
@@ -192,14 +174,13 @@ public final class NoteStore: ObservableObject {
     /// case this needs to catch, FSEvents' kFSEventStreamCreateFlagFileEvents
     /// mode is required — it reports individual file modifications, not just
     /// directory-entry churn.
-    private func startWatchingAll() {
-        guard !noteDirectories.isEmpty else { return }
-        // noteDirectories is already resolved (see init/setDirectories) — both
+    private func startWatching() {
+        // noteDirectory is already resolved (see init/setDirectory) — both
         // so FSEvents watches the real underlying path (a path that traverses
         // a symlink, like anything under /tmp or /var, silently fails to
         // watch correctly otherwise) and so every note's id/url agrees with
         // what a later reload() reports for the same file, symlink or not.
-        let paths = noteDirectories.map(\.path) as CFArray
+        let paths = [noteDirectory.path] as CFArray
         var context = FSEventStreamContext(
             version: 0,
             info: Unmanaged.passUnretained(self).toOpaque(),
@@ -246,7 +227,7 @@ public final class NoteStore: ObservableObject {
         eventStream = stream
     }
 
-    private func stopWatchingAll() {
+    private func stopWatching() {
         guard let eventStream else { return }
         FSEventStreamStop(eventStream)
         FSEventStreamInvalidate(eventStream)
@@ -280,9 +261,8 @@ public final class NoteStore: ObservableObject {
     public func create(title: String) -> Note {
         let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
         let base = trimmedTitle.isEmpty ? "Untitled" : trimmedTitle
-        let directory = defaultDirectory
-        let filename = Self.uniqueFilename(for: base, in: directory)
-        let url = directory.appendingPathComponent(filename)
+        let filename = Self.uniqueFilename(for: base, in: noteDirectory)
+        let url = noteDirectory.appendingPathComponent(filename)
 
         markInternalWrite()
         try? "".write(to: url, atomically: true, encoding: .utf8)
@@ -292,64 +272,50 @@ public final class NoteStore: ObservableObject {
         return note
     }
 
-    /// Every template across the given folders' own `Templates/`
-    /// subfolders — `includeAllFolders: false` limits this to
-    /// `defaultDirectory` only, for a "one shared Templates folder"
-    /// setup; `true` merges every configured folder's own `Templates/`,
-    /// for a per-folder setup.
-    public func templates(includeAllFolders: Bool) -> [NoteTemplate] {
-        let directories = includeAllFolders ? noteDirectories : [defaultDirectory]
-        var results: [NoteTemplate] = []
-        for directory in directories {
-            let templatesDirectory = directory.appendingPathComponent("Templates", isDirectory: true)
-            guard let entries = try? FileManager.default.contentsOfDirectory(
-                at: templatesDirectory,
-                includingPropertiesForKeys: nil,
-                options: [.skipsHiddenFiles]
-            ) else { continue }
-            for url in entries where url.pathExtension.lowercased() == "md" {
-                let name = url.deletingPathExtension().lastPathComponent
-                results.append(NoteTemplate(id: url.path, name: name, url: url, sourceDirectory: directory))
-            }
-        }
-        return results.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+    /// Every template in The Index's own `Templates/` subfolder.
+    public func templates() -> [NoteTemplate] {
+        let templatesDirectory = noteDirectory.appendingPathComponent("Templates", isDirectory: true)
+        guard let entries = try? FileManager.default.contentsOfDirectory(
+            at: templatesDirectory,
+            includingPropertiesForKeys: nil,
+            options: [.skipsHiddenFiles]
+        ) else { return [] }
+        return entries
+            .filter { $0.pathExtension.lowercased() == "md" }
+            .map { NoteTemplate(id: $0.path, name: $0.deletingPathExtension().lastPathComponent, url: $0) }
+            .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
     }
 
-    /// Creates a new, empty template file in defaultDirectory's own
-    /// `Templates/` subfolder — always defaultDirectory regardless of
-    /// includeAllFolders scope, same as create(title:) always landing new
-    /// notes there too.
+    /// Creates a new, empty template file in The Index's own `Templates/`
+    /// subfolder.
     @discardableResult
     public func createTemplate(named name: String) -> NoteTemplate {
         let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
         let base = trimmedName.isEmpty ? "Untitled Template" : trimmedName
-        let directory = defaultDirectory
-        let templatesDirectory = directory.appendingPathComponent("Templates", isDirectory: true)
+        let templatesDirectory = noteDirectory.appendingPathComponent("Templates", isDirectory: true)
         try? FileManager.default.createDirectory(at: templatesDirectory, withIntermediateDirectories: true)
         let filename = Self.uniqueFilename(for: base, in: templatesDirectory)
         let url = templatesDirectory.appendingPathComponent(filename)
         markInternalWrite()
         try? "".write(to: url, atomically: true, encoding: .utf8)
-        return NoteTemplate(id: url.path, name: url.deletingPathExtension().lastPathComponent, url: url, sourceDirectory: directory)
+        return NoteTemplate(id: url.path, name: url.deletingPathExtension().lastPathComponent, url: url)
     }
 
     /// Creates a note whose starting content is `template`'s content, with
-    /// {{date}}/{{time}}/{{title}} substituted in — lands in the
-    /// template's own sourceDirectory. The title itself gets the same
-    /// substitution before it's used, so a template literally named e.g.
-    /// "Daily Notes {{date}}" produces a note titled with today's actual
-    /// date, not the literal token. `dateText` is caller-formatted (rather
-    /// than a fixed style here) so the app layer's own date-format setting
-    /// applies — EnvyCore stays platform/UI-agnostic and doesn't own a
-    /// preferred date style itself.
+    /// {{date}}/{{time}}/{{title}} substituted in. The title itself gets
+    /// the same substitution before it's used, so a template literally
+    /// named e.g. "Daily Notes {{date}}" produces a note titled with
+    /// today's actual date, not the literal token. `dateText` is
+    /// caller-formatted (rather than a fixed style here) so the app
+    /// layer's own date-format setting applies — EnvyCore stays
+    /// platform/UI-agnostic and doesn't own a preferred date style itself.
     @discardableResult
     public func create(title: String, fromTemplate template: NoteTemplate, dateText: String) -> Note {
         let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
         let rawBase = trimmedTitle.isEmpty ? template.name : trimmedTitle
         let base = Self.applyingTemplateTokens(rawBase, title: rawBase, dateText: dateText)
-        let directory = template.sourceDirectory
-        let filename = Self.uniqueFilename(for: base, in: directory)
-        let url = directory.appendingPathComponent(filename)
+        let filename = Self.uniqueFilename(for: base, in: noteDirectory)
+        let url = noteDirectory.appendingPathComponent(filename)
 
         let rawContent = (try? String(contentsOf: template.url, encoding: .utf8)) ?? ""
         let content = Self.applyingTemplateTokens(rawContent, title: base, dateText: dateText)
@@ -362,14 +328,11 @@ public final class NoteStore: ObservableObject {
         return note
     }
 
-    /// Moves a note's file into its own folder's `Templates/` subfolder,
-    /// dropping it out of `notes` in the process — the same underlying
-    /// operation move(_:to:) already does, just always targeting
-    /// `<current folder>/Templates` instead of another configured folder.
+    /// Moves a note's file into The Index's `Templates/` subfolder,
+    /// dropping it out of `notes` in the process.
     @discardableResult
     public func convertToTemplate(_ note: Note) -> NoteTemplate? {
-        let currentDirectory = note.url.deletingLastPathComponent()
-        let templatesDirectory = currentDirectory.appendingPathComponent("Templates", isDirectory: true)
+        let templatesDirectory = noteDirectory.appendingPathComponent("Templates", isDirectory: true)
         try? FileManager.default.createDirectory(at: templatesDirectory, withIntermediateDirectories: true)
         let filename = Self.uniqueFilename(for: note.title, in: templatesDirectory)
         let newURL = templatesDirectory.appendingPathComponent(filename)
@@ -381,19 +344,15 @@ public final class NoteStore: ObservableObject {
             return nil
         }
         notes.removeAll { $0.id == note.id }
-        return NoteTemplate(id: newURL.path, name: newURL.deletingPathExtension().lastPathComponent, url: newURL, sourceDirectory: currentDirectory)
+        return NoteTemplate(id: newURL.path, name: newURL.deletingPathExtension().lastPathComponent, url: newURL)
     }
 
     /// The inverse of convertToTemplate(_:) — moves a template's file back
-    /// up out of its `Templates/` subfolder into sourceDirectory (the
-    /// folder it was made from), or defaultDirectory if sourceDirectory is
-    /// no longer one of the currently configured folders (removed in
-    /// Settings since the template was created).
+    /// up out of `Templates/` into The Index itself.
     @discardableResult
     public func convertToNote(_ template: NoteTemplate) -> Note? {
-        let targetDirectory = noteDirectories.contains(template.sourceDirectory) ? template.sourceDirectory : defaultDirectory
-        let filename = Self.uniqueFilename(for: template.name, in: targetDirectory)
-        let newURL = targetDirectory.appendingPathComponent(filename)
+        let filename = Self.uniqueFilename(for: template.name, in: noteDirectory)
+        let newURL = noteDirectory.appendingPathComponent(filename)
 
         markInternalWrite()
         do {
@@ -510,31 +469,6 @@ public final class NoteStore: ObservableObject {
         return renamed
     }
 
-    /// Moves the note's underlying file into a different configured folder,
-    /// keeping its title (de-duped against whatever's already there). Returns
-    /// the original note unchanged if it's already in that folder or the move fails.
-    @discardableResult
-    public func move(_ note: Note, to directory: URL) -> Note {
-        let currentDirectory = note.url.deletingLastPathComponent()
-        guard currentDirectory != directory else { return note }
-
-        let newFilename = Self.uniqueFilename(for: note.title, in: directory)
-        let newURL = directory.appendingPathComponent(newFilename)
-
-        markInternalWrite()
-        do {
-            try FileManager.default.moveItem(at: note.url, to: newURL)
-        } catch {
-            return note
-        }
-
-        let moved = Note(id: newURL.path, url: newURL, content: note.content, modifiedDate: Date())
-        if let idx = notes.firstIndex(where: { $0.id == note.id }) {
-            notes[idx] = moved
-        }
-        return moved
-    }
-
     // MARK: - Search
 
     /// Called from ContentView's body on every render while a query is
@@ -607,8 +541,8 @@ public final class NoteStore: ObservableObject {
     }
 
     /// One comma-separated group's own self-contained search — operators
-    /// (tag:/date:/folder:/todo:), exclusions (-word, -tag:x, -folder:x),
-    /// and free terms all combine with AND semantics *within* a group,
+    /// (tag:/date:/todo:), exclusions (-word, -tag:x), and free terms
+    /// all combine with AND semantics *within* a group,
     /// same as the whole query used to before groups existed. Returns
     /// (Note, score) pairs for whatever survives every filter in this group.
     nonisolated private static func matched(in notes: [Note], forGroup group: String) -> [(Note, Int)] {
@@ -624,14 +558,12 @@ public final class NoteStore: ObservableObject {
         var isDueAnyOnly = false
         var isDueInvalid = false
         var dueTokenSeen = false
-        var folderFilter: String?
-        var excludeFolders: [String] = []
         var isTodoOnly = false
         var excludeTerms: [String] = []
         var freeTerms: [String] = []
 
-        // Only the first tag:/date:/folder: token is honored if more than
-        // one of the same kind appears — combining multiple has ambiguous
+        // Only the first tag:/date: token is honored if more than one of
+        // the same kind appears — combining multiple has ambiguous
         // AND-vs-OR semantics not worth guessing at (that's what the comma
         // groups above are for). Every "-"-prefixed exclusion is honored,
         // though — there's no such ambiguity in excluding more than one thing.
@@ -645,14 +577,6 @@ public final class NoteStore: ObservableObject {
                 if tagFilter == nil {
                     let name = String(token.dropFirst("tag:".count))
                     tagFilter = name.isEmpty ? nil : name
-                }
-            } else if token.hasPrefix("-folder:") {
-                let name = String(token.dropFirst("-folder:".count))
-                if !name.isEmpty { excludeFolders.append(name) }
-            } else if token.hasPrefix("folder:") {
-                if folderFilter == nil {
-                    let name = String(token.dropFirst("folder:".count))
-                    folderFilter = name.isEmpty ? nil : name
                 }
             } else if token.hasPrefix("date:") {
                 if dateFilter == nil {
@@ -707,7 +631,7 @@ public final class NoteStore: ObservableObject {
         }
 
         let hasOperator = isTodoOnly || tagFilter != nil || !excludeTags.isEmpty
-            || dateFilter != nil || folderFilter != nil || !excludeFolders.isEmpty
+            || dateFilter != nil
             || dueFilter != nil || isDueOverdueOnly || isDueFutureOnly || isDueAnyOnly || isDueInvalid
 
         // Computed once for the whole group rather than per-note — same
@@ -725,8 +649,6 @@ public final class NoteStore: ObservableObject {
             if isDueOverdueOnly, !(note.due.map { $0 < overdueThreshold } ?? false) { return nil }
             if isDueFutureOnly, !(note.due.map { $0 >= overdueThreshold } ?? false) { return nil }
             if let dueFilter, !(note.due.map { $0 >= dueFilter.start && $0 < dueFilter.end } ?? false) { return nil }
-            if let folderFilter, !Self.fastContains(note.folderName.lowercased(), folderFilter) { return nil }
-            if !excludeFolders.isEmpty, excludeFolders.contains(where: { Self.fastContains(note.folderName.lowercased(), $0) }) { return nil }
             if !excludeTerms.isEmpty {
                 let titleLower = note.lowercasedTitle
                 let contentLower = note.lowercasedContent

@@ -228,7 +228,7 @@ struct PinnedNotePopoverView: View {
             titleText = currentTitle
             return
         }
-        let scratchStore = NoteStore(directories: [url.deletingLastPathComponent()])
+        let scratchStore = NoteStore(directory: url.deletingLastPathComponent())
         let note = Note(id: url.path, url: url, content: content, modifiedDate: Date())
         let renamed = scratchStore.rename(note, to: trimmed)
         guard renamed.url != url else {
