@@ -42,7 +42,7 @@ extension ContentView {
                             matchingTemplateRows
                         } else {
                             ForEach(filteredNotes) { note in
-                                NoteRow(note: note, showPreview: showNotePreview, showDateModified: showDateModified, dateDisplayStyle: dateDisplayStyle, textColor: theme.fileListTextColor?.color, bold: boldFileListText, isPinned: isPinned(note))
+                                NoteRow(note: note, showPreview: showNotePreview, showDateModified: showDateModified, dateDisplayStyle: dateDisplayStyle, sortField: sortField, theme: theme, textColor: theme.fileListTextColor?.color, bold: boldFileListText, isPinned: isPinned(note))
                                     .padding(.vertical, listDensity.rowVerticalPadding)
                                     .padding(.horizontal, 8)
                                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -265,6 +265,8 @@ extension ContentView {
         HStack(spacing: 0) {
             sortHeaderButton(field: .name, label: "Name")
                 .frame(maxWidth: .infinity, alignment: .leading)
+            sortHeaderButton(field: .due, label: "Due")
+                .padding(.trailing, 12)
             sortHeaderButton(field: .date, label: "Date")
         }
         .padding(.horizontal, 12)
@@ -364,6 +366,7 @@ extension ContentView {
         query.split(separator: " ").contains { word in
             let lowered = word.lowercased()
             return lowered.hasPrefix("tag:") || lowered.hasPrefix("date:") || lowered.hasPrefix("folder:")
+                || lowered.hasPrefix("due:")
                 || lowered.hasPrefix("-tag:") || lowered.hasPrefix("-folder:")
                 || lowered == "todo:"
                 || (lowered.hasPrefix("-") && lowered.count > 1)
@@ -421,7 +424,8 @@ extension ContentView {
                 let word = query[index..<end]
                 let lowered = word.lowercased()
                 let isOperator = lowered.hasPrefix("tag:") || lowered.hasPrefix("date:") || lowered.hasPrefix("template:")
-                    || lowered.hasPrefix("folder:") || lowered.hasPrefix("-tag:") || lowered.hasPrefix("-folder:")
+                    || lowered.hasPrefix("folder:") || lowered.hasPrefix("due:")
+                    || lowered.hasPrefix("-tag:") || lowered.hasPrefix("-folder:")
                     || lowered == "todo:" || (lowered.hasPrefix("-") && lowered.count > 1)
                 result = result + Text(word).foregroundColor(isOperator ? Color.primary.opacity(0.8) : .primary)
                 index = end
@@ -460,6 +464,20 @@ extension ContentView {
         case .date:
             return notes.sorted {
                 ascending ? $0.modifiedDate < $1.modifiedDate : $0.modifiedDate > $1.modifiedDate
+            }
+        case .due:
+            // A note with no due date always sorts to the end, regardless of
+            // direction — "no due date" isn't smaller or larger than an
+            // actual date, it's simply absent, and undated notes burying
+            // dated ones (or vice versa) depending on which arrow is
+            // clicked would be surprising either way.
+            return notes.sorted {
+                switch ($0.due, $1.due) {
+                case (nil, nil): return false
+                case (nil, _): return false
+                case (_, nil): return true
+                case let (a?, b?): return ascending ? a < b : a > b
+                }
             }
         }
     }

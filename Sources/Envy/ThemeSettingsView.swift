@@ -206,6 +206,9 @@ struct ThemeSettingsView: View {
                     themeColorSwatch("Background", \.backgroundColor, default: theme.resolvedBackgroundColor)
                     themeColorSwatch("Markers", \.markerColor, default: theme.resolvedMarkerColor)
                     themeColorSwatch("Links", \.linkColor, default: theme.resolvedLinkColor)
+                    themeColorSwatch("Due Date", \.dueColor, default: theme.resolvedDueColor)
+                    themeColorSwatch("Due Soon", \.dueSoonColor, default: theme.resolvedDueSoonColor)
+                    themeColorSwatch("Overdue", \.dueOverdueColor, default: theme.resolvedDueOverdueColor)
                     themeColorSwatch("Code Background", \.codeBackgroundColor, default: theme.resolvedCodeBackgroundColor)
                     themeColorSwatch("Tags", \.tagColor, default: theme.resolvedTagColor)
                     themeColorSwatch("Tag Background", \.tagBackgroundColor, default: theme.resolvedTagBackgroundColor)
@@ -362,6 +365,7 @@ struct ThemeSettingsView: View {
                 HStack(spacing: 3) {
                     Circle().fill(Color(nsColor: entry.theme.resolvedLinkColor)).frame(width: 6, height: 6)
                     Circle().fill(Color(nsColor: entry.theme.resolvedTagColor)).frame(width: 6, height: 6)
+                    Circle().fill(Color(nsColor: entry.theme.resolvedDueColor)).frame(width: 6, height: 6)
                 }
                 .padding(4)
             }
@@ -406,6 +410,9 @@ struct ThemeSettingsView: View {
         let codeBackground = Color(nsColor: theme.resolvedCodeBackgroundColor)
         let tagColor = Color(nsColor: theme.resolvedTagColor)
         let tagBackground = Color(nsColor: theme.resolvedTagBackgroundColor)
+        let dueColor = Color(nsColor: theme.resolvedDueColor)
+        let dueSoonColor = Color(nsColor: theme.resolvedDueSoonColor)
+        let dueOverdueColor = Color(nsColor: theme.resolvedDueOverdueColor)
 
         return VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 0) {
@@ -445,6 +452,16 @@ struct ThemeSettingsView: View {
                 Text("#tag").bold().foregroundStyle(tagColor)
                     .padding(.horizontal, 4)
                     .background(tagBackground)
+            }
+            .font(font)
+
+            HStack(spacing: 6) {
+                Text("due@").foregroundStyle(textColor)
+                Text("later").bold().foregroundStyle(dueColor)
+                Text("due@").foregroundStyle(textColor)
+                Text("soon").bold().foregroundStyle(dueSoonColor)
+                Text("due@").foregroundStyle(textColor)
+                Text("overdue").bold().foregroundStyle(dueOverdueColor)
             }
             .font(font)
         }

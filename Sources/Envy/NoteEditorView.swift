@@ -189,8 +189,17 @@ struct NoteEditorView: View {
                 }
                 .foregroundStyle(theme.noteTitleBarTextColor?.color ?? Color.primary)
             Spacer()
-            if showTagsInTitleBar, let note, !note.tags.isEmpty {
-                HStack(spacing: 6) {
+            HStack(spacing: 6) {
+                if let note, let due = note.due {
+                    Text("Due \(due.formatted(.dateTime.month(.abbreviated).day()))")
+                        .font(.caption.bold())
+                        .foregroundStyle(Color(nsColor: dueChipColor(for: due, theme: theme)))
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Color(nsColor: dueChipColor(for: due, theme: theme)).opacity(0.15))
+                        .clipShape(Capsule())
+                }
+                if showTagsInTitleBar, let note, !note.tags.isEmpty {
                     ForEach(note.tags.sorted(), id: \.self) { tag in
                         Text("#\(tag)")
                             .font(.caption.bold())
@@ -203,11 +212,11 @@ struct NoteEditorView: View {
                             .onTapGesture { onTagSearch(tag) }
                     }
                 }
-                // A long content edit can add/remove tags on every keystroke
-                // (each debounced save updates `note`) — animating that
-                // would make the title bar visibly jitter while typing.
-                .transaction { $0.animation = nil }
             }
+            // A long content edit can add/remove tags/due dates on every
+            // keystroke (each debounced save updates `note`) — animating
+            // that would make the title bar visibly jitter while typing.
+            .transaction { $0.animation = nil }
         }
         .padding(.horizontal)
         .padding(.vertical, 8)
@@ -217,6 +226,14 @@ struct NoteEditorView: View {
             } else {
                 Rectangle().fill(.bar)
             }
+        }
+    }
+
+    private func dueChipColor(for due: Date, theme: Theme) -> NSColor {
+        switch NoteStore.dueUrgency(for: due) {
+        case .overdue: theme.resolvedDueOverdueColor
+        case .soon: theme.resolvedDueSoonColor
+        case .later: theme.resolvedDueColor
         }
     }
 

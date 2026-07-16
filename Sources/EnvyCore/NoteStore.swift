@@ -618,6 +618,12 @@ public final class NoteStore: ObservableObject {
         var tagFilter: String?
         var excludeTags: [String] = []
         var dateFilter: (start: Date, end: Date)?
+        var dueFilter: (start: Date, end: Date)?
+        var isDueOverdueOnly = false
+        var isDueFutureOnly = false
+        var isDueAnyOnly = false
+        var isDueInvalid = false
+        var dueTokenSeen = false
         var folderFilter: String?
         var excludeFolders: [String] = []
         var isTodoOnly = false
@@ -652,6 +658,47 @@ public final class NoteStore: ObservableObject {
                 if dateFilter == nil {
                     dateFilter = Self.dateRange(for: String(token.dropFirst("date:".count)))
                 }
+            } else if token.hasPrefix("due:") {
+                // "overdue" isn't a [start, end) window like the other
+                // buckets — it's "due before today," open-ended — so it's
+                // its own flag rather than something dueRange(for:) could
+                // express. A bare "due:" (no value) means "has a due date
+                // at all" — same shape as "todo:" meaning "has an unchecked
+                // task."
+                //
+                // Unlike date:, an unrecognized value here (not empty, not
+                // "overdue", not a bucket, not a parseable date — "due:cats")
+                // means "match nothing," not "no filter, show everything."
+                // date:'s own fallback intentionally treats an unrecognized
+                // bucket as "show everything" so a typo doesn't dump you
+                // into a confusing empty list — but "due:cats" isn't a typo
+                // of a real bucket, it's simply invalid, and silently
+                // matching every note (due or not) hides that rather than
+                // surfacing it.
+                if !dueTokenSeen {
+                    dueTokenSeen = true
+                    let value = String(token.dropFirst("due:".count))
+                    if value.isEmpty {
+                        isDueAnyOnly = true
+                    } else if value == "overdue" || value == "past" {
+                        // "past" is a plain alias for "overdue" — same
+                        // meaning, different word for anyone who reaches
+                        // for past/future as the natural opposite pair
+                        // rather than overdue/future.
+                        isDueOverdueOnly = true
+                    } else if value == "future" {
+                        // The exact complement of "overdue" — due today or
+                        // later, same threshold, flipped comparison. Like
+                        // overdue, a note with no due date matches neither:
+                        // "future" isn't "undated," it's "dated and not
+                        // yet due."
+                        isDueFutureOnly = true
+                    } else if let range = Self.dueRange(for: value) {
+                        dueFilter = range
+                    } else {
+                        isDueInvalid = true
+                    }
+                }
             } else if token.hasPrefix("-"), token.count > 1 {
                 excludeTerms.append(String(token.dropFirst()))
             } else {
@@ -661,12 +708,23 @@ public final class NoteStore: ObservableObject {
 
         let hasOperator = isTodoOnly || tagFilter != nil || !excludeTags.isEmpty
             || dateFilter != nil || folderFilter != nil || !excludeFolders.isEmpty
+            || dueFilter != nil || isDueOverdueOnly || isDueFutureOnly || isDueAnyOnly || isDueInvalid
+
+        // Computed once for the whole group rather than per-note — same
+        // reasoning as dateRange's own `now`, just needing today's start
+        // rather than the current instant.
+        let overdueThreshold = Calendar.current.startOfDay(for: Date())
 
         return notes.compactMap { note -> (Note, Int)? in
             if isTodoOnly, !note.hasUncheckedTask { return nil }
             if let tagFilter, !note.tags.contains(where: { Self.fastContains($0, tagFilter) }) { return nil }
             if !excludeTags.isEmpty, note.tags.contains(where: { tag in excludeTags.contains { Self.fastContains(tag, $0) } }) { return nil }
             if let dateFilter, !(note.modifiedDate >= dateFilter.start && note.modifiedDate < dateFilter.end) { return nil }
+            if isDueInvalid { return nil }
+            if isDueAnyOnly, note.due == nil { return nil }
+            if isDueOverdueOnly, !(note.due.map { $0 < overdueThreshold } ?? false) { return nil }
+            if isDueFutureOnly, !(note.due.map { $0 >= overdueThreshold } ?? false) { return nil }
+            if let dueFilter, !(note.due.map { $0 >= dueFilter.start && $0 < dueFilter.end } ?? false) { return nil }
             if let folderFilter, !Self.fastContains(note.folderName.lowercased(), folderFilter) { return nil }
             if !excludeFolders.isEmpty, excludeFolders.contains(where: { Self.fastContains(note.folderName.lowercased(), $0) }) { return nil }
             if !excludeTerms.isEmpty {
@@ -754,12 +812,99 @@ public final class NoteStore: ObservableObject {
         }
     }
 
+    /// Coloring/urgency buckets for a due date — deliberately reuses the
+    /// exact same "current calendar week" window due:week resolves to
+    /// (via dueRange(for: "week") below), rather than inventing a separate
+    /// "soon" threshold: a due-soon color that disagreed with what
+    /// due:week actually returned would be its own confusing bug, the same
+    /// class as due:week itself disagreeing with date:week earlier.
+    public enum DueUrgency: Sendable, Equatable {
+        case overdue
+        case soon
+        case later
+    }
+
+    /// `now` is a parameter (not always the live Date()) so this stays
+    /// testable without mocking the system clock.
+    nonisolated public static func dueUrgency(for date: Date, now: Date = Date()) -> DueUrgency {
+        let calendar = Calendar.current
+        if date < calendar.startOfDay(for: now) { return .overdue }
+        if let thisWeek = calendar.dateInterval(of: .weekOfYear, for: now), date < thisWeek.end { return .soon }
+        return .later
+    }
+
+    /// The [start, end) window a "due:" bucket resolves to. Deliberately its
+    /// own function rather than reusing dateRange(for:) above: date:week/
+    /// date:month look *backward* from now (the last 7/30 days) because
+    /// modifiedDate is naturally in the past — "recently edited." A due
+    /// date is naturally in the *future* — something upcoming you're
+    /// working toward — so due:month needs to look forward instead (the
+    /// next 30 days); reusing dateRange's backward window here would make
+    /// "due:month" silently mean "was due sometime last month," which isn't
+    /// what it says. due:today and an exact date are direction-agnostic (a
+    /// single calendar day either way), so those two cases are identical to
+    /// dateRange's own.
+    ///
+    /// due:week (and due:nextweek) are neither backward nor a rolling
+    /// forward window — they're calendar-aligned to the current/next
+    /// Mon–Sun-or-locale-equivalent week via Calendar.dateInterval(of:
+    /// .weekOfYear, for:), which is what "due this week" actually means:
+    /// it includes days earlier in the current week that have already
+    /// passed (an overdue Tuesday task still reads as "due this week" on
+    /// Wednesday), not just the next 7 days from this exact moment.
+    nonisolated private static func dueRange(for dueQuery: String) -> (start: Date, end: Date)? {
+        guard !dueQuery.isEmpty else { return nil }
+        let calendar = Calendar.current
+        let now = Date()
+
+        switch dueQuery {
+        case "today":
+            let start = calendar.startOfDay(for: now)
+            return (start, calendar.date(byAdding: .day, value: 1, to: start) ?? now)
+        // "tomorrow"/"yesterday" are single-day windows, exactly like
+        // "today" — today's date ± 1, not "tomorrow and everything after"
+        // (that's what week/month are for). Without an explicit case here,
+        // an unrecognized bucket falls through to the default: branch,
+        // fails to parse as a date, and dueRange returns nil — which
+        // filtered(query:) then treats as "no filter, show everything" (see
+        // dateRange's own doc comment above), not "show nothing." That's
+        // the right fallback for a genuine typo, but "tomorrow" isn't a
+        // typo, it's a real, expected bucket that needs its own case.
+        case "tomorrow":
+            let start = calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: now)) ?? now
+            return (start, calendar.date(byAdding: .day, value: 1, to: start) ?? start)
+        case "yesterday":
+            let todayStart = calendar.startOfDay(for: now)
+            let start = calendar.date(byAdding: .day, value: -1, to: todayStart) ?? todayStart
+            return (start, todayStart)
+        case "week":
+            guard let interval = calendar.dateInterval(of: .weekOfYear, for: now) else { return nil }
+            return (interval.start, interval.end)
+        case "nextweek":
+            guard let nextWeek = calendar.date(byAdding: .weekOfYear, value: 1, to: now),
+                  let interval = calendar.dateInterval(of: .weekOfYear, for: nextWeek) else { return nil }
+            return (interval.start, interval.end)
+        case "month":
+            return (now, calendar.date(byAdding: .day, value: 30, to: now) ?? now)
+        default:
+            guard let components = parseFlexibleDate(dueQuery), let start = calendar.date(from: components) else { return nil }
+            return (start, calendar.date(byAdding: .day, value: 1, to: start) ?? start)
+        }
+    }
+
     /// Accepts "2026-04-15" (ISO, year first) as well as "4-15-26" /
     /// "04-15-2026" (US month-day-year, either "-" or "/" as the separator)
     /// — disambiguated by whether the first component has 4 digits, which
     /// unambiguously identifies the ISO year-first form. A 2-digit year is
     /// assumed to be 2000+, reasonable for a notes app.
-    nonisolated private static func parseFlexibleDate(_ input: String) -> DateComponents? {
+    ///
+    /// Public (not just internal): Note.swift's `due` parsing reuses this
+    /// exact same format within EnvyCore, and MarkdownStyler in the Envy
+    /// module also needs it — to resolve each due@ token's own date at
+    /// style time for per-match urgency coloring, rather than only ever
+    /// reading the note-level `due` (which only captures the *first*
+    /// due@ token, whereas styling has to color every match it finds).
+    nonisolated public static func parseFlexibleDate(_ input: String) -> DateComponents? {
         let parts = input.components(separatedBy: CharacterSet(charactersIn: "-/")).filter { !$0.isEmpty }
         guard parts.count == 3,
               let a = Int(parts[0]), let b = Int(parts[1]), let c = Int(parts[2]) else { return nil }

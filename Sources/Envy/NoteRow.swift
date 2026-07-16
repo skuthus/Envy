@@ -6,6 +6,14 @@ struct NoteRow: View {
     var showPreview: Bool
     var showDateModified: Bool
     var dateDisplayStyle: DateDisplayStyle
+    /// Which column's date actually shows in the trailing slot — a
+    /// traditional sortable list shows whatever you're sorted by (Finder's
+    /// Date Modified column doesn't stick around once you sort by name and
+    /// add Date Created instead), not a fixed field regardless of sort.
+    /// Sorting by name falls back to modifiedDate, same as before this
+    /// existed — only .due actually changes what's displayed.
+    var sortField: NoteSortField
+    var theme: Theme
     var textColor: Color?
     var bold: Bool = false
     var isPinned: Bool = false
@@ -34,23 +42,44 @@ struct NoteRow: View {
                     .fontWeight(bold ? .bold : nil)
                     .lineLimit(1)
             }
-            if showDateModified {
+            if showDateModified, let displayedDate {
                 Spacer()
-                dateText
+                dateText(displayedDate)
                     .font(.caption)
-                    .foregroundStyle(textColor ?? Color.secondary)
+                    .foregroundStyle(dateTextColor(for: displayedDate))
                     .fontWeight(bold ? .bold : nil)
                     .lineLimit(1)
             }
         }
     }
 
+    /// nil when sorted by due date but this particular note doesn't have
+    /// one — shown as a blank trailing slot rather than silently falling
+    /// back to modifiedDate, same as a traditional sorted column leaves a
+    /// row's cell empty rather than substituting an unrelated value.
+    private var displayedDate: Date? {
+        sortField == .due ? note.due : note.modifiedDate
+    }
+
+    /// Modified date stays plain (textColor override or secondary, same as
+    /// always) — urgency coloring only applies when the slot is actually
+    /// showing a due date, matching the same overdue/soon/later split used
+    /// in the editor and its title-bar chip.
+    private func dateTextColor(for date: Date) -> Color {
+        guard sortField == .due else { return textColor ?? Color.secondary }
+        switch NoteStore.dueUrgency(for: date) {
+        case .overdue: return Color(nsColor: theme.resolvedDueOverdueColor)
+        case .soon: return Color(nsColor: theme.resolvedDueSoonColor)
+        case .later: return textColor ?? Color(nsColor: theme.resolvedDueColor)
+        }
+    }
+
     @ViewBuilder
-    private var dateText: some View {
+    private func dateText(_ date: Date) -> some View {
         if dateDisplayStyle == .relative {
-            Text(note.modifiedDate, style: .relative)
+            Text(date, style: .relative)
         } else {
-            Text(dateDisplayStyle.format(note.modifiedDate))
+            Text(dateDisplayStyle.format(date))
         }
     }
 }

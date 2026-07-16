@@ -58,7 +58,7 @@ cp "$BINARY_PATH" "$TMP_APP_BUNDLE/Contents/MacOS/$APP_NAME"
 cp "$ROOT_DIR/build-resources/AppIcon.icns" "$TMP_APP_BUNDLE/Contents/Resources/AppIcon.icns"
 cp "$ROOT_DIR/Scripts/Info.plist" "$TMP_APP_BUNDLE/Contents/Info.plist"
 
-SIGNING_IDENTITY="$(security find-identity -v -p codesigning | grep "Developer ID Application" | head -1 | sed -E 's/.*"(.*)"/\1/')"
+SIGNING_IDENTITY="$(security find-identity -v -p codesigning | grep "Developer ID Application" | head -1 | sed -E 's/.*"(.*)"/\1/' || true)"
 
 echo "==> Embedding Sparkle.framework..."
 embed_sparkle "$TMP_APP_BUNDLE" "$APP_NAME" "$SIGNING_IDENTITY"

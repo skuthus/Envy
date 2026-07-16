@@ -433,6 +433,222 @@ struct SelfCheck {
             check("date:week matches a just-created note", store.filtered(query: "date:week").contains { $0.id == note.id })
         }
 
+        // noteDueExtractsAbsoluteDateToken
+        do {
+            var withDue = Note(id: "x", url: URL(fileURLWithPath: "/tmp/x.md"), content: "", modifiedDate: Date())
+            withDue.content = "Ship the report due@04-16-26 before the deadline."
+            let expected = Calendar.current.date(from: DateComponents(year: 2026, month: 4, day: 16))
+            check("due extracts an absolute date token", withDue.due == expected)
+
+            var withoutDue = Note(id: "y", url: URL(fileURLWithPath: "/tmp/y.md"), content: "", modifiedDate: Date())
+            withoutDue.content = "This note has no due date at all."
+            check("due is nil when no due@ token is present", withoutDue.due == nil)
+
+            var unparseable = Note(id: "z", url: URL(fileURLWithPath: "/tmp/z.md"), content: "", modifiedDate: Date())
+            unparseable.content = "due@whenever-i-get-to-it"
+            check("due is nil for an unparseable token rather than crashing", unparseable.due == nil)
+
+            var midWord = Note(id: "w", url: URL(fileURLWithPath: "/tmp/w.md"), content: "", modifiedDate: Date())
+            midWord.content = "overdue@04-16-26 shouldn't count as a due token"
+            check("due regex excludes mid-word matches like 'overdue@'", midWord.due == nil)
+
+            // Regression: a greedy \S+ capture used to swallow trailing
+            // punctuation with no space before it, breaking Int parsing of
+            // the year and silently producing no due date at all.
+            var trailingComma = Note(id: "v", url: URL(fileURLWithPath: "/tmp/v.md"), content: "", modifiedDate: Date())
+            trailingComma.content = "Long-range planning doc, due@09-16-26, not urgent yet."
+            let expectedTrailingComma = Calendar.current.date(from: DateComponents(year: 2026, month: 9, day: 16))
+            check("due parses correctly when followed by a comma with no space", trailingComma.due == expectedTrailingComma)
+
+            var trailingPeriod = Note(id: "u", url: URL(fileURLWithPath: "/tmp/u.md"), content: "", modifiedDate: Date())
+            trailingPeriod.content = "Ship it due@04-16-26."
+            let expectedTrailingPeriod = Calendar.current.date(from: DateComponents(year: 2026, month: 4, day: 16))
+            check("due parses correctly when followed by a period with no space", trailingPeriod.due == expectedTrailingPeriod)
+        }
+
+        // filteredDueQuerySupportsTodayOverdueAndWeekBuckets
+        do {
+            let store = await makeTempStore()
+            let calendar = Calendar.current
+            let now = Date()
+
+            func dueToken(daysFromNow: Int) -> String {
+                let date = calendar.date(byAdding: .day, value: daysFromNow, to: now) ?? now
+                let comps = calendar.dateComponents([.year, .month, .day], from: date)
+                return String(format: "due@%04d-%02d-%02d", comps.year!, comps.month!, comps.day!)
+            }
+
+            var dueToday = store.create(title: "Due Today")
+            dueToday.content = dueToken(daysFromNow: 0)
+            store.save(dueToday)
+
+            var overdue = store.create(title: "Overdue Note")
+            overdue.content = dueToken(daysFromNow: -1)
+            store.save(overdue)
+
+            var dueTomorrow = store.create(title: "Due Tomorrow")
+            dueTomorrow.content = dueToken(daysFromNow: 1)
+            store.save(dueTomorrow)
+
+            var dueInThreeDays = store.create(title: "Due In Three Days")
+            dueInThreeDays.content = dueToken(daysFromNow: 3)
+            store.save(dueInThreeDays)
+
+            var dueNextMonth = store.create(title: "Due Next Month")
+            dueNextMonth.content = dueToken(daysFromNow: 20)
+            store.save(dueNextMonth)
+
+            let noDue = store.create(title: "No Due Date")
+
+            // "tomorrow" must be a single-day window (today+1 only), not
+            // "tomorrow and everything after" — the exact bug this guards
+            // against would make this match dueInThreeDays/dueNextMonth too.
+            let tomorrowResults = store.filtered(query: "due:tomorrow")
+            check("due:tomorrow matches a note due tomorrow", tomorrowResults.contains { $0.id == dueTomorrow.id })
+            check("due:tomorrow excludes a note due today", !tomorrowResults.contains { $0.id == dueToday.id })
+            check("due:tomorrow excludes a note due in 3 days", !tomorrowResults.contains { $0.id == dueInThreeDays.id })
+            check("due:tomorrow excludes a note due in 20 days", !tomorrowResults.contains { $0.id == dueNextMonth.id })
+
+            let yesterdayResults = store.filtered(query: "due:yesterday")
+            check("due:yesterday matches a note due yesterday", yesterdayResults.contains { $0.id == overdue.id })
+            check("due:yesterday excludes a note due today", !yesterdayResults.contains { $0.id == dueToday.id })
+
+            let todayResults = store.filtered(query: "due:today")
+            check("due:today matches a note due today", todayResults.contains { $0.id == dueToday.id })
+            check("due:today excludes an overdue note", !todayResults.contains { $0.id == overdue.id })
+
+            let overdueResults = store.filtered(query: "due:overdue")
+            check("due:overdue matches a note due yesterday", overdueResults.contains { $0.id == overdue.id })
+            check("due:overdue excludes a note due today", !overdueResults.contains { $0.id == dueToday.id })
+            check("due:overdue excludes a note with no due date", !overdueResults.contains { $0.id == noDue.id })
+
+            // past: is a plain alias for overdue: — identical behavior.
+            let pastResults = store.filtered(query: "due:past")
+            check("due:past matches a note due yesterday", pastResults.contains { $0.id == overdue.id })
+            check("due:past excludes a note due today", !pastResults.contains { $0.id == dueToday.id })
+
+            // future: is the exact complement of overdue: — same threshold,
+            // flipped. A note due exactly today counts as future (not yet
+            // overdue), and an undated note matches neither.
+            let futureResults = store.filtered(query: "due:future")
+            check("due:future matches a note due today", futureResults.contains { $0.id == dueToday.id })
+            check("due:future matches a note due tomorrow", futureResults.contains { $0.id == dueTomorrow.id })
+            check("due:future excludes an overdue note", !futureResults.contains { $0.id == overdue.id })
+            check("due:future excludes a note with no due date", !futureResults.contains { $0.id == noDue.id })
+
+            let monthResults = store.filtered(query: "due:month")
+            check("due:month matches a note due in 20 days", monthResults.contains { $0.id == dueNextMonth.id })
+        }
+
+        // dueUrgencyClassifiesOverdueSoonAndLater
+        do {
+            let calendar = Calendar.current
+            let now = Date()
+
+            let yesterday = calendar.date(byAdding: .day, value: -1, to: now)!
+            check("a date before today is overdue", NoteStore.dueUrgency(for: yesterday, now: now) == .overdue)
+
+            check("today itself is soon, not overdue", NoteStore.dueUrgency(for: now, now: now) == .soon)
+
+            let thisWeek = calendar.dateInterval(of: .weekOfYear, for: now)!
+            let lastMomentOfThisWeek = thisWeek.end.addingTimeInterval(-1)
+            check("the last moment of this calendar week is still soon", NoteStore.dueUrgency(for: lastMomentOfThisWeek, now: now) == .soon)
+
+            let nextWeekStart = thisWeek.end
+            check("the moment this week ends is later, not soon", NoteStore.dueUrgency(for: nextWeekStart, now: now) == .later)
+
+            let farFuture = calendar.date(byAdding: .month, value: 2, to: now)!
+            check("a date months away is later", NoteStore.dueUrgency(for: farFuture, now: now) == .later)
+        }
+
+        // filteredDueWeekAndNextweekAreCalendarAlignedNotRolling
+        do {
+            let store = await makeTempStore()
+            let calendar = Calendar.current
+            let now = Date()
+
+            func dueToken(at date: Date) -> String {
+                let comps = calendar.dateComponents([.year, .month, .day], from: date)
+                return String(format: "due@%04d-%02d-%02d", comps.year!, comps.month!, comps.day!)
+            }
+
+            let thisWeek = calendar.dateInterval(of: .weekOfYear, for: now)!
+            let lastWeek = calendar.dateInterval(of: .weekOfYear, for: calendar.date(byAdding: .weekOfYear, value: -1, to: now)!)!
+            let nextWeek = calendar.dateInterval(of: .weekOfYear, for: calendar.date(byAdding: .weekOfYear, value: 1, to: now)!)!
+
+            // Deliberately not tied to "now ± N days" like the other
+            // buckets — due:week is calendar-aligned (Mon–Sun or locale
+            // equivalent), so a note due earlier in the current week (already
+            // passed) must still count as "due this week," which a rolling
+            // window wouldn't have allowed.
+            var earlierThisWeek = store.create(title: "Due Earlier This Week")
+            earlierThisWeek.content = dueToken(at: thisWeek.start.addingTimeInterval(3600))
+            store.save(earlierThisWeek)
+
+            var laterThisWeek = store.create(title: "Due Later This Week")
+            laterThisWeek.content = dueToken(at: thisWeek.end.addingTimeInterval(-3600))
+            store.save(laterThisWeek)
+
+            var dueLastWeek = store.create(title: "Due Last Week")
+            dueLastWeek.content = dueToken(at: lastWeek.end.addingTimeInterval(-3600))
+            store.save(dueLastWeek)
+
+            var dueNextWeek = store.create(title: "Due Next Week")
+            dueNextWeek.content = dueToken(at: nextWeek.start.addingTimeInterval(3600))
+            store.save(dueNextWeek)
+
+            let weekResults = store.filtered(query: "due:week")
+            check("due:week matches a note due earlier this calendar week", weekResults.contains { $0.id == earlierThisWeek.id })
+            check("due:week matches a note due later this calendar week", weekResults.contains { $0.id == laterThisWeek.id })
+            check("due:week excludes a note due last calendar week", !weekResults.contains { $0.id == dueLastWeek.id })
+            check("due:week excludes a note due next calendar week", !weekResults.contains { $0.id == dueNextWeek.id })
+
+            let nextWeekResults = store.filtered(query: "due:nextweek")
+            check("due:nextweek matches a note due next calendar week", nextWeekResults.contains { $0.id == dueNextWeek.id })
+            check("due:nextweek excludes a note due this calendar week", !nextWeekResults.contains { $0.id == laterThisWeek.id })
+            check("due:nextweek excludes a note due last calendar week", !nextWeekResults.contains { $0.id == dueLastWeek.id })
+        }
+
+        // filteredBareDueQueryMatchesOnlyNotesWithAnyDueDate
+        do {
+            let store = await makeTempStore()
+            var withDue = store.create(title: "Has Due Date")
+            withDue.content = "due@2026-08-01"
+            store.save(withDue)
+
+            let withoutDue = store.create(title: "No Due Date")
+
+            let results = store.filtered(query: "due:")
+            check("bare due: matches a note with any due date", results.contains { $0.id == withDue.id })
+            check("bare due: excludes a note with no due date", !results.contains { $0.id == withoutDue.id })
+        }
+
+        // filteredInvalidDueQueryMatchesNothing
+        do {
+            let store = await makeTempStore()
+            var withDue = store.create(title: "Has Due Date")
+            withDue.content = "due@2026-08-01"
+            store.save(withDue)
+
+            let withoutDue = store.create(title: "No Due Date")
+
+            let results = store.filtered(query: "due:cats")
+            check("an unrecognized due: value matches nothing, not everything", results.isEmpty)
+            check("invalid due: excludes a note that does have a due date", !results.contains { $0.id == withDue.id })
+            check("invalid due: excludes a note with no due date", !results.contains { $0.id == withoutDue.id })
+        }
+
+        // filteredDueQueryMatchesExactDate
+        do {
+            let store = await makeTempStore()
+            var note = store.create(title: "Fixed Due Date")
+            note.content = "due@2026-04-16"
+            store.save(note)
+
+            check("due: matches an exact ISO date", store.filtered(query: "due:2026-04-16").contains { $0.id == note.id })
+            check("due: excludes a non-matching exact date", !store.filtered(query: "due:2026-04-17").contains { $0.id == note.id })
+        }
+
         // externalInPlaceEditIsPickedUpWithoutManualReload
         do {
             let store = await makeTempStore()

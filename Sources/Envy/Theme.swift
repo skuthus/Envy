@@ -49,6 +49,15 @@ struct Theme: Equatable {
     var backgroundColor: CodableColor?
     var markerColor: CodableColor?
     var linkColor: CodableColor?
+    /// Not-yet-due, due-soon (this calendar week), and overdue are three
+    /// separate tokens rather than one color with urgency logic layered on
+    /// top — same pattern as completedTaskColor being its own dedicated
+    /// slot instead of a derived tint of textColor. A user's custom color
+    /// choice for each state is always respected exactly; urgency only
+    /// decides *which* slot applies, never overrides what's in it.
+    var dueColor: CodableColor?
+    var dueSoonColor: CodableColor?
+    var dueOverdueColor: CodableColor?
     var codeBackgroundColor: CodableColor?
     var tagColor: CodableColor?
     var tagBackgroundColor: CodableColor?
@@ -112,6 +121,9 @@ struct Theme: Equatable {
     var resolvedBackgroundColor: NSColor { backgroundColor?.nsColor ?? .textBackgroundColor }
     var resolvedMarkerColor: NSColor { markerColor?.nsColor ?? .tertiaryLabelColor }
     var resolvedLinkColor: NSColor { linkColor?.nsColor ?? .linkColor }
+    var resolvedDueColor: NSColor { dueColor?.nsColor ?? .systemOrange }
+    var resolvedDueSoonColor: NSColor { dueSoonColor?.nsColor ?? .systemYellow }
+    var resolvedDueOverdueColor: NSColor { dueOverdueColor?.nsColor ?? .systemRed }
     var resolvedCodeBackgroundColor: NSColor { codeBackgroundColor?.nsColor ?? Self.defaultCodeBackgroundColor }
     var resolvedTagColor: NSColor { tagColor?.nsColor ?? .systemGreen }
     var resolvedTagBackgroundColor: NSColor { tagBackgroundColor?.nsColor ?? Self.defaultTagBackgroundColor }
@@ -144,6 +156,9 @@ extension Theme: RawRepresentable {
         var backgroundColor: CodableColor?
         var markerColor: CodableColor?
         var linkColor: CodableColor?
+        var dueColor: CodableColor?
+        var dueSoonColor: CodableColor?
+        var dueOverdueColor: CodableColor?
         var codeBackgroundColor: CodableColor?
         var highlightColor: CodableColor?
         var selectionColor: CodableColor?
@@ -183,6 +198,9 @@ extension Theme: RawRepresentable {
             theme.backgroundColor = payload.backgroundColor
             theme.markerColor = payload.markerColor
             theme.linkColor = payload.linkColor
+            theme.dueColor = payload.dueColor
+            theme.dueSoonColor = payload.dueSoonColor
+            theme.dueOverdueColor = payload.dueOverdueColor
             theme.codeBackgroundColor = payload.codeBackgroundColor
             theme.tagColor = payload.tagColor
             theme.tagBackgroundColor = payload.tagBackgroundColor
@@ -217,6 +235,9 @@ extension Theme: RawRepresentable {
             backgroundColor: backgroundColor,
             markerColor: markerColor,
             linkColor: linkColor,
+            dueColor: dueColor,
+            dueSoonColor: dueSoonColor,
+            dueOverdueColor: dueOverdueColor,
             codeBackgroundColor: codeBackgroundColor,
             highlightColor: highlightColor,
             selectionColor: selectionColor,
@@ -290,6 +311,9 @@ extension Theme {
             backgroundColor: rgb(40, 42, 54),
             markerColor: rgb(98, 114, 164),
             linkColor: rgb(139, 233, 253),
+            dueColor: rgb(255, 184, 108),
+            dueSoonColor: rgb(241, 250, 140),
+            dueOverdueColor: rgb(255, 85, 85),
             codeBackgroundColor: rgb(68, 71, 90),
             tagColor: rgb(80, 250, 123),
             tagBackgroundColor: rgb(80, 250, 123, alpha: 0.15),
@@ -306,6 +330,9 @@ extension Theme {
             backgroundColor: rgb(39, 40, 34),
             markerColor: rgb(117, 113, 94),
             linkColor: rgb(102, 217, 239),
+            dueColor: rgb(253, 151, 31),
+            dueSoonColor: rgb(230, 219, 116),
+            dueOverdueColor: rgb(249, 38, 114),
             codeBackgroundColor: rgb(62, 61, 50),
             tagColor: rgb(166, 226, 46),
             tagBackgroundColor: rgb(166, 226, 46, alpha: 0.15),
@@ -322,6 +349,9 @@ extension Theme {
             backgroundColor: rgb(26, 27, 38),
             markerColor: rgb(86, 95, 137),
             linkColor: rgb(122, 162, 247),
+            dueColor: rgb(255, 158, 100),
+            dueSoonColor: rgb(224, 175, 104),
+            dueOverdueColor: rgb(247, 118, 142),
             codeBackgroundColor: rgb(36, 40, 59),
             tagColor: rgb(158, 206, 106),
             tagBackgroundColor: rgb(158, 206, 106, alpha: 0.15),
@@ -338,6 +368,9 @@ extension Theme {
             backgroundColor: rgb(0, 43, 54),
             markerColor: rgb(88, 110, 117),
             linkColor: rgb(38, 139, 210),
+            dueColor: rgb(203, 75, 22),
+            dueSoonColor: rgb(181, 137, 0),
+            dueOverdueColor: rgb(220, 50, 47),
             codeBackgroundColor: rgb(7, 54, 66),
             tagColor: rgb(133, 153, 0),
             tagBackgroundColor: rgb(133, 153, 0, alpha: 0.15),
@@ -354,6 +387,9 @@ extension Theme {
             backgroundColor: rgb(253, 246, 227),
             markerColor: rgb(147, 161, 161),
             linkColor: rgb(38, 139, 210),
+            dueColor: rgb(203, 75, 22),
+            dueSoonColor: rgb(181, 137, 0),
+            dueOverdueColor: rgb(220, 50, 47),
             codeBackgroundColor: rgb(238, 232, 213),
             tagColor: rgb(133, 153, 0),
             tagBackgroundColor: rgb(133, 153, 0, alpha: 0.15),
@@ -377,6 +413,9 @@ extension Theme {
             backgroundColor: rgb(255, 255, 255),
             markerColor: rgb(153, 153, 153),
             linkColor: rgb(26, 95, 180),
+            dueColor: rgb(180, 110, 40),
+            dueSoonColor: rgb(170, 140, 40),
+            dueOverdueColor: rgb(180, 60, 50),
             codeBackgroundColor: rgb(242, 242, 242),
             tagColor: rgb(90, 90, 90),
             tagBackgroundColor: rgb(210, 210, 210, alpha: 0.4),
@@ -393,6 +432,9 @@ extension Theme {
             backgroundColor: rgb(30, 30, 30),
             markerColor: rgb(120, 120, 120),
             linkColor: rgb(90, 160, 250),
+            dueColor: rgb(210, 150, 90),
+            dueSoonColor: rgb(210, 190, 100),
+            dueOverdueColor: rgb(210, 100, 90),
             codeBackgroundColor: rgb(42, 42, 42),
             tagColor: rgb(180, 180, 180),
             tagBackgroundColor: rgb(90, 90, 90, alpha: 0.3),

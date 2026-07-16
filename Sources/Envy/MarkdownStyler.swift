@@ -1,4 +1,5 @@
 import AppKit
+import EnvyCore
 
 @MainActor
 enum MarkdownStyler {
@@ -33,6 +34,14 @@ enum MarkdownStyler {
     // headings, which require a space after "#", and mid-word/"##" false
     // positives.
     private static let hashtagRegex = try! NSRegularExpression(pattern: #"(?<![\w#])#[A-Za-z0-9_-]+"#)
+    // Matches Note.dueRegex in EnvyCore exactly, including restricting the
+    // capture to date-shaped characters (digits, "-", "/") rather than a
+    // greedy \S+ — \S+ swallowed trailing punctuation like a comma right
+    // after the date with no space, which then failed to parse as a date
+    // and silently fell back to the plain (not-yet-due) color regardless
+    // of the note's actual urgency. Same duplication reasoning as
+    // hashtagRegex above (that one's private to its own target).
+    private static let dueRegex = try! NSRegularExpression(pattern: #"(?<![\w])due@([0-9/-]+)"#, options: [.caseInsensitive])
 
     static func wikiLinkFullRanges(in text: String) -> [NSRange] {
         let full = NSRange(location: 0, length: (text as NSString).length)
@@ -296,6 +305,9 @@ enum MarkdownStyler {
         // match, so recomputing this per-tag was wasted color-space work on
         // notes with many hashtags.
         let legibleTagForeground = legibleForeground(tagColor, over: compositedColor(tagBackground, over: theme.resolvedBackgroundColor))
+        let dueColor = theme.resolvedDueColor
+        let dueSoonColor = theme.resolvedDueSoonColor
+        let dueOverdueColor = theme.resolvedDueOverdueColor
 
         textStorage.beginEditing()
         textStorage.setAttributes([.font: baseFont, .foregroundColor: theme.resolvedTextColor], range: full)
@@ -323,6 +335,34 @@ enum MarkdownStyler {
             textStorage.addAttribute(.font, value: tagFont, range: match.range)
             textStorage.addAttribute(.foregroundColor, value: legibleTagForeground, range: match.range)
             textStorage.addAttribute(.backgroundColor, value: tagBackground, range: match.range)
+        }
+
+        // Bold, single-color foreground — no background chip, deliberately
+        // styled like a link (one dedicated color) rather than like a tag
+        // (color + chip), since this is a single per-note value, not a
+        // repeated/multi-valued marker. Color depends on each match's own
+        // parsed date (not the note-level `due`, which only ever holds the
+        // first token) — overdue/soon/later each get their own theme token,
+        // same three-way split dueUrgency itself expresses. An unparseable
+        // token still highlights (same graceful-failure spirit as the rest
+        // of this file) but falls back to the plain dueColor, since there's
+        // no date to classify.
+        for match in dueRegex.matches(in: text, range: full) {
+            guard !isClaimed(match.range) else { continue }
+            let tokenRange = match.range(at: 1)
+            let token = (text as NSString).substring(with: tokenRange)
+            let color: NSColor
+            if let components = NoteStore.parseFlexibleDate(token), let date = Calendar.current.date(from: components) {
+                switch NoteStore.dueUrgency(for: date) {
+                case .overdue: color = dueOverdueColor
+                case .soon: color = dueSoonColor
+                case .later: color = dueColor
+                }
+            } else {
+                color = dueColor
+            }
+            textStorage.addAttribute(.font, value: tagFont, range: match.range)
+            textStorage.addAttribute(.foregroundColor, value: color, range: match.range)
         }
 
         for match in codeRegex.matches(in: text, range: full) {
@@ -771,8 +811,8 @@ enum MarkdownStyler {
                     let absoluteRange = NSRange(location: tagMatch.range.location + nsSubRange.location, length: nsSubRange.length)
                     textStorage.addAttribute(.backgroundColor, value: color, range: absoluteRange)
                 }
-            } else if lowered.hasPrefix("date:") {
-                // Nothing literal in the note text corresponds to a date
+            } else if lowered.hasPrefix("date:") || lowered.hasPrefix("due:") {
+                // Nothing literal in the note text corresponds to a date/due
                 // filter — there's nothing to highlight.
                 continue
             } else {

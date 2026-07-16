@@ -10,13 +10,18 @@ enum LayoutMode: String {
 enum NoteSortField: String {
     case name
     case date
+    case due
 
     /// The direction each field starts in when first selected — matches
     /// Notational Velocity's convention (names A→Z, dates newest first).
+    /// Due dates default ascending (soonest first) — the most urgent note
+    /// belongs at the top, same reasoning as names starting A→Z rather than
+    /// Z→A.
     var defaultAscending: Bool {
         switch self {
         case .name: return true
         case .date: return false
+        case .due: return true
         }
     }
 }
