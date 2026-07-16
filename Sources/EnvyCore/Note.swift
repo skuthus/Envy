@@ -117,8 +117,9 @@ private final class NoteDerivedCache: @unchecked Sendable {
     //   checked state and the token's whole line (a due token can appear
     //   anywhere after the checkbox marker, not just right after it).
     // Each token is either an absolute date ("@04-16-26" / "@2026-04-16"),
-    // "@today", or a day name ("@monday"), which always means the *next*
-    // occurrence of that day — see NoteStore.resolveDueToken for why
+    // "@today"/"@tomorrow"/"@yesterday", or a day name ("@monday"), which
+    // always means the *next* occurrence of that day — see
+    // NoteStore.resolveDueToken for why
     // that's fine to resolve fresh every time despite the general rule
     // against live relative resolution (explained there): everything else
     // (arbitrary phrases like "next week") still belongs in the editor as
@@ -286,7 +287,7 @@ public struct Note: Identifiable, Sendable {
     /// returns nil) just means no due date, not a crash — same forgiving
     /// failure mode as a malformed tag or wiki-link.
     fileprivate static let dueRegex = try! NSRegularExpression(
-        pattern: #"(?<![\w])@(today|monday|tuesday|wednesday|thursday|friday|saturday|sunday|[0-9/-]+)(?!\w)"#,
+        pattern: #"(?<![\w])@(today|tomorrow|yesterday|monday|tuesday|wednesday|thursday|friday|saturday|sunday|[0-9/-]+)(?!\w)"#,
         options: [.caseInsensitive]
     )
 

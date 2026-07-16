@@ -516,6 +516,20 @@ struct SelfCheck {
             var todayUpper = Note(id: "day-today-upper", url: URL(fileURLWithPath: "/tmp/day-today-upper.md"), content: "", modifiedDate: Date())
             todayUpper.content = "@TODAY"
             check("@TODAY matches case-insensitively", todayUpper.due == today)
+
+            let tomorrow = calendar.date(byAdding: .day, value: 1, to: today)
+            var tomorrowNote = Note(id: "day-tomorrow", url: URL(fileURLWithPath: "/tmp/day-tomorrow.md"), content: "", modifiedDate: Date())
+            tomorrowNote.content = "Follow up @tomorrow"
+            check("@tomorrow resolves to tomorrow", tomorrowNote.due == tomorrow)
+
+            let yesterday = calendar.date(byAdding: .day, value: -1, to: today)
+            var yesterdayNote = Note(id: "day-yesterday", url: URL(fileURLWithPath: "/tmp/day-yesterday.md"), content: "", modifiedDate: Date())
+            yesterdayNote.content = "Was due @yesterday"
+            check("@yesterday resolves to yesterday", yesterdayNote.due == yesterday)
+
+            var tomorrowUpper = Note(id: "day-tomorrow-upper", url: URL(fileURLWithPath: "/tmp/day-tomorrow-upper.md"), content: "", modifiedDate: Date())
+            tomorrowUpper.content = "@TOMORROW"
+            check("@TOMORROW matches case-insensitively", tomorrowUpper.due == tomorrow)
         }
 
         // noteDueIgnoresCrossedOutTokens

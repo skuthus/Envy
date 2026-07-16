@@ -44,7 +44,7 @@ enum MarkdownStyler {
     // neither a day name nor a date. Same duplication reasoning as
     // hashtagRegex above (that one's private to its own target).
     private static let dueRegex = try! NSRegularExpression(
-        pattern: #"(?<![\w])@(today|monday|tuesday|wednesday|thursday|friday|saturday|sunday|[0-9/-]+)(?!\w)"#,
+        pattern: #"(?<![\w])@(today|tomorrow|yesterday|monday|tuesday|wednesday|thursday|friday|saturday|sunday|[0-9/-]+)(?!\w)"#,
         options: [.caseInsensitive]
     )
 

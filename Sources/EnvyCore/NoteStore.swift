@@ -962,8 +962,13 @@ public final class NoteStore: ObservableObject {
     /// date token, by construction, never depends on "when" at all.
     nonisolated public static func resolveDueToken(_ token: String) -> Date? {
         let lowered = token.lowercased()
-        if lowered == "today" {
-            return Calendar.current.startOfDay(for: Date())
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: Date())
+        switch lowered {
+        case "today": return today
+        case "tomorrow": return calendar.date(byAdding: .day, value: 1, to: today)
+        case "yesterday": return calendar.date(byAdding: .day, value: -1, to: today)
+        default: break
         }
         if let weekday = weekdayNumbersByName[lowered] {
             return nextDate(forWeekday: weekday, after: Date())
