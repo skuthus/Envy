@@ -8,6 +8,7 @@ import EnvyCore
 /// disk), and before that, a single legacy path key from even earlier.
 enum IndexPreference {
     static let storageKey = "indexPath"
+    static let includeSubfoldersKey = "indexIncludeSubfolders"
     private static let legacyMultiFolderKey = "notesDirectoryPaths"
     private static let legacyMultiFolderDisabledKey = "disabledNotesDirectoryPaths"
     private static let legacySingleFolderKey = "notesDirectoryPath"

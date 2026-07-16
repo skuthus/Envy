@@ -34,7 +34,10 @@ enum NoteSortField: String {
 struct ContentView: View {
     @Environment(\.openSettings) var openSettings
     @Environment(\.openWindow) var openWindow
-    @StateObject var store = NoteStore(directory: IndexPreference.load())
+    @StateObject var store = NoteStore(
+        directory: IndexPreference.load(),
+        includeSubfolders: UserDefaults.standard.bool(forKey: IndexPreference.includeSubfoldersKey)
+    )
     @State var query = ""
     @State var selectedID: String?
     /// Extra notes ⌘-selected alongside selectedID, for multi-select bulk
@@ -71,6 +74,7 @@ struct ContentView: View {
     @AppStorage("showTagsInTitleBar") var showTagsInTitleBar = false
     @AppStorage("showDuePill") var showDuePill = true
     @AppStorage(IndexPreference.storageKey) var indexPathRaw = ""
+    @AppStorage(IndexPreference.includeSubfoldersKey) var indexIncludeSubfolders = false
     @AppStorage("hasCreatedWelcomeNote") var hasCreatedWelcomeNote = false
     @AppStorage("lastSeenWhatsNewVersion") var lastSeenWhatsNewVersion = ""
     @AppStorage("moveFocusToEditorOnEnter") var moveFocusToEditorOnEnter = true
@@ -424,6 +428,9 @@ struct ContentView: View {
         }
         .onChange(of: indexPathRaw) { _, _ in
             switchIndexDirectory()
+        }
+        .onChange(of: indexIncludeSubfolders) { _, new in
+            store.setIncludeSubfolders(new)
         }
         .onChange(of: store.notes) { _, _ in
             // Fires once a reload actually finishes (folder switch, note

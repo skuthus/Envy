@@ -128,6 +128,31 @@ struct SelfCheck {
             check("setDirectory create lands in new folder", FileManager.default.fileExists(atPath: dirB.appendingPathComponent("In New Index.md").path))
         }
 
+        // includeSubfoldersScansNestedNotesButNeverTemplates
+        do {
+            let store = await makeTempStore()
+            let subfolder = store.noteDirectory.appendingPathComponent("Work", isDirectory: true)
+            try? FileManager.default.createDirectory(at: subfolder, withIntermediateDirectories: true)
+            try? "nested".write(to: subfolder.appendingPathComponent("Nested Note.md"), atomically: true, encoding: .utf8)
+
+            let templatesDirectory = store.noteDirectory.appendingPathComponent("Templates", isDirectory: true)
+            try? FileManager.default.createDirectory(at: templatesDirectory, withIntermediateDirectories: true)
+            try? "template body".write(to: templatesDirectory.appendingPathComponent("Should Not Appear.md"), atomically: true, encoding: .utf8)
+
+            store.reload()
+            await waitForLoad(store)
+            check("subfolder notes are invisible by default", !store.notes.contains { $0.title == "Nested Note" })
+
+            store.setIncludeSubfolders(true)
+            await waitForLoad(store)
+            check("includeSubfolders picks up a nested note", store.notes.contains { $0.title == "Nested Note" })
+            check("includeSubfolders still excludes Templates/", !store.notes.contains { $0.title == "Should Not Appear" })
+
+            store.setIncludeSubfolders(false)
+            await waitForLoad(store)
+            check("turning includeSubfolders back off hides the nested note again", !store.notes.contains { $0.title == "Nested Note" })
+        }
+
         // reloadInFlightAtLaunchDoesNotClobberAnImmediateCreate
         do {
             let dir = FileManager.default.temporaryDirectory

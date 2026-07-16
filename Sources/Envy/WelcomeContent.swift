@@ -119,6 +119,8 @@ enum WelcomeContent {
 
     Envy keeps all your notes in one folder, called The Index. Settings → General shows where it lives and lets you point it somewhere else at any time.
 
+    Already organize with subfolders? Turn on "Show items in subfolders" in that same section and Envy picks up notes nested inside them too (its own `Templates` folder is always excluded).
+
     ## 🎨 Customizing the Look
 
     - Settings → Theme has a gallery of ready-made looks — Tokyo Night, Dracula, Monokai, both Solarized themes, and Velocity Light/Dark (modeled on the original Notational Velocity) — plus any themes you've saved yourself. Click one to apply it instantly.

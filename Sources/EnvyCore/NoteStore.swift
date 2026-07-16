@@ -3,10 +3,9 @@ import Combine
 import CoreServices
 
 /// A template is just a plain `.md` file living in The Index's own
-/// `Templates` subfolder — never a Note itself, since scanDirectory() only
-/// reads `.md` files directly inside the top level and never recurses, so
-/// `Templates/` is already invisible to search/list/backlinks without any
-/// extra exclusion logic.
+/// `Templates` subfolder — never a Note itself. scanDirectory() explicitly
+/// skips descending into `Templates/` even when subfolders are included, so
+/// it's always invisible to search/list/backlinks.
 public struct NoteTemplate: Identifiable, Hashable, Sendable {
     public let id: String
     public let name: String
@@ -24,6 +23,12 @@ public final class NoteStore: ObservableObject {
     /// more than one. One well-known folder is simpler to reason about
     /// and simpler to explain.
     @Published public private(set) var noteDirectory: URL
+    /// Whether reload()/scanDirectory() descend into subfolders of The Index
+    /// (excluding `Templates/`, which is never treated as notes regardless).
+    /// Off by default — a flat top-level folder is the simpler, original
+    /// model, and this is opt-in for people who already organize with
+    /// subfolders.
+    @Published public private(set) var includeSubfolders: Bool
     @Published public private(set) var isLoading = false
 
     // FSEventStreamRef (an OpaquePointer) isn't Sendable, which the compiler
@@ -35,7 +40,7 @@ public final class NoteStore: ObservableObject {
     private var reloadGeneration = 0
     private var reloadDebounceTask: Task<Void, Never>?
 
-    public init(directory: URL? = nil) {
+    public init(directory: URL? = nil, includeSubfolders: Bool = false) {
         let dir = directory ?? Self.defaultDirectory()
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         // Resolved once here (after creation, so resolution has something to
@@ -44,6 +49,7 @@ public final class NoteStore: ObservableObject {
         // startWatching for why a mismatch there is a real problem, not
         // just a cosmetic one.
         self.noteDirectory = dir.resolvingSymlinksInPath()
+        self.includeSubfolders = includeSubfolders
         reload()
         startWatching()
     }
@@ -74,6 +80,16 @@ public final class NoteStore: ObservableObject {
         startWatching()
     }
 
+    /// Toggles whether The Index's subfolders (aside from `Templates/`) are
+    /// scanned for notes — watching doesn't need to change, since FSEvents
+    /// already monitors the whole subtree under noteDirectory regardless of
+    /// this setting; only what reload()/scanDirectory() actually reads does.
+    public func setIncludeSubfolders(_ include: Bool) {
+        guard include != includeSubfolders else { return }
+        includeSubfolders = include
+        reload()
+    }
+
     // MARK: - Loading
 
     /// Coalesces bursts of FSEvents callbacks (many files changing in a short
@@ -101,11 +117,12 @@ public final class NoteStore: ObservableObject {
         reloadGeneration += 1
         let generation = reloadGeneration
         let directory = noteDirectory
+        let includeSubfolders = includeSubfolders
         isLoading = true
 
         Task {
             let loaded = await Task.detached(priority: .userInitiated) {
-                Self.scanDirectory(directory)
+                Self.scanDirectory(directory, includeSubfolders: includeSubfolders)
             }.value
 
             // A newer reload may have been kicked off (e.g. the folder
@@ -127,14 +144,42 @@ public final class NoteStore: ObservableObject {
         let buffer: UnsafeMutableBufferPointer<T>
     }
 
-    nonisolated private static func scanDirectory(_ directory: URL) -> [Note] {
-        let fm = FileManager.default
-        guard let entries = try? fm.contentsOfDirectory(
+    /// Every `.md` file anywhere under `directory`, except inside
+    /// `Templates/` — that subfolder is always template storage, never
+    /// notes, whether or not subfolder scanning is on.
+    nonisolated private static func notesRecursively(under directory: URL, fm: FileManager) -> [URL] {
+        let templatesDirectory = directory.appendingPathComponent("Templates", isDirectory: true).resolvingSymlinksInPath()
+        guard let enumerator = fm.enumerator(
             at: directory,
-            includingPropertiesForKeys: [.contentModificationDateKey],
+            includingPropertiesForKeys: [.contentModificationDateKey, .isDirectoryKey],
             options: [.skipsHiddenFiles]
         ) else { return [] }
-        let urls = entries.filter { $0.pathExtension.lowercased() == "md" }
+
+        var results: [URL] = []
+        for case let url as URL in enumerator {
+            if url.resolvingSymlinksInPath() == templatesDirectory {
+                enumerator.skipDescendants()
+                continue
+            }
+            guard url.pathExtension.lowercased() == "md" else { continue }
+            results.append(url)
+        }
+        return results
+    }
+
+    nonisolated private static func scanDirectory(_ directory: URL, includeSubfolders: Bool) -> [Note] {
+        let fm = FileManager.default
+        let urls: [URL]
+        if includeSubfolders {
+            urls = notesRecursively(under: directory, fm: fm)
+        } else {
+            guard let entries = try? fm.contentsOfDirectory(
+                at: directory,
+                includingPropertiesForKeys: [.contentModificationDateKey],
+                options: [.skipsHiddenFiles]
+            ) else { return [] }
+            urls = entries.filter { $0.pathExtension.lowercased() == "md" }
+        }
 
         // Reading each file is its own independent syscall (open/read/close),
         // and doing that one file at a time in a loop means paying each

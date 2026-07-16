@@ -14,6 +14,7 @@ struct GeneralSettingsView: View {
     @AppStorage("showTagsInTitleBar") private var showTagsInTitleBar = false
     @AppStorage("showDuePill") private var showDuePill = true
     @AppStorage(IndexPreference.storageKey) private var indexPathRaw = ""
+    @AppStorage(IndexPreference.includeSubfoldersKey) private var indexIncludeSubfolders = false
     @AppStorage("moveFocusToEditorOnEnter") private var moveFocusToEditorOnEnter = true
     @AppStorage("showFooterClock") private var showFooterClock = false
     @AppStorage("showFooterClockDate") private var showFooterClockDate = false
@@ -123,6 +124,7 @@ struct GeneralSettingsView: View {
                         NSWorkspace.shared.activateFileViewerSelecting([indexURL])
                     }
                 }
+                Toggle("Show items in subfolders", isOn: $indexIncludeSubfolders)
             }
 
             Section("Templates") {
