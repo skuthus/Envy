@@ -4,6 +4,9 @@ Also published at [envynote.app/changelog.html](https://envynote.app/changelog.h
 
 ## 1.2.0 — unreleased
 
+- Fixed a note with multiple due dates reporting whichever one happened to be typed first in the text as "the" due date, rather than the actual earliest/most urgent one.
+- The due-date pill (note list and title bar) now shows a "+N" badge when a note has more than one active due date, so it's clear there's more than the one shown.
+
 ## 1.1.9 — July 16, 2026
 
 - Simplified the due-date syntax: write `@04-16-26` instead of `due@04-16-26`. **Existing `due@` tokens in your notes will no longer be recognized** — re-typing them as `@date` picks them back up.

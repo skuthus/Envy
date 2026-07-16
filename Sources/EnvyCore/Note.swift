@@ -43,7 +43,7 @@ private final class NoteDerivedCache: @unchecked Sendable {
     private var _wikiLinks: Set<String>?
     private var _hasUncheckedTask: Bool?
     private var _preview: String?
-    private var _due: Date??
+    private var _activeDueDates: [Date]?
 
     init(url: URL, content: String) {
         self.url = url
@@ -99,10 +99,8 @@ private final class NoteDerivedCache: @unchecked Sendable {
         }
     }
 
-    // Backs the "due:" search operator and the due-date chip/color in the
-    // editor. Only the first ACTIVE "@..." token found is honored — a due
-    // date is a single per-note property, not a list — where "active"
-    // means neither of two ways a due token gets retired:
+    // Every ACTIVE "@..." token's resolved date, sorted earliest first —
+    // "active" means neither of two ways a due token gets retired:
     // - crossed out: a token anywhere inside a "~~...~~" span, the same
     //   way marking a task done removes it from view. Broader than "did a
     //   click specifically wrap just this token" (that exact shape is
@@ -126,8 +124,16 @@ private final class NoteDerivedCache: @unchecked Sendable {
     // (arbitrary phrases like "next week") still belongs in the editor as
     // a type-time transform that freezes into a literal absolute date
     // before it's ever saved, not here.
-    var due: Date? {
-        memoized(&_due) {
+    //
+    // Sorted (not just "the first token found in the text") because
+    // `due` below is the *earliest* of these — the one that actually
+    // determines urgency and drives due-column sorting — not whichever
+    // token happens to appear first in reading order. A note mentioning a
+    // later date before an earlier one used to report the later, less
+    // urgent date as "the" due date purely because of where it sat in the
+    // text; a real bug, not a deliberate design choice.
+    var activeDueDates: [Date] {
+        memoized(&_activeDueDates) {
             let fullRange = NSRange(content.startIndex..., in: content)
             // Found (and only found) once per note, then reused for every
             // caller for the rest of that Note's lifetime — but the two
@@ -135,17 +141,18 @@ private final class NoteDerivedCache: @unchecked Sendable {
             // common case (most notes have no due token at all), rather
             // than always paying for them just to find nothing to exclude.
             let dueMatches = Note.dueRegex.matches(in: content, range: fullRange)
-            guard !dueMatches.isEmpty else { return nil }
+            guard !dueMatches.isEmpty else { return [] }
             let strikethroughRanges = Note.strikethroughRegex.matches(in: content, range: fullRange).map(\.range)
             let checkedTaskLineRanges = Note.checkedTaskLineRegex.matches(in: content, range: fullRange).map(\.range)
             func isRetired(_ range: NSRange) -> Bool {
                 strikethroughRanges.contains { NSIntersectionRange($0, range).length > 0 }
                     || checkedTaskLineRanges.contains { NSIntersectionRange($0, range).length > 0 }
             }
-            guard let match = dueMatches.first(where: { !isRetired($0.range) }),
-                  let range = Range(match.range(at: 1), in: content) else { return nil }
-            let token = String(content[range])
-            return NoteStore.resolveDueToken(token)
+            return dueMatches.compactMap { match -> Date? in
+                guard !isRetired(match.range), let range = Range(match.range(at: 1), in: content) else { return nil }
+                let token = String(content[range])
+                return NoteStore.resolveDueToken(token)
+            }.sorted()
         }
     }
 
@@ -249,12 +256,19 @@ public struct Note: Identifiable, Sendable {
         pattern: #"^\s*(?:[-*+][ \t]+)?\[ \][ \t]+"#, options: [.anchorsMatchLines]
     )
 
-    /// The date from this note's first "@..." token, if any and if it
-    /// parses — see NoteDerivedCache.due above for what "if it parses"
-    /// covers (an absolute date, or a day name resolved to its next
-    /// occurrence). Backs the "due:" search operator, the due-date sort
-    /// field, and the due-date chip/color in the editor.
-    public var due: Date? { cache.due }
+    /// The *earliest* active due date among this note's "@..." tokens, if
+    /// any — see NoteDerivedCache.activeDueDates above for what "active"
+    /// and "if it parses" cover. Backs the "due:" search operator, the
+    /// due-date sort field, and the due-date chip/color in the editor.
+    public var due: Date? { cache.activeDueDates.first }
+
+    /// How many distinct active due dates this note has — 1 in the common
+    /// case, more if a note tracks several sub-tasks each with their own
+    /// "@..." token. `due` above always reports the earliest of these;
+    /// this is what backs the "+N" badge next to the due pill (file list
+    /// and title bar alike), so a note with several due dates doesn't
+    /// quietly look like it only has the one soonest one.
+    public var dueDateCount: Int { cache.activeDueDates.count }
 
     /// The negative lookbehind excludes "@" preceded by a word character
     /// (mid-word, not the token) — same shape as Note.tagRegex's own

@@ -99,6 +99,8 @@ enum WelcomeContent {
 
     Done with it? Click the due date itself to cross it out — it stops counting as a due date the moment it's crossed out, so the pill disappears and `due:` searches stop matching it. Click it again to bring it back. Checking off a task-list box with a due date in its text does the same thing automatically, no click needed: `- [x] Ship the report @04-16-26` is retired the instant it's checked, and comes back the moment you uncheck it.
 
+    A note can have more than one due date — a running checklist, say, with a different `@date` on each item. The pill (in the note list and the title bar) always shows the *soonest* one, with a small "+1", "+2", and so on next to it if there are others, so you're never left thinking there's only one.
+
     ## 🏷️ Tags
 
     Write `#work` anywhere in a note's text and Envy picks it up as a tag automatically, no separate tagging step needed. Tags render bold with a tinted background so they stand out from the rest of the text, like this: #work

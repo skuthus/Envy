@@ -99,7 +99,10 @@ struct WikilinkPreviewContentView: View {
                 // tappable-to-search, since a quick peek isn't really the
                 // moment for pivoting into a tag search.
                 if showDuePill, let note, let due = note.due {
-                    Text("Due \(due.formatted(.dateTime.month(.abbreviated).day()))")
+                    // Same "+N" shape as the tag badge just below — the
+                    // pill only ever shows the earliest active due date.
+                    let suffix = note.dueDateCount > 1 ? " +\(note.dueDateCount - 1)" : ""
+                    Text("Due \(due.formatted(.dateTime.month(.abbreviated).day()))\(suffix)")
                         .font(.caption.bold())
                         .lineLimit(1)
                         .foregroundStyle(Color(nsColor: dueChipColor(for: due)))

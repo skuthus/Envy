@@ -568,6 +568,38 @@ struct SelfCheck {
             otherLineActive.content = "- [x] Unrelated finished task\nFollow up @04-16-26"
             check("a due token on a plain (non-task) line still resolves even when another line is checked", otherLineActive.due == expected)
         }
+
+        // noteDueReportsTheEarliestActiveDateNotTheFirstTokenInText
+        do {
+            let earlier = Calendar.current.date(from: DateComponents(year: 2026, month: 3, day: 1))
+            let later = Calendar.current.date(from: DateComponents(year: 2026, month: 4, day: 16))
+
+            // Regression: this used to report whichever token appeared
+            // first in the raw text (April, here), not the earliest date
+            // (March) -- a note mentioning a later date before an earlier
+            // one silently reported the less-urgent date as "the" due date.
+            var laterTokenFirst = Note(id: "due-later-first", url: URL(fileURLWithPath: "/tmp/due-later-first.md"), content: "", modifiedDate: Date())
+            laterTokenFirst.content = "Originally due @04-16-26, moved earlier to @03-01-26"
+            check("due reports the earliest date even when a later one is mentioned first", laterTokenFirst.due == earlier)
+
+            var singleToken = Note(id: "due-single", url: URL(fileURLWithPath: "/tmp/due-single.md"), content: "", modifiedDate: Date())
+            singleToken.content = "Ship it @04-16-26"
+            check("dueDateCount is 1 for a note with exactly one active due date", singleToken.dueDateCount == 1)
+
+            check("dueDateCount is 2 for a note with two active due dates", laterTokenFirst.dueDateCount == 2)
+
+            var noDue = Note(id: "due-none", url: URL(fileURLWithPath: "/tmp/due-none.md"), content: "", modifiedDate: Date())
+            noDue.content = "Nothing due here at all."
+            check("dueDateCount is 0 for a note with no due date", noDue.dueDateCount == 0)
+
+            // A retired token (crossed out or on a checked task line)
+            // shouldn't count toward dueDateCount either -- it's exactly
+            // as invisible to the count as it is to `due` itself.
+            var oneRetiredOneActive = Note(id: "due-one-retired", url: URL(fileURLWithPath: "/tmp/due-one-retired.md"), content: "", modifiedDate: Date())
+            oneRetiredOneActive.content = "~~@01-01-26~~ moved to @04-16-26"
+            check("dueDateCount only counts active tokens, not retired ones", oneRetiredOneActive.dueDateCount == 1)
+            check("due still resolves to the one active token when the other is retired", oneRetiredOneActive.due == later)
+        }
         // MarkdownStyler.dueTokenRanges (the click-toggle hit-testing/state
         // logic) lives in the Envy module, not EnvyCore, and isn't reachable
         // from this target — covered instead by manual testing in

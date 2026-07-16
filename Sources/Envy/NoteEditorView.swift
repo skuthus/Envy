@@ -202,7 +202,11 @@ struct NoteEditorView: View {
             Spacer()
             HStack(spacing: 6) {
                 if showDuePill, let note, let due = note.due {
-                    Text("Due \(due.formatted(.dateTime.month(.abbreviated).day()))")
+                    // "+N" once there's more than one active due date —
+                    // same shape as WikilinkPreviewPopover's own multi-tag
+                    // badge — since the pill only ever shows the earliest.
+                    let suffix = note.dueDateCount > 1 ? " +\(note.dueDateCount - 1)" : ""
+                    Text("Due \(due.formatted(.dateTime.month(.abbreviated).day()))\(suffix)")
                         .font(.caption.bold())
                         .foregroundStyle(Color(nsColor: dueChipColor(for: due, theme: theme)))
                         .padding(.horizontal, 6)

@@ -74,12 +74,22 @@ struct NoteRow: View {
         }
     }
 
+    /// " +N" once there's more than one active due date on this note (the
+    /// slot's showing the earliest of them), matching the same "+N" shape
+    /// already used for multiple tags in WikilinkPreviewPopover — empty
+    /// otherwise, including whenever this slot isn't showing a due date at
+    /// all (sorted by Name/Date instead).
+    private var dueCountSuffix: String {
+        guard sortField == .due, note.dueDateCount > 1 else { return "" }
+        return " +\(note.dueDateCount - 1)"
+    }
+
     @ViewBuilder
     private func dateText(_ date: Date) -> some View {
         if dateDisplayStyle == .relative {
-            Text(date, style: .relative)
+            Text(date, style: .relative) + Text(dueCountSuffix)
         } else {
-            Text(dateDisplayStyle.format(date))
+            Text(dateDisplayStyle.format(date) + dueCountSuffix)
         }
     }
 }
