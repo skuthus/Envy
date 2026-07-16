@@ -2,7 +2,7 @@
 
 Also published at [envynote.app/changelog.html](https://envynote.app/changelog.html).
 
-## 1.1.8 — unreleased
+## 1.1.8 — July 15, 2026
 
 **Peek any linked note without leaving where you are.** Option-click a `[[wikilink]]` — in the editor or in the backlinks list — to open a small floating preview of that note, styled to match the menu bar's pinned-note popup. It opens read-only; click into it to edit right there without navigating away, and it won't ever open a second copy of a note you already have open.
 

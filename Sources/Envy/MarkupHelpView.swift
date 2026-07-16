@@ -38,7 +38,7 @@ struct MarkupHelpView: View {
             Entry(syntax: "- [ ] task", description: "Task list with a clickable checkbox — \"- [x]\" for checked"),
         ]),
         Group(title: "Links", entries: [
-            Entry(syntax: "[[Note Title]]", description: "Link to another note. Cmd+Click to open it — creates the note if it doesn't exist yet."),
+            Entry(syntax: "[[Note Title]]", description: "Link to another note. Cmd+Click to open it — creates the note if it doesn't exist yet. Option+Click instead to preview it without leaving where you are (Settings → General to change or turn off)."),
             Entry(syntax: "[text](url)", description: "Link to a web address. Cmd+Click to open in your browser."),
             Entry(syntax: "<https://…>", description: "Autolink — bare URLs are also detected and made clickable automatically"),
             Entry(syntax: "[text](#heading)", description: "Jump to a heading in this note — click, no modifier needed. Matches the heading's text lowercased with spaces turned into hyphens."),
@@ -49,6 +49,9 @@ struct MarkupHelpView: View {
         ]),
         Group(title: "Tags", entries: [
             Entry(syntax: "#tag", description: "Tag — rendered bold with a tinted background. Search \"tag:name\" to find every note tagged that way, including partial matches."),
+        ]),
+        Group(title: "Due Dates", entries: [
+            Entry(syntax: "due@04-16-26", description: "Due date — also accepts \"due@2026-04-16\". Shows as a colored pill (urgency-tinted) in the editor, title bar, and note list. Search \"due:today\", \"due:overdue\", \"due:week\", an exact date, or a bare \"due:\" for any due date at all. Sort the note list by it from the column headers."),
         ]),
         Group(title: "Emoji", entries: [
             Entry(syntax: ":smile:", description: "Replaced with 😄 as soon as you finish typing it — the note just contains the emoji itself"),

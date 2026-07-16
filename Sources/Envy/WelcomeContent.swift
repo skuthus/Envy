@@ -83,6 +83,18 @@ enum WelcomeContent {
 
     Hold **⌘** and click a link to follow it. If the note doesn't exist yet, clicking creates it and takes you straight there. That makes it easy to sketch out related notes before you've written any of them.
 
+    Hold **⌥** (Option) and click a link instead to peek at it without leaving where you are — a small floating preview opens, and you can click straight into it to edit right there. Works on backlinks too. Settings → General can turn this off or change the trigger.
+
+    ## 📆 Due Dates
+
+    Write `due@04-16-26` (or `due@2026-04-16`) anywhere in a note, like this: Finish the quarterly report due@04-16-26
+
+    Envy picks it up automatically — no separate field to fill in. It shows as a colored pill wherever the note appears (the editor, the title bar, the note list), colored by urgency: not-yet-due, due-soon, and overdue each get their own color from your theme.
+
+    Search `due:today`, `due:tomorrow`, `due:yesterday`, `due:week`, `due:nextweek`, `due:month`, `due:overdue` (or `due:past`), or `due:future` for the matching bucket, an exact date the same way `date:` accepts one, or a bare `due:` for "has a due date at all, whenever it is."
+
+    Sort the note list by due date from the column headers, same as Name or Date. Settings → General can turn the due-date sort option and the title bar pill off independently, if you'd rather not see either.
+
     ## 🏷️ Tags
 
     Write `#work` anywhere in a note's text and Envy picks it up as a tag automatically, no separate tagging step needed. Tags render bold with a tinted background so they stand out from the rest of the text, like this: #work
