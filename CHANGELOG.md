@@ -2,6 +2,8 @@
 
 Also published at [envynote.app/changelog.html](https://envynote.app/changelog.html).
 
+## 1.2.0 — unreleased
+
 ## 1.1.9 — July 16, 2026
 
 - Simplified the due-date syntax: write `@04-16-26` instead of `due@04-16-26`. **Existing `due@` tokens in your notes will no longer be recognized** — re-typing them as `@date` picks them back up.
