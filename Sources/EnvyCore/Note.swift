@@ -129,13 +129,20 @@ private final class NoteDerivedCache: @unchecked Sendable {
     var due: Date? {
         memoized(&_due) {
             let fullRange = NSRange(content.startIndex..., in: content)
+            // Found (and only found) once per note, then reused for every
+            // caller for the rest of that Note's lifetime — but the two
+            // exclusion scans below are worth skipping entirely for the
+            // common case (most notes have no due token at all), rather
+            // than always paying for them just to find nothing to exclude.
+            let dueMatches = Note.dueRegex.matches(in: content, range: fullRange)
+            guard !dueMatches.isEmpty else { return nil }
             let strikethroughRanges = Note.strikethroughRegex.matches(in: content, range: fullRange).map(\.range)
             let checkedTaskLineRanges = Note.checkedTaskLineRegex.matches(in: content, range: fullRange).map(\.range)
             func isRetired(_ range: NSRange) -> Bool {
                 strikethroughRanges.contains { NSIntersectionRange($0, range).length > 0 }
                     || checkedTaskLineRanges.contains { NSIntersectionRange($0, range).length > 0 }
             }
-            guard let match = Note.dueRegex.matches(in: content, range: fullRange).first(where: { !isRetired($0.range) }),
+            guard let match = dueMatches.first(where: { !isRetired($0.range) }),
                   let range = Range(match.range(at: 1), in: content) else { return nil }
             let token = String(content[range])
             return NoteStore.resolveDueToken(token)
