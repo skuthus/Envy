@@ -51,7 +51,8 @@ struct MarkupHelpView: View {
             Entry(syntax: "#tag", description: "Tag — rendered bold with a tinted background. Search \"tag:name\" to find every note tagged that way, including partial matches."),
         ]),
         Group(title: "Due Dates", entries: [
-            Entry(syntax: "due@04-16-26", description: "Due date — also accepts \"due@2026-04-16\". Shows as a colored pill (urgency-tinted) in the editor, title bar, and note list. Search \"due:today\", \"due:overdue\", \"due:week\", an exact date, or a bare \"due:\" for any due date at all. Sort the note list by it from the column headers."),
+            Entry(syntax: "@04-16-26", description: "Due date — also accepts \"@2026-04-16\". Shows as a colored pill (urgency-tinted) in the editor, title bar, and note list. Search \"due:today\", \"due:overdue\", \"due:week\", an exact date, or a bare \"due:\" for any due date at all. Sort the note list by it from the column headers."),
+            Entry(syntax: "@monday", description: "A day name instead of a date — always means the next occurrence of that day. Any day of the week works the same way."),
         ]),
         Group(title: "Emoji", entries: [
             Entry(syntax: ":smile:", description: "Replaced with 😄 as soon as you finish typing it — the note just contains the emoji itself"),

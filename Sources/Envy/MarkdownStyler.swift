@@ -35,13 +35,18 @@ enum MarkdownStyler {
     // positives.
     private static let hashtagRegex = try! NSRegularExpression(pattern: #"(?<![\w#])#[A-Za-z0-9_-]+"#)
     // Matches Note.dueRegex in EnvyCore exactly, including restricting the
-    // capture to date-shaped characters (digits, "-", "/") rather than a
-    // greedy \S+ — \S+ swallowed trailing punctuation like a comma right
-    // after the date with no space, which then failed to parse as a date
-    // and silently fell back to the plain (not-yet-due) color regardless
-    // of the note's actual urgency. Same duplication reasoning as
+    // capture to a day name or date-shaped characters (digits, "-", "/")
+    // rather than a greedy \S+ — \S+ swallowed trailing punctuation like a
+    // comma right after the date with no space, which then failed to parse
+    // as a date and silently fell back to the plain (not-yet-due) color
+    // regardless of the note's actual urgency, and an unrestricted
+    // alternative would also light up ordinary "@mentions" that are
+    // neither a day name nor a date. Same duplication reasoning as
     // hashtagRegex above (that one's private to its own target).
-    private static let dueRegex = try! NSRegularExpression(pattern: #"(?<![\w])due@([0-9/-]+)"#, options: [.caseInsensitive])
+    private static let dueRegex = try! NSRegularExpression(
+        pattern: #"(?<![\w])@(monday|tuesday|wednesday|thursday|friday|saturday|sunday|[0-9/-]+)(?!\w)"#,
+        options: [.caseInsensitive]
+    )
 
     static func wikiLinkFullRanges(in text: String) -> [NSRange] {
         let full = NSRange(location: 0, length: (text as NSString).length)
@@ -341,7 +346,7 @@ enum MarkdownStyler {
         // styled like a link (one dedicated color) rather than like a tag
         // (color + chip), since this is a single per-note value, not a
         // repeated/multi-valued marker. Color depends on each match's own
-        // parsed date (not the note-level `due`, which only ever holds the
+        // resolved date (not the note-level `due`, which only ever holds the
         // first token) — overdue/soon/later each get their own theme token,
         // same three-way split dueUrgency itself expresses. An unparseable
         // token still highlights (same graceful-failure spirit as the rest
@@ -352,7 +357,7 @@ enum MarkdownStyler {
             let tokenRange = match.range(at: 1)
             let token = (text as NSString).substring(with: tokenRange)
             let color: NSColor
-            if let components = NoteStore.parseFlexibleDate(token), let date = Calendar.current.date(from: components) {
+            if let date = NoteStore.resolveDueToken(token) {
                 switch NoteStore.dueUrgency(for: date) {
                 case .overdue: color = dueOverdueColor
                 case .soon: color = dueSoonColor

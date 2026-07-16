@@ -33,7 +33,7 @@ struct WhatsNewView: View {
                     .foregroundStyle(EnvyLogoView.irisColor)
                 Text("Peek at Linked Notes")
                     .font(.title3.bold())
-                Text("Option-click any [[wikilink]] — in the editor or the backlinks list — to open a floating preview you can click straight into and edit, no navigating away required. Also new: due dates. Write due@04-16-26 in a note, search it with due:today, due:week, due:overdue, and more, sort your notes by due date, and see it colored by urgency.")
+                Text("Option-click any [[wikilink]] — in the editor or the backlinks list — to open a floating preview you can click straight into and edit, no navigating away required. Also new: due dates. Write @04-16-26 or @monday (always the next Monday) in a note, search it with due:today, due:week, due:overdue, and more, sort your notes by due date, and see it colored by urgency.")
                     .font(.body)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)

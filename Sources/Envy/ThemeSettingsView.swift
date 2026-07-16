@@ -456,11 +456,11 @@ struct ThemeSettingsView: View {
             .font(font)
 
             HStack(spacing: 6) {
-                Text("due@").foregroundStyle(textColor)
+                Text("@").foregroundStyle(textColor)
                 Text("later").bold().foregroundStyle(dueColor)
-                Text("due@").foregroundStyle(textColor)
+                Text("@").foregroundStyle(textColor)
                 Text("soon").bold().foregroundStyle(dueSoonColor)
-                Text("due@").foregroundStyle(textColor)
+                Text("@").foregroundStyle(textColor)
                 Text("overdue").bold().foregroundStyle(dueOverdueColor)
             }
             .font(font)

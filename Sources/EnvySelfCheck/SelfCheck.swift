@@ -436,34 +436,75 @@ struct SelfCheck {
         // noteDueExtractsAbsoluteDateToken
         do {
             var withDue = Note(id: "x", url: URL(fileURLWithPath: "/tmp/x.md"), content: "", modifiedDate: Date())
-            withDue.content = "Ship the report due@04-16-26 before the deadline."
+            withDue.content = "Ship the report @04-16-26 before the deadline."
             let expected = Calendar.current.date(from: DateComponents(year: 2026, month: 4, day: 16))
             check("due extracts an absolute date token", withDue.due == expected)
 
             var withoutDue = Note(id: "y", url: URL(fileURLWithPath: "/tmp/y.md"), content: "", modifiedDate: Date())
             withoutDue.content = "This note has no due date at all."
-            check("due is nil when no due@ token is present", withoutDue.due == nil)
+            check("due is nil when no @ token is present", withoutDue.due == nil)
 
             var unparseable = Note(id: "z", url: URL(fileURLWithPath: "/tmp/z.md"), content: "", modifiedDate: Date())
-            unparseable.content = "due@whenever-i-get-to-it"
+            unparseable.content = "@whenever-i-get-to-it"
             check("due is nil for an unparseable token rather than crashing", unparseable.due == nil)
 
+            var mention = Note(id: "t", url: URL(fileURLWithPath: "/tmp/t.md"), content: "", modifiedDate: Date())
+            mention.content = "cc @sarah about this"
+            check("due is nil for an ordinary @mention (not a day name or date)", mention.due == nil)
+
             var midWord = Note(id: "w", url: URL(fileURLWithPath: "/tmp/w.md"), content: "", modifiedDate: Date())
-            midWord.content = "overdue@04-16-26 shouldn't count as a due token"
-            check("due regex excludes mid-word matches like 'overdue@'", midWord.due == nil)
+            midWord.content = "someone@04-16-26 shouldn't count as a due token"
+            check("due regex excludes mid-word matches (an '@' preceded by a word character)", midWord.due == nil)
 
             // Regression: a greedy \S+ capture used to swallow trailing
             // punctuation with no space before it, breaking Int parsing of
             // the year and silently producing no due date at all.
             var trailingComma = Note(id: "v", url: URL(fileURLWithPath: "/tmp/v.md"), content: "", modifiedDate: Date())
-            trailingComma.content = "Long-range planning doc, due@09-16-26, not urgent yet."
+            trailingComma.content = "Long-range planning doc, @09-16-26, not urgent yet."
             let expectedTrailingComma = Calendar.current.date(from: DateComponents(year: 2026, month: 9, day: 16))
             check("due parses correctly when followed by a comma with no space", trailingComma.due == expectedTrailingComma)
 
             var trailingPeriod = Note(id: "u", url: URL(fileURLWithPath: "/tmp/u.md"), content: "", modifiedDate: Date())
-            trailingPeriod.content = "Ship it due@04-16-26."
+            trailingPeriod.content = "Ship it @04-16-26."
             let expectedTrailingPeriod = Calendar.current.date(from: DateComponents(year: 2026, month: 4, day: 16))
             check("due parses correctly when followed by a period with no space", trailingPeriod.due == expectedTrailingPeriod)
+        }
+
+        // noteDueResolvesDayNamesToTheirNextOccurrence
+        do {
+            let calendar = Calendar.current
+            let today = calendar.startOfDay(for: Date())
+            let todayWeekday = calendar.component(.weekday, from: today)
+            let weekdayNames = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"]
+
+            for (index, name) in weekdayNames.enumerated() {
+                let weekdayNumber = index + 1 // Calendar: 1 = Sunday ... 7 = Saturday
+                var offset = (weekdayNumber - todayWeekday + 7) % 7
+                // "Next" never means "today" — a day name matching today's
+                // own weekday should resolve a full week out, not to today.
+                if offset == 0 { offset = 7 }
+                let expected = calendar.date(byAdding: .day, value: offset, to: today)
+
+                var note = Note(id: "day-\(name)", url: URL(fileURLWithPath: "/tmp/day-\(name).md"), content: "", modifiedDate: Date())
+                note.content = "Follow up @\(name)"
+                check("@\(name) resolves to the next \(name), never today", note.due == expected)
+
+                var upper = Note(id: "day-upper-\(name)", url: URL(fileURLWithPath: "/tmp/day-upper-\(name).md"), content: "", modifiedDate: Date())
+                upper.content = "Follow up @\(name.uppercased())"
+                check("@\(name.uppercased()) matches case-insensitively", upper.due == expected)
+            }
+
+            // The specific case called out when this was designed: naming
+            // today's own weekday must still land 7 days out, not 0.
+            let todayName = weekdayNames[todayWeekday - 1]
+            var sameDay = Note(id: "day-same", url: URL(fileURLWithPath: "/tmp/day-same.md"), content: "", modifiedDate: Date())
+            sameDay.content = "@\(todayName)"
+            let expectedSameDay = calendar.date(byAdding: .day, value: 7, to: today)
+            check("naming today's own weekday resolves a full week out, not today", sameDay.due == expectedSameDay)
+
+            var partialWord = Note(id: "day-partial", url: URL(fileURLWithPath: "/tmp/day-partial.md"), content: "", modifiedDate: Date())
+            partialWord.content = "@mondayish isn't a real day name"
+            check("a day name followed by more letters doesn't partially match", partialWord.due == nil)
         }
 
         // filteredDueQuerySupportsTodayOverdueAndWeekBuckets
@@ -475,7 +516,7 @@ struct SelfCheck {
             func dueToken(daysFromNow: Int) -> String {
                 let date = calendar.date(byAdding: .day, value: daysFromNow, to: now) ?? now
                 let comps = calendar.dateComponents([.year, .month, .day], from: date)
-                return String(format: "due@%04d-%02d-%02d", comps.year!, comps.month!, comps.day!)
+                return String(format: "@%04d-%02d-%02d", comps.year!, comps.month!, comps.day!)
             }
 
             var dueToday = store.create(title: "Due Today")
@@ -569,7 +610,7 @@ struct SelfCheck {
 
             func dueToken(at date: Date) -> String {
                 let comps = calendar.dateComponents([.year, .month, .day], from: date)
-                return String(format: "due@%04d-%02d-%02d", comps.year!, comps.month!, comps.day!)
+                return String(format: "@%04d-%02d-%02d", comps.year!, comps.month!, comps.day!)
             }
 
             let thisWeek = calendar.dateInterval(of: .weekOfYear, for: now)!
@@ -613,7 +654,7 @@ struct SelfCheck {
         do {
             let store = await makeTempStore()
             var withDue = store.create(title: "Has Due Date")
-            withDue.content = "due@2026-08-01"
+            withDue.content = "@2026-08-01"
             store.save(withDue)
 
             let withoutDue = store.create(title: "No Due Date")
@@ -627,7 +668,7 @@ struct SelfCheck {
         do {
             let store = await makeTempStore()
             var withDue = store.create(title: "Has Due Date")
-            withDue.content = "due@2026-08-01"
+            withDue.content = "@2026-08-01"
             store.save(withDue)
 
             let withoutDue = store.create(title: "No Due Date")
@@ -642,7 +683,7 @@ struct SelfCheck {
         do {
             let store = await makeTempStore()
             var note = store.create(title: "Fixed Due Date")
-            note.content = "due@2026-04-16"
+            note.content = "@2026-04-16"
             store.save(note)
 
             check("due: matches an exact ISO date", store.filtered(query: "due:2026-04-16").contains { $0.id == note.id })

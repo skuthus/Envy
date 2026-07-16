@@ -900,10 +900,10 @@ public final class NoteStore: ObservableObject {
     ///
     /// Public (not just internal): Note.swift's `due` parsing reuses this
     /// exact same format within EnvyCore, and MarkdownStyler in the Envy
-    /// module also needs it — to resolve each due@ token's own date at
+    /// module also needs it — to resolve each "@" token's own date at
     /// style time for per-match urgency coloring, rather than only ever
     /// reading the note-level `due` (which only captures the *first*
-    /// due@ token, whereas styling has to color every match it finds).
+    /// due token, whereas styling has to color every match it finds).
     nonisolated public static func parseFlexibleDate(_ input: String) -> DateComponents? {
         let parts = input.components(separatedBy: CharacterSet(charactersIn: "-/")).filter { !$0.isEmpty }
         guard parts.count == 3,
@@ -925,6 +925,45 @@ public final class NoteStore: ObservableObject {
         components.month = month
         components.day = day
         return components
+    }
+
+    /// Calendar's own `weekday` component numbering (1 = Sunday ... 7 =
+    /// Saturday), keyed by the lowercased day name a due token spells out.
+    nonisolated private static let weekdayNumbersByName: [String: Int] = [
+        "sunday": 1, "monday": 2, "tuesday": 3, "wednesday": 4,
+        "thursday": 5, "friday": 6, "saturday": 7,
+    ]
+
+    /// The next date that falls on `weekday` (same numbering as above),
+    /// strictly after `reference`'s own calendar day. "Strictly after" is
+    /// the deliberate choice for the case where today already is the named
+    /// day: writing "@monday" on a Monday means *next* Monday, a week out,
+    /// not "today" — the word "next" wouldn't mean anything otherwise.
+    nonisolated private static func nextDate(forWeekday weekday: Int, after reference: Date) -> Date {
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: reference)
+        let currentWeekday = calendar.component(.weekday, from: today)
+        var offset = (weekday - currentWeekday + 7) % 7
+        if offset == 0 { offset = 7 }
+        return calendar.date(byAdding: .day, value: offset, to: today) ?? today
+    }
+
+    /// Resolves one "@..." due token — either a day name ("@monday",
+    /// always the *next* occurrence of that day, per nextDate(forWeekday:)
+    /// above) or an absolute date in parseFlexibleDate's own accepted
+    /// formats — to the date it actually means right now. Called fresh
+    /// each time a note's derived-value cache is rebuilt (a fresh disk
+    /// read constructs a fresh Note, and with it a fresh cache — see
+    /// NoteDerivedCache's own comments), so a day-name token's answer
+    /// tracks the real calendar instead of freezing at whatever day
+    /// happened to be current the first time it was read; an absolute
+    /// date token, by construction, never depends on "when" at all.
+    nonisolated public static func resolveDueToken(_ token: String) -> Date? {
+        if let weekday = weekdayNumbersByName[token.lowercased()] {
+            return nextDate(forWeekday: weekday, after: Date())
+        }
+        guard let components = parseFlexibleDate(token) else { return nil }
+        return Calendar.current.date(from: components)
     }
 
     // MARK: - Pinning

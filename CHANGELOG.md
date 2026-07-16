@@ -2,6 +2,11 @@
 
 Also published at [envynote.app/changelog.html](https://envynote.app/changelog.html).
 
+## 1.1.9 — unreleased
+
+- Simplified the due-date syntax: write `@04-16-26` instead of `due@04-16-26`. **Existing `due@` tokens in your notes will no longer be recognized** — re-typing them as `@date` picks them back up.
+- Added day names as a due-date shorthand: `@monday` (or any day of the week) always means the *next* occurrence of that day — naming today's own weekday still resolves a full week out, not to today.
+
 ## 1.1.8 — July 15, 2026
 
 **Peek any linked note without leaving where you are.** Option-click a `[[wikilink]]` — in the editor or in the backlinks list — to open a small floating preview of that note, styled to match the menu bar's pinned-note popup. It opens read-only; click into it to edit right there without navigating away, and it won't ever open a second copy of a note you already have open.

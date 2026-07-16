@@ -87,9 +87,11 @@ enum WelcomeContent {
 
     ## 📆 Due Dates
 
-    Write `due@04-16-26` (or `due@2026-04-16`) anywhere in a note, like this: Finish the quarterly report due@04-16-26
+    Write `@04-16-26` (or `@2026-04-16`) anywhere in a note, like this: Finish the quarterly report @04-16-26
 
     Envy picks it up automatically — no separate field to fill in. It shows as a colored pill wherever the note appears (the editor, the title bar, the note list), colored by urgency: not-yet-due, due-soon, and overdue each get their own color from your theme.
+
+    A day name works too, like `@monday` — it always means the *next* Monday, even if today already is one. Every day of the week works the same way.
 
     Search `due:today`, `due:tomorrow`, `due:yesterday`, `due:week`, `due:nextweek`, `due:month`, `due:overdue` (or `due:past`), or `due:future` for the matching bucket, an exact date the same way `date:` accepts one, or a bare `due:` for "has a due date at all, whenever it is."
 

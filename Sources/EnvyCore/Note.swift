@@ -100,21 +100,21 @@ private final class NoteDerivedCache: @unchecked Sendable {
     }
 
     // Backs the "due:" search operator and the due-date chip/color in the
-    // editor. Only the first "due@..." token found is honored — a due date
-    // is a single per-note property, not a list. Only ever an absolute date
-    // ("due@04-16-26" / "due@2026-04-16"): resolving something like
-    // "due@today" live, on every access, would mean a note written months
-    // ago and never touched again still silently claims to be due "today"
-    // forever, which defeats the point of a due date. Relative shorthand
-    // belongs in the editor as a type-time transform that freezes into a
-    // literal absolute date before it's ever saved, not here.
+    // editor. Only the first "@..." token found is honored — a due date is
+    // a single per-note property, not a list. Either an absolute date
+    // ("@04-16-26" / "@2026-04-16") or a day name ("@monday"), which always
+    // means the *next* occurrence of that day — see
+    // NoteStore.resolveDueToken for why that's fine to resolve fresh every
+    // time despite the general rule against live relative resolution
+    // (explained there): everything else (arbitrary phrases like "today")
+    // still belongs in the editor as a type-time transform that freezes
+    // into a literal absolute date before it's ever saved, not here.
     var due: Date? {
         memoized(&_due) {
             guard let match = Note.dueRegex.firstMatch(in: content, range: NSRange(content.startIndex..., in: content)),
                   let range = Range(match.range(at: 1), in: content) else { return nil }
             let token = String(content[range])
-            guard let components = NoteStore.parseFlexibleDate(token) else { return nil }
-            return Calendar.current.date(from: components)
+            return NoteStore.resolveDueToken(token)
         }
     }
 
@@ -218,23 +218,32 @@ public struct Note: Identifiable, Sendable {
         pattern: #"^\s*(?:[-*+][ \t]+)?\[ \][ \t]+"#, options: [.anchorsMatchLines]
     )
 
-    /// The date from this note's first "due@..." token, if any and if it
-    /// parses — see NoteDerivedCache.due above for why this is absolute-date
-    /// only, no relative shorthand. Backs the "due:" search operator, the
-    /// due-date sort field, and the due-date chip/color in the editor.
+    /// The date from this note's first "@..." token, if any and if it
+    /// parses — see NoteDerivedCache.due above for what "if it parses"
+    /// covers (an absolute date, or a day name resolved to its next
+    /// occurrence). Backs the "due:" search operator, the due-date sort
+    /// field, and the due-date chip/color in the editor.
     public var due: Date? { cache.due }
 
-    /// The negative lookbehind excludes "due@" preceded by a word character
+    /// The negative lookbehind excludes "@" preceded by a word character
     /// (mid-word, not the token) — same shape as Note.tagRegex's own
-    /// exclusion. The capture group is restricted to date-shaped characters
-    /// (digits, "-", "/") rather than a greedy \S+ — \S+ also swallows
-    /// trailing punctuation with no space before it ("due@04-16-26, call
-    /// the client" captured "04-16-26," comma included, which then failed
-    /// Int parsing on the year and silently produced no due date at all).
-    /// An unparseable token (parseFlexibleDate returns nil) just means no
-    /// due date, not a crash — same forgiving failure mode as a malformed
-    /// tag or wiki-link.
-    fileprivate static let dueRegex = try! NSRegularExpression(pattern: #"(?<![\w])due@([0-9/-]+)"#, options: [.caseInsensitive])
+    /// exclusion. The capture group only matches a day name or a run of
+    /// date-shaped characters (digits, "-", "/") rather than a greedy \S+
+    /// — besides \S+ swallowing trailing punctuation with no space before
+    /// it ("@04-16-26, call the client" captured "04-16-26," comma
+    /// included, which then failed Int parsing on the year and silently
+    /// produced no due date at all), restricting the alternatives at all is
+    /// what keeps an ordinary "@mention" (a name, a handle, anything that
+    /// isn't a day name or date-shaped) from being misread as a due token
+    /// in the first place. The trailing negative lookahead excludes a
+    /// word character right after the match too, so "@mondayish" doesn't
+    /// partially match "@monday". An unparseable token (resolveDueToken
+    /// returns nil) just means no due date, not a crash — same forgiving
+    /// failure mode as a malformed tag or wiki-link.
+    fileprivate static let dueRegex = try! NSRegularExpression(
+        pattern: #"(?<![\w])@(monday|tuesday|wednesday|thursday|friday|saturday|sunday|[0-9/-]+)(?!\w)"#,
+        options: [.caseInsensitive]
+    )
 
     /// The name of the folder this note directly lives in — backs the
     /// "folder:" search operator. A plain path-component lookup, not
