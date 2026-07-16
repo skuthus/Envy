@@ -2,7 +2,7 @@
 
 Also published at [envynote.app/changelog.html](https://envynote.app/changelog.html).
 
-## 1.1.9 — unreleased
+## 1.1.9 — July 16, 2026
 
 - Simplified the due-date syntax: write `@04-16-26` instead of `due@04-16-26`. **Existing `due@` tokens in your notes will no longer be recognized** — re-typing them as `@date` picks them back up.
 - Added day names as a due-date shorthand: `@monday` (or any day of the week) always means the *next* occurrence of that day — naming today's own weekday still resolves a full week out, not to today. `@today` means literally today.
