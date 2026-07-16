@@ -15,6 +15,12 @@ extension ContentView {
             actOnHighlightedTemplate()
             return
         }
+        // Browsing trash: never acts on its own — Restore/Delete are always
+        // an explicit button (in the preview pane) or right-click away, not
+        // a side effect of typing/highlighting/pressing Return.
+        if isTrashQuery {
+            return
+        }
         // A search operator's "highlighted note" is whatever
         // reconcileSelection() already settled selectedID on as the list
         // narrowed — Enter just moves into it, same as the empty-query case
@@ -26,7 +32,6 @@ extension ContentView {
             return
         }
         if let exact = store.exactTitleMatch(for: query) {
-            editingTemplate = nil
             selectedID = exact.id
             if moveFocusToEditorOnEnter { focusedField = .editor }
             return
@@ -39,7 +44,6 @@ extension ContentView {
         }
 
         let newNote = store.create(title: trimmed)
-        editingTemplate = nil
         selectedID = newNote.id
         query = ""
         if moveFocusToEditorOnEnter { focusedField = .editor }
@@ -47,7 +51,6 @@ extension ContentView {
 
     func createBlankNote() {
         let note = store.create(title: "")
-        editingTemplate = nil
         selectedID = note.id
         query = ""
         focusedField = .editor
@@ -55,7 +58,6 @@ extension ContentView {
 
     func navigateToNote(titled title: String) {
         let target = store.exactTitleMatch(for: title) ?? store.create(title: title)
-        editingTemplate = nil
         selectedID = target.id
         query = ""
     }
@@ -75,9 +77,12 @@ extension ContentView {
 
     /// "template:xyz" creates from whichever template is highlighted (arrow
     /// keys move highlightedTemplateID same as selectedID does for a plain
-    /// note search), falling back to the top match if nothing's highlighted
-    /// yet — shared by both the search field's Return and the note list's
-    /// own Return, so either one acts on the template list the same way.
+    /// note search) — this is Return's own action, the same one the "Create
+    /// Note from Template" button (in the editor pane's header, or the
+    /// row's own right-click menu) triggers. Clicking/arrowing to a row
+    /// itself only opens it for editing (see matchingTemplateRows); creating
+    /// a note is always this separate, deliberate step. Falls back to
+    /// creating a brand-new template if there's no match to highlight yet.
     func actOnHighlightedTemplate() {
         if let template = matchingTemplatesForQuery.first(where: { $0.id == highlightedTemplateID }) ?? matchingTemplatesForQuery.first {
             createFromTemplate(template, title: template.name)
@@ -88,7 +93,6 @@ extension ContentView {
 
     func createFromTemplate(_ template: NoteTemplate, title: String) {
         let note = store.create(title: title, fromTemplate: template, dateText: templateDateText)
-        editingTemplate = nil
         selectedID = note.id
         query = ""
         if moveFocusToEditorOnEnter { focusedField = .editor }
@@ -96,13 +100,15 @@ extension ContentView {
 
     /// "template:xyz" with no existing match — same shape as a plain search
     /// offering to create a note from unmatched text, just creating a new
-    /// (empty) template and dropping straight into editing it instead.
-    /// query resets to the bare "template:" prefix (not ""), so the list
-    /// keeps showing templates — including the one just created — rather
-    /// than snapping back to the regular note list.
+    /// (empty) template instead. query resets to the bare "template:" prefix
+    /// (not ""), so the list keeps showing templates — including the one
+    /// just created, now highlighted — rather than snapping back to the
+    /// regular note list. Highlighting it (not a separate "editing" flag) is
+    /// what puts it straight into the editable preview pane, ready to type
+    /// into immediately.
     func createTemplate(named name: String) {
         let template = store.createTemplate(named: name)
-        editingTemplate = template
+        highlightedTemplateID = template.id
         query = "template:"
         if moveFocusToEditorOnEnter { focusedField = .editor }
     }
@@ -112,9 +118,6 @@ extension ContentView {
     func deleteTemplate(_ template: NoteTemplate) {
         store.suppressReloadForExternalWrite()
         try? FileManager.default.trashItem(at: template.url, resultingItemURL: nil)
-        if editingTemplate?.id == template.id {
-            editingTemplate = nil
-        }
         if highlightedTemplateID == template.id {
             highlightedTemplateID = nil
         }
@@ -128,20 +131,44 @@ extension ContentView {
         multiSelectedIDs.remove(note.id)
     }
 
-    /// Lands back in sourceDirectory (or defaultDirectory if that folder's
-    /// no longer configured) and opens right in the editor as a regular
-    /// note — see NoteStore.convertToNote(_:) for the fallback logic.
+    /// Lands back at the top of The Index and opens right in the editor as
+    /// a regular note.
     func convertTemplateToNote(_ template: NoteTemplate) {
         guard let note = store.convertToNote(template) else { return }
-        if editingTemplate?.id == template.id {
-            editingTemplate = nil
-        }
         if highlightedTemplateID == template.id {
             highlightedTemplateID = nil
         }
         selectedID = note.id
         query = ""
         if moveFocusToEditorOnEnter { focusedField = .editor }
+    }
+
+    // MARK: - Trash
+
+    /// Restores a trashed note without leaving trash: browsing — the
+    /// OmniBar's query is what decides which section is showing, not
+    /// anything an action inside that section does, so restoring (like
+    /// deleting) never touches `query`. Advances the highlight to whatever's
+    /// now first, same as deleteFromTrash() below.
+    func restoreFromTrash(_ note: Note) {
+        let wasHighlighted = highlightedTrashID == note.id
+        guard store.restoreFromTrash(note) != nil else { return }
+        if wasHighlighted {
+            highlightedTrashID = matchingTrashForQuery.first?.id
+        }
+    }
+
+    /// Moves a trashed note straight into the real macOS Trash — still
+    /// recoverable there afterward, same as what the scheduled sweep does
+    /// to the whole .trash/ folder. Advances the highlight to whatever's
+    /// now first, same as deleteNote() does for the regular note list,
+    /// rather than leaving the preview pane blank after a deliberate delete.
+    func deleteFromTrash(_ note: Note) {
+        let wasHighlighted = highlightedTrashID == note.id
+        store.deleteFromTrash(note)
+        if wasHighlighted {
+            highlightedTrashID = matchingTrashForQuery.first?.id
+        }
     }
 
     /// Seeds Templates/ with a few starter templates the very first time the
@@ -237,7 +264,7 @@ extension ContentView {
         Button("Make This Note a Template") {
             convertNoteToTemplate(note)
         }
-        Button("Delete", role: .destructive) {
+        Button("Move to Trash", role: .destructive) {
             deleteNote(note)
         }
     }
@@ -248,7 +275,7 @@ extension ContentView {
         Button("Open \(count) Notes in Finder") {
             bulkOpenInFinder()
         }
-        Button("Delete \(count) Notes", role: .destructive) {
+        Button("Move \(count) Notes to Trash", role: .destructive) {
             bulkDelete()
         }
     }

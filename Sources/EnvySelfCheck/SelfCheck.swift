@@ -63,6 +63,98 @@ struct SelfCheck {
             check("delete removes file", !FileManager.default.fileExists(atPath: note.url.path))
         }
 
+        // deleteSendsToAHiddenDotTrashSubfolder
+        do {
+            let store = await makeTempStore()
+            let note = store.create(title: "Soft Delete Me")
+            let trashDirectory = store.noteDirectory.appendingPathComponent(".trash", isDirectory: true)
+            store.delete(note)
+            check("delete lands in a hidden .trash/, not macOS Trash directly", FileManager.default.fileExists(atPath: trashDirectory.appendingPathComponent("Soft Delete Me.md").path))
+            check("delete publishes it via trashedNotes", store.trashedNotes.contains { $0.title == "Soft Delete Me" })
+
+            let restored = store.restoreLastDeleted()
+            check("restoreLastDeleted brings back exactly one note", restored.count == 1)
+            check("restoreLastDeleted restores the original file", FileManager.default.fileExists(atPath: note.url.path))
+            check("restoreLastDeleted removes it from .trash/", !FileManager.default.fileExists(atPath: trashDirectory.appendingPathComponent("Soft Delete Me.md").path))
+            check("restoreLastDeleted re-adds it to notes", store.notes.contains { $0.id == note.id })
+            check("restoreLastDeleted clears it from trashedNotes", !store.trashedNotes.contains { $0.title == "Soft Delete Me" })
+        }
+
+        // trashSubfolderIsNeverScannedAsNotes
+        do {
+            let store = await makeTempStore()
+            store.setIncludeSubfolders(true)
+            await waitForLoad(store)
+            let note = store.create(title: "Will Be Trashed")
+            store.delete(note)
+            await waitForLoad(store)
+            check("a note sitting in .trash/ never reappears as a note, even with subfolders included", !store.notes.contains { $0.title == "Will Be Trashed" })
+        }
+
+        // eachSubfolderGetsItsOwnTrashAndRestoresBackIntoItself
+        do {
+            let store = await makeTempStore()
+            store.setIncludeSubfolders(true)
+            await waitForLoad(store)
+            let subfolder = store.noteDirectory.appendingPathComponent("Work", isDirectory: true)
+            try? FileManager.default.createDirectory(at: subfolder, withIntermediateDirectories: true)
+            let nestedURL = subfolder.appendingPathComponent("Nested.md")
+            try? "nested content".write(to: nestedURL, atomically: true, encoding: .utf8)
+            store.reload()
+            await waitForLoad(store)
+            if let nestedNote = store.notes.first(where: { $0.title == "Nested" }) {
+                store.delete(nestedNote)
+                let siblingTrash = subfolder.appendingPathComponent(".trash", isDirectory: true)
+                check("a subfolder note gets its own sibling .trash/, not the top-level one", FileManager.default.fileExists(atPath: siblingTrash.appendingPathComponent("Nested.md").path))
+                check("nothing landed in the top-level .trash/ for a subfolder delete", !FileManager.default.fileExists(atPath: store.noteDirectory.appendingPathComponent(".trash/Nested.md").path))
+
+                if let trashedNested = store.trashedNotes.first(where: { $0.title == "Nested" }) {
+                    let restored = store.restoreFromTrash(trashedNested)
+                    check("restoreFromTrash succeeds", restored != nil)
+                    check("restoreFromTrash puts it back in the same subfolder it came from", FileManager.default.fileExists(atPath: nestedURL.path))
+                    check("restoreFromTrash re-adds it to notes", store.notes.contains { $0.title == "Nested" })
+                } else {
+                    check("trashedNotes finds the nested note in its own .trash/", false)
+                }
+            } else {
+                check("nested note was found before trashing it", false)
+            }
+        }
+
+        // deleteFromTrashMovesJustThatOneItemToMacOSTrash
+        do {
+            let store = await makeTempStore()
+            let keep = store.create(title: "Keep Me")
+            let removeMe = store.create(title: "Remove Me")
+            store.delete(keep)
+            store.delete(removeMe)
+            check("both trashed notes show up in trashedNotes", store.trashedNotes.count == 2)
+
+            if let toRemove = store.trashedNotes.first(where: { $0.title == "Remove Me" }) {
+                store.deleteFromTrash(toRemove)
+                check("deleteFromTrash removes just that one item from trashedNotes", store.trashedNotes.count == 1)
+                check("deleteFromTrash leaves the other trashed note alone", store.trashedNotes.contains { $0.title == "Keep Me" })
+            } else {
+                check("found the note to remove from trash", false)
+            }
+        }
+
+        // emptyTrashSweepsEveryDotTrashFolderUnderTheIndex
+        do {
+            let store = await makeTempStore()
+            let note = store.create(title: "Long Gone")
+            let trashDirectory = store.noteDirectory.appendingPathComponent(".trash", isDirectory: true)
+            store.delete(note)
+            check("note is in .trash/ before emptying", FileManager.default.fileExists(atPath: trashDirectory.appendingPathComponent("Long Gone.md").path))
+
+            store.emptyTrash()
+            check("emptyTrash clears the .trash/ folder", !FileManager.default.fileExists(atPath: trashDirectory.appendingPathComponent("Long Gone.md").path))
+            check("emptyTrash clears trashedNotes too", store.trashedNotes.isEmpty)
+
+            let restoredAfterEmpty = store.restoreLastDeleted()
+            check("restoring after emptyTrash silently finds nothing to restore", restoredAfterEmpty.isEmpty)
+        }
+
         // duplicateTitlesGetUniqueFilenames
         do {
             let store = await makeTempStore()

@@ -40,34 +40,11 @@ extension ContentView {
                     LazyVStack(spacing: 0) {
                         if isTemplateQuery {
                             matchingTemplateRows
+                        } else if isTrashQuery {
+                            matchingTrashRows
                         } else {
                             ForEach(filteredNotes) { note in
-                                NoteRow(note: note, showPreview: showNotePreview, showDateModified: showDateModified, dateDisplayStyle: dateDisplayStyle, sortField: sortField, theme: theme, textColor: theme.fileListTextColor?.color, bold: boldFileListText, isPinned: isPinned(note))
-                                    .padding(.vertical, listDensity.rowVerticalPadding)
-                                    .padding(.horizontal, 8)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                    .background(
-                                        RoundedRectangle(cornerRadius: 6, style: .continuous)
-                                            .fill(isSelected(note) ? Color(nsColor: theme.resolvedSelectionColor) : Color.clear)
-                                    )
-                                    .contentShape(Rectangle())
-                                    .onTapGesture {
-                                        if NSEvent.modifierFlags.contains(.shift) {
-                                            selectRange(to: note)
-                                        } else if NSEvent.modifierFlags.contains(.command) {
-                                            toggleMultiSelect(note)
-                                        } else {
-                                            selectSingle(note)
-                                        }
-                                    }
-                                    .contextMenu {
-                                        if fullSelection.count > 1 && fullSelection.contains(note.id) {
-                                            bulkContextMenuItems
-                                        } else {
-                                            singleContextMenuItems(for: note)
-                                        }
-                                    }
-                                    .id(note.id)
+                                noteRow(for: note)
                             }
                         }
                     }
@@ -89,16 +66,20 @@ extension ContentView {
                 // fade entirely and just sits there permanently.
                 .focusEffectDisabled()
                 .focused($focusedField, equals: .list)
-                .onKeyPress(.downArrow) {
-                    if isTemplateQuery { moveTemplateSelection(1) } else { moveSelection(1) }
+                .onKeyPress(keys: [.downArrow]) { press in
+                    handleListArrowKey(delta: 1, shiftHeld: press.modifiers.contains(.shift))
                     return .handled
                 }
-                .onKeyPress(.upArrow) {
-                    if isTemplateQuery { moveTemplateSelection(-1) } else { moveSelection(-1) }
+                .onKeyPress(keys: [.upArrow]) { press in
+                    handleListArrowKey(delta: -1, shiftHeld: press.modifiers.contains(.shift))
                     return .handled
                 }
                 .onKeyPress(.return) {
-                    if isTemplateQuery { actOnHighlightedTemplate() } else { focusedField = .editor }
+                    // Browsing trash: never acts on its own — Restore/Delete
+                    // are always an explicit button or right-click away, so
+                    // Return here is intentionally a no-op rather than
+                    // mirroring actOnHighlightedTemplate()'s create-on-Return.
+                    if isTemplateQuery { actOnHighlightedTemplate() } else if !isTrashQuery { focusedField = .editor }
                     return .handled
                 }
                 .focusHighlight(
@@ -124,6 +105,42 @@ extension ContentView {
                     .padding(.bottom, 10)
             }
         }
+    }
+
+    /// One row in the regular (non-template, non-trash) note list. Pulled
+    /// out of listPane's own body — that ForEach's row content, inline,
+    /// pushed the whole already-large view body past the type checker's
+    /// budget ("unable to type-check this expression in reasonable time"),
+    /// the same class of problem FocusHighlight.swift's own split addressed
+    /// for EditorViewNotifications.
+    @ViewBuilder
+    private func noteRow(for note: Note) -> some View {
+        NoteRow(note: note, showPreview: showNotePreview, showDateModified: showDateModified, dateDisplayStyle: dateDisplayStyle, sortField: sortField, theme: theme, textColor: theme.fileListTextColor?.color, bold: boldFileListText, isPinned: isPinned(note))
+            .padding(.vertical, listDensity.rowVerticalPadding)
+            .padding(.horizontal, 8)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(isSelected(note) ? Color(nsColor: theme.resolvedSelectionColor) : Color.clear)
+            )
+            .contentShape(Rectangle())
+            .onTapGesture {
+                if NSEvent.modifierFlags.contains(.shift) {
+                    selectRange(to: note)
+                } else if NSEvent.modifierFlags.contains(.command) {
+                    toggleMultiSelect(note)
+                } else {
+                    selectSingle(note)
+                }
+            }
+            .contextMenu {
+                if fullSelection.count > 1 && fullSelection.contains(note.id) {
+                    bulkContextMenuItems
+                } else {
+                    singleContextMenuItems(for: note)
+                }
+            }
+            .id(note.id)
     }
 
     /// An opaque fill behind the note list, applying regardless of the blur
@@ -167,12 +184,12 @@ extension ContentView {
                 .padding(.vertical, 6)
         }
         .focused($focusedField, equals: .search)
-        .onKeyPress(.downArrow) {
-            if isTemplateQuery { moveTemplateSelection(1) } else { moveSelection(1) }
+        .onKeyPress(keys: [.downArrow]) { press in
+            handleListArrowKey(delta: 1, shiftHeld: press.modifiers.contains(.shift))
             return .handled
         }
-        .onKeyPress(.upArrow) {
-            if isTemplateQuery { moveTemplateSelection(-1) } else { moveSelection(-1) }
+        .onKeyPress(keys: [.upArrow]) { press in
+            handleListArrowKey(delta: -1, shiftHeld: press.modifiers.contains(.shift))
             return .handled
         }
         .onKeyPress(.rightArrow) {
@@ -201,6 +218,7 @@ extension ContentView {
                 guard !Task.isCancelled else { return }
                 reconcileSelection()
                 reconcileTemplateHighlight()
+                reconcileTrashHighlight()
                 // The open note's search-match highlighting settles here
                 // too, on the same debounce as the results list — see
                 // editorSearchQuery's declaration for why the editor never
@@ -300,43 +318,18 @@ extension ContentView {
     }
 
     /// Shown in place of the note list while "template:" is typed — click a
-    /// row (or press Return, which picks the first) to create a note from
-    /// it, same "type and act on it" shape as a plain search.
+    /// row (or arrow through them) just opens it for editing, live and
+    /// auto-saving, in the editor pane's own template branch — same
+    /// click-to-open feel as a regular note, no separate "Edit Template"
+    /// step. "Create Note from Template" is its own deliberate action now
+    /// (Return, the button in the editor pane's header, or right-click),
+    /// never a side effect of merely opening one to look at it. ⇧-click,
+    /// ⌘-click, and ⇧↑/⇧↓ multi-select the same way the regular note list
+    /// does, for bulk actions in the context menu.
     @ViewBuilder
     private var matchingTemplateRows: some View {
         ForEach(matchingTemplatesForQuery) { template in
-            HStack(spacing: 8) {
-                Image(systemName: "doc.badge.plus")
-                    .foregroundStyle(.secondary)
-                Text(template.name)
-                Spacer()
-            }
-            .padding(.vertical, listDensity.rowVerticalPadding)
-            .padding(.horizontal, 8)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .fill(highlightedTemplateID == template.id ? Color(nsColor: theme.resolvedSelectionColor) : Color.clear)
-            )
-            .contentShape(Rectangle())
-            .onTapGesture {
-                highlightedTemplateID = template.id
-                createFromTemplate(template, title: template.name)
-            }
-            .contextMenu {
-                Button("Edit Template") {
-                    editingTemplate = template
-                }
-                Button("Reveal in Finder") {
-                    NSWorkspace.shared.activateFileViewerSelecting([template.url])
-                }
-                Button("Move Back to Notes List") {
-                    convertTemplateToNote(template)
-                }
-                Button("Delete", role: .destructive) {
-                    deleteTemplate(template)
-                }
-            }
+            templateRow(for: template)
         }
         if matchingTemplatesForQuery.isEmpty {
             if let fragment = templateNameFragment?.trimmingCharacters(in: .whitespaces), !fragment.isEmpty {
@@ -352,6 +345,165 @@ extension ContentView {
                     .padding(.horizontal, 12)
                     .padding(.vertical, 8)
             }
+        }
+    }
+
+    @ViewBuilder
+    private func templateRow(for template: NoteTemplate) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: "doc.badge.plus")
+                .foregroundStyle(.secondary)
+            Text(template.name)
+            Spacer()
+        }
+        .padding(.vertical, listDensity.rowVerticalPadding)
+        .padding(.horizontal, 8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .fill(isTemplateSelected(template) ? Color(nsColor: theme.resolvedSelectionColor) : Color.clear)
+        )
+        .contentShape(Rectangle())
+        .onTapGesture {
+            if NSEvent.modifierFlags.contains(.shift) {
+                selectTemplateRange(to: template)
+            } else if NSEvent.modifierFlags.contains(.command) {
+                toggleMultiSelectTemplate(template)
+            } else {
+                selectSingleTemplate(template)
+            }
+        }
+        .contextMenu {
+            if fullTemplateSelection.count > 1 && fullTemplateSelection.contains(template.id) {
+                bulkTemplateContextMenuItems
+            } else {
+                Button("Create Note from Template") {
+                    createFromTemplate(template, title: template.name)
+                }
+                Button("Reveal in Finder") {
+                    NSWorkspace.shared.activateFileViewerSelecting([template.url])
+                }
+                Button("Move Back to Notes List") {
+                    convertTemplateToNote(template)
+                }
+                Button("Delete", role: .destructive) {
+                    deleteTemplate(template)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var bulkTemplateContextMenuItems: some View {
+        let templates = selectedTemplates()
+        let count = templates.count
+        Button("Create \(count) Notes from Templates") {
+            for template in templates {
+                createFromTemplate(template, title: template.name)
+            }
+        }
+        Button("Reveal \(count) Templates in Finder") {
+            NSWorkspace.shared.activateFileViewerSelecting(templates.map(\.url))
+        }
+        Button("Move \(count) Templates Back to Notes List") {
+            for template in templates {
+                convertTemplateToNote(template)
+            }
+            multiSelectedTemplateIDs.removeAll()
+        }
+        Button("Delete \(count) Templates", role: .destructive) {
+            for template in templates {
+                deleteTemplate(template)
+            }
+            multiSelectedTemplateIDs.removeAll()
+        }
+    }
+
+    /// Shown in place of the note list while "trash:" is typed — click a row
+    /// (or arrow keys) just browses, same as the regular note list; clicking
+    /// never restores or deletes anything by itself. The highlighted note's
+    /// content shows read-only in the editor pane (see trashPreviewPane), and
+    /// Restore/Reveal/Delete are always a deliberate right-click or Return
+    /// press away, never a side effect of merely looking at something.
+    /// ⇧-click, ⌘-click, and ⇧↑/⇧↓ multi-select the same way the regular
+    /// note list does.
+    @ViewBuilder
+    private var matchingTrashRows: some View {
+        ForEach(matchingTrashForQuery) { note in
+            trashRow(for: note)
+        }
+        if matchingTrashForQuery.isEmpty {
+            Text("Trash is empty.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+        }
+    }
+
+    @ViewBuilder
+    private func trashRow(for note: Note) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: "trash")
+                .foregroundStyle(.secondary)
+            Text(note.title)
+            Spacer()
+            Text(dateDisplayStyle.format(note.modifiedDate))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .padding(.vertical, listDensity.rowVerticalPadding)
+        .padding(.horizontal, 8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .fill(isTrashSelected(note) ? Color(nsColor: theme.resolvedSelectionColor) : Color.clear)
+        )
+        .contentShape(Rectangle())
+        .onTapGesture {
+            if NSEvent.modifierFlags.contains(.shift) {
+                selectTrashRange(to: note)
+            } else if NSEvent.modifierFlags.contains(.command) {
+                toggleMultiSelectTrash(note)
+            } else {
+                selectSingleTrash(note)
+            }
+        }
+        .contextMenu {
+            if fullTrashSelection.count > 1 && fullTrashSelection.contains(note.id) {
+                bulkTrashContextMenuItems
+            } else {
+                Button("Restore") {
+                    restoreFromTrash(note)
+                }
+                Button("Reveal in Finder") {
+                    NSWorkspace.shared.activateFileViewerSelecting([note.url])
+                }
+                Button("Delete", role: .destructive) {
+                    deleteFromTrash(note)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var bulkTrashContextMenuItems: some View {
+        let notes = selectedTrashNotes()
+        let count = notes.count
+        Button("Restore \(count) Notes") {
+            for note in notes {
+                restoreFromTrash(note)
+            }
+            multiSelectedTrashIDs.removeAll()
+        }
+        Button("Reveal \(count) Notes in Finder") {
+            NSWorkspace.shared.activateFileViewerSelecting(notes.map(\.url))
+        }
+        Button("Delete \(count) Notes", role: .destructive) {
+            for note in notes {
+                deleteFromTrash(note)
+            }
+            multiSelectedTrashIDs.removeAll()
         }
     }
 
@@ -379,7 +531,7 @@ extension ContentView {
     /// shouldn't offer (or fall back to) creating a note literally named
     /// after the whole query when one's present.
     var isSearchOperatorQuery: Bool {
-        containsSearchOperator || isTemplateQuery
+        containsSearchOperator || isTemplateQuery || isTrashQuery
     }
 
     /// "template:xyz" — like tag:/date:, but a create action rather than a
@@ -404,6 +556,28 @@ extension ContentView {
         return availableTemplates.filter { $0.name.lowercased().contains(needle) }
     }
 
+    /// "trash:xyz" — browses every note currently sitting in one of The
+    /// Index's `.trash` subfolders (see NoteStore.trashedNotes), same
+    /// query-prefix shape as template:, so you can find, restore, or
+    /// permanently delete a trashed note without leaving the search box.
+    var trashNameFragment: String? {
+        let trimmed = query.trimmingCharacters(in: .whitespaces)
+        guard trimmed.lowercased().hasPrefix("trash:") else { return nil }
+        return String(trimmed.dropFirst("trash:".count))
+    }
+
+    var isTrashQuery: Bool { trashNameFragment != nil }
+
+    /// Trashed notes whose title contains the typed fragment — an empty
+    /// fragment (just "trash:" typed so far) matches everything, same as
+    /// template:'s own fragment filtering.
+    var matchingTrashForQuery: [Note] {
+        guard let fragment = trashNameFragment else { return [] }
+        let needle = fragment.trimmingCharacters(in: .whitespaces).lowercased()
+        guard !needle.isEmpty else { return availableTrashedNotes }
+        return availableTrashedNotes.filter { $0.lowercasedTitle.contains(needle) }
+    }
+
     /// The typed query with every recognized operator word dimmed slightly,
     /// to acknowledge it's being read as a command rather than literal
     /// search text — whitespace is preserved exactly as typed, only the
@@ -426,7 +600,7 @@ extension ContentView {
                 let word = query[index..<end]
                 let lowered = word.lowercased()
                 let isOperator = lowered.hasPrefix("tag:") || lowered.hasPrefix("date:") || lowered.hasPrefix("template:")
-                    || lowered.hasPrefix("due:")
+                    || lowered.hasPrefix("due:") || lowered.hasPrefix("trash:")
                     || lowered.hasPrefix("-tag:")
                     || lowered == "todo:" || (lowered.hasPrefix("-") && lowered.count > 1)
                 result = result + Text(word).foregroundColor(isOperator ? Color.primary.opacity(0.8) : .primary)

@@ -28,6 +28,8 @@ struct GeneralSettingsView: View {
     @AppStorage("menuBarClickAction") private var menuBarClickActionRaw = MenuBarClickAction.toggleWindow.rawValue
     @AppStorage("menuBarPinnedNotePath") private var menuBarPinnedNotePath = ""
     @AppStorage("templateDateFormatPattern") private var templateDateFormatPattern = TemplateDateFormat.defaultPattern
+    @AppStorage(TrashPreference.intervalValueKey) private var trashEmptyIntervalValue = TrashPreference.defaultIntervalValue
+    @AppStorage(TrashPreference.intervalUnitKey) private var trashEmptyIntervalUnitRaw = TrashPreference.defaultIntervalUnit.rawValue
     @State private var showingMarkupHelp = false
     @State private var openAtLogin = SMAppService.mainApp.status == .enabled
 
@@ -66,6 +68,23 @@ struct GeneralSettingsView: View {
         )
     }
 
+    private var trashEmptyIntervalUnit: Binding<TrashEmptyUnit> {
+        Binding(
+            get: { TrashEmptyUnit(rawValue: trashEmptyIntervalUnitRaw) ?? TrashPreference.defaultIntervalUnit },
+            set: { trashEmptyIntervalUnitRaw = $0.rawValue }
+        )
+    }
+
+    /// Clamped to 1...99 on write — a typed 0, a blank field momentarily
+    /// parsing to 0, or anything 100+ all snap back in range rather than
+    /// persisting a value that'd make emptyIfDue()'s own math misbehave.
+    private var trashEmptyIntervalValueClamped: Binding<Int> {
+        Binding(
+            get: { trashEmptyIntervalValue },
+            set: { trashEmptyIntervalValue = min(max($0, 1), 99) }
+        )
+    }
+
     /// Just the filename, not the full path — matches how a note's title
     /// is derived everywhere else (Note.title strips directory + extension).
     private var menuBarPinnedNoteTitle: String? {
@@ -75,6 +94,15 @@ struct GeneralSettingsView: View {
 
     private var indexURL: URL {
         indexPathRaw.isEmpty ? NoteStore.defaultDirectory() : URL(fileURLWithPath: indexPathRaw, isDirectory: true)
+    }
+
+    /// The Index's own top-level `.trash` — the one that matters for the
+    /// overwhelmingly common case (subfolder scanning off, or a delete that
+    /// happened right at the top level). A note deleted from deeper inside a
+    /// subfolder gets its own sibling `.trash` there instead; browsing across
+    /// all of them at once is what the `trash:` search operator is for.
+    private var trashURL: URL {
+        indexURL.appendingPathComponent(".trash", isDirectory: true)
     }
 
     var body: some View {
@@ -141,6 +169,26 @@ struct GeneralSettingsView: View {
                     let templatesDirectory = indexURL.appendingPathComponent("Templates", isDirectory: true)
                     try? FileManager.default.createDirectory(at: templatesDirectory, withIntermediateDirectories: true)
                     NSWorkspace.shared.activateFileViewerSelecting([templatesDirectory])
+                }
+            }
+
+            Section("Trash") {
+                HStack {
+                    Text("Empty every")
+                    TextField("", value: trashEmptyIntervalValueClamped, format: .number)
+                        .frame(width: 40)
+                        .multilineTextAlignment(.trailing)
+                    Picker("", selection: trashEmptyIntervalUnit) {
+                        ForEach(TrashEmptyUnit.allCases) { unit in
+                            Text(unit.label).tag(unit)
+                        }
+                    }
+                    .labelsHidden()
+                    .fixedSize()
+                }
+                Button("Reveal Trash Folder in Finder") {
+                    try? FileManager.default.createDirectory(at: trashURL, withIntermediateDirectories: true)
+                    NSWorkspace.shared.activateFileViewerSelecting([trashURL])
                 }
             }
 

@@ -18,6 +18,7 @@ struct TemplateEditorView: View {
     var noteTitles: [String]
     var focusedField: FocusState<FocusField?>.Binding
     var onDone: () -> Void
+    var onCreateNote: () -> Void
 
     @State private var content: String
     @State private var saveTask: Task<Void, Never>?
@@ -32,7 +33,8 @@ struct TemplateEditorView: View {
         plainTextMode: Bool,
         noteTitles: [String],
         focusedField: FocusState<FocusField?>.Binding,
-        onDone: @escaping () -> Void
+        onDone: @escaping () -> Void,
+        onCreateNote: @escaping () -> Void
     ) {
         self.store = store
         self.template = template
@@ -44,6 +46,7 @@ struct TemplateEditorView: View {
         self.noteTitles = noteTitles
         self.focusedField = focusedField
         self.onDone = onDone
+        self.onCreateNote = onCreateNote
         _content = State(initialValue: (try? String(contentsOf: template.url, encoding: .utf8)) ?? "")
     }
 
@@ -81,6 +84,10 @@ struct TemplateEditorView: View {
                 .padding(.vertical, 2)
                 .background(Capsule().fill(Color.secondary.opacity(0.15)))
             Spacer()
+            Button("Create Note from Template") {
+                flushSave()
+                onCreateNote()
+            }
             Button {
                 flushSave()
                 onDone()
@@ -89,7 +96,7 @@ struct TemplateEditorView: View {
                     .foregroundStyle(.secondary)
             }
             .buttonStyle(.plain)
-            .help("Stop editing this template")
+            .help("Deselect this template")
         }
         .padding(.horizontal)
         .padding(.vertical, 8)

@@ -24,8 +24,9 @@ enum WelcomeContent {
     - **⌥↓** and **⌥↑** move keyboard focus between the search box, the note list, and the editor.
     - If your search matches the start of an existing title, the rest of it shows up in grey. Press **→** to complete it.
     - **⌘N** creates a blank note directly.
-    - **⌘⌫** deletes the selected note. It goes to Trash, not gone for good.
+    - **⌘⌫** deletes the selected note. It goes to a hidden `.trash` folder right next to it, not gone for good — Settings → General → Trash controls how often that gets swept into the real macOS Trash.
     - **⌘⇧⌫** restores the note(s) you just deleted, right back where they were.
+    - Search `trash:` to browse everything currently trashed, anywhere in The Index. Clicking or arrowing through results just previews them, read-only — Restore, Reveal in Finder, and Delete are always a right-click (or a button right there in the preview) away, never a side effect of looking.
     - Cmd-click notes in the list to select several at once. Shift-click to select every note between your last click and the new one.
 
     There's no separate "new note" dialog. The search box handles both jobs.
@@ -119,7 +120,7 @@ enum WelcomeContent {
 
     Envy keeps all your notes in one folder, called The Index. Settings → General shows where it lives and lets you point it somewhere else at any time.
 
-    Already organize with subfolders? Turn on "Show items in subfolders" in that same section and Envy picks up notes nested inside them too (its own `Templates` folder is always excluded).
+    Already organize with subfolders? Turn on "Show items in subfolders" in that same section and Envy picks up notes nested inside them too (its own `Templates` folder is always excluded, and so is any hidden `.trash` folder).
 
     ## 🎨 Customizing the Look
 

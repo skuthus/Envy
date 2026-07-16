@@ -10,20 +10,33 @@ extension ContentView {
     var editorPane: some View {
         VStack(spacing: 0) {
             Group {
-                if let editingTemplate {
-                    TemplateEditorView(
-                        store: store,
-                        template: editingTemplate,
-                        theme: theme,
-                        requireModifierForLinkClick: requireModifierForLinkClick,
-                        showTitleHeader: showEditorTitleHeader,
-                        fontZoom: CGFloat(editorFontZoom),
-                        plainTextMode: plainTextMode,
-                        noteTitles: noteTitlesByRecencyCache,
-                        focusedField: $focusedField,
-                        onDone: { self.editingTemplate = nil }
-                    )
-                    .id(editingTemplate.id)
+                if isTemplateQuery {
+                    // Whichever template is highlighted (arrow keys, a click,
+                    // or a freshly-created one) shows here, live-editable and
+                    // auto-saving — clicking/browsing just opens it, same as
+                    // opening a regular note. "Create Note from Template" is
+                    // its own explicit button right in the header, not a
+                    // side effect of looking.
+                    if let template = matchingTemplatesForQuery.first(where: { $0.id == highlightedTemplateID }) {
+                        TemplateEditorView(
+                            store: store,
+                            template: template,
+                            theme: theme,
+                            requireModifierForLinkClick: requireModifierForLinkClick,
+                            showTitleHeader: showEditorTitleHeader,
+                            fontZoom: CGFloat(editorFontZoom),
+                            plainTextMode: plainTextMode,
+                            noteTitles: noteTitlesByRecencyCache,
+                            focusedField: $focusedField,
+                            onDone: { highlightedTemplateID = nil },
+                            onCreateNote: { createFromTemplate(template, title: template.name) }
+                        )
+                        .id(template.id)
+                    } else {
+                        ContentUnavailableView("No Template Selected", systemImage: "doc.badge.plus")
+                    }
+                } else if isTrashQuery {
+                    trashPreviewPane
                 } else if let selectedID, store.notes.contains(where: { $0.id == selectedID }) {
                     NoteEditorView(
                         store: store,
@@ -72,7 +85,7 @@ extension ContentView {
             // Sits directly above the footer bar (rather than the bar
             // growing to contain it) so expanding the list grows the panel
             // upward into the editor instead of pushing the footer down.
-            if backlinksExpanded && !currentBacklinkNotes.isEmpty && editingTemplate == nil {
+            if backlinksExpanded && !currentBacklinkNotes.isEmpty && !isTemplateQuery {
                 backlinksExpandedList
                 Divider()
             }
@@ -91,6 +104,49 @@ extension ContentView {
                 editorCharacterCount = 0
             }
             recomputeBacklinkNotes()
+        }
+    }
+
+    /// Shown in the editor pane's own slot while "trash:" is typed — read
+    /// only, since browsing trash is meant to be safe to click through
+    /// without accidentally changing anything. Restore/Reveal/Delete are
+    /// explicit buttons right here, the same three actions the row's own
+    /// right-click menu offers, so acting on what you're looking at never
+    /// requires guessing where the controls are.
+    @ViewBuilder
+    private var trashPreviewPane: some View {
+        if let note = matchingTrashForQuery.first(where: { $0.id == highlightedTrashID }) {
+            VStack(alignment: .leading, spacing: 0) {
+                HStack {
+                    Text(note.title)
+                        .font(.title3.bold())
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                    Spacer()
+                    Button("Restore") {
+                        restoreFromTrash(note)
+                    }
+                    Button("Reveal in Finder") {
+                        NSWorkspace.shared.activateFileViewerSelecting([note.url])
+                    }
+                    Button("Delete", role: .destructive) {
+                        deleteFromTrash(note)
+                    }
+                }
+                .padding(12)
+                Divider()
+                ScrollView {
+                    Text(note.content)
+                        .font(.body)
+                        .foregroundStyle(Color(nsColor: theme.resolvedTextColor))
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(12)
+                }
+            }
+            .background(Color(nsColor: theme.resolvedBackgroundColor))
+        } else {
+            ContentUnavailableView("No Trashed Note Selected", systemImage: "trash")
         }
     }
 

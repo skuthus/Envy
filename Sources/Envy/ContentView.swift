@@ -60,6 +60,7 @@ struct ContentView: View {
     @State var showLoadingIndicator = false
     @State var loadingIndicatorTask: Task<Void, Never>?
     @State var searchDebounceTask: Task<Void, Never>?
+    @State var trashSweepTask: Task<Void, Never>?
     @FocusState var focusedField: FocusField?
     @AppStorage("layoutMode") var layoutModeRaw = LayoutMode.vertical.rawValue
     @AppStorage("theme") var theme = Theme()
@@ -93,8 +94,15 @@ struct ContentView: View {
     @AppStorage("restoreFocusOnSummon") var restoreFocusOnSummon = true
     @AppStorage("templateDateFormatPattern") var templateDateFormatPattern = TemplateDateFormat.defaultPattern
     @AppStorage("hasSeededSampleTemplates") var hasSeededSampleTemplates = false
-    @State var editingTemplate: NoteTemplate?
     @State var highlightedTemplateID: String?
+    /// Same shape as multiSelectedIDs/selectionAnchorID above, just for
+    /// template: browsing — highlightedTemplateID is the "primary" end.
+    @State var multiSelectedTemplateIDs: Set<String> = []
+    @State var templateSelectionAnchorID: String?
+    @State var highlightedTrashID: String?
+    /// Same shape again, for trash: browsing.
+    @State var multiSelectedTrashIDs: Set<String> = []
+    @State var trashSelectionAnchorID: String?
     /// Shares WikilinkPreviewController with the editor's own wikilinks —
     /// same panel, same rounded-corner/positioning/dismissal logic, just a
     /// different (button-shaped, not text-range-shaped) anchor. Persists
@@ -152,6 +160,10 @@ struct ContentView: View {
 
     var availableTemplates: [NoteTemplate] {
         store.templates()
+    }
+
+    var availableTrashedNotes: [Note] {
+        store.trashedNotes
     }
 
     /// The text {{date}} in a template (title or body) actually gets
@@ -354,7 +366,6 @@ struct ContentView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .externalNoteOpenRequested)) { notification in
             guard let url = notification.object as? URL else { return }
-            editingTemplate = nil
             selectedID = url.path
             query = ""
         }
@@ -425,6 +436,23 @@ struct ContentView: View {
             selectDefaultIfNeeded()
             focusedField = .search
             applyWindowTitleVisibility()
+
+            // A menu-bar summon/hide app can easily run for weeks without a
+            // real relaunch, so a launch-only check isn't enough on its own
+            // to keep an "every X days/weeks" trash schedule honest — this
+            // loop re-checks hourly for as long as the app stays open.
+            // Cheap either way: emptyIfDue() is just a UserDefaults date
+            // comparison except on the rare tick it's actually due.
+            TrashPreference.emptyIfDue(store)
+            if trashSweepTask == nil {
+                trashSweepTask = Task {
+                    while !Task.isCancelled {
+                        try? await Task.sleep(for: .seconds(3600))
+                        guard !Task.isCancelled else { return }
+                        TrashPreference.emptyIfDue(store)
+                    }
+                }
+            }
         }
         .onChange(of: indexPathRaw) { _, _ in
             switchIndexDirectory()

@@ -5,7 +5,9 @@ import CoreServices
 /// A template is just a plain `.md` file living in The Index's own
 /// `Templates` subfolder — never a Note itself. scanDirectory() explicitly
 /// skips descending into `Templates/` even when subfolders are included, so
-/// it's always invisible to search/list/backlinks.
+/// it's never visible to search/list/backlinks. `.trash/` folders (see
+/// NoteStore's own doc comment on trashedNotes) don't need the same explicit
+/// treatment — being hidden, they're already excluded by skipsHiddenFiles.
 public struct NoteTemplate: Identifiable, Hashable, Sendable {
     public let id: String
     public let name: String
@@ -131,6 +133,7 @@ public final class NoteStore: ObservableObject {
             guard generation == self.reloadGeneration else { return }
             self.notes = loaded
             self.isLoading = false
+            self.refreshTrashedNotes()
         }
     }
 
@@ -145,8 +148,11 @@ public final class NoteStore: ObservableObject {
     }
 
     /// Every `.md` file anywhere under `directory`, except inside
-    /// `Templates/` — that subfolder is always template storage, never
-    /// notes, whether or not subfolder scanning is on.
+    /// `Templates/` — never notes, whether or not subfolder scanning is on.
+    /// `.trash/` folders need no equivalent special-casing here: they're
+    /// hidden (dot-prefixed), and skipsHiddenFiles below already excludes a
+    /// hidden directory's entire subtree, not just the directory entry
+    /// itself — confirmed empirically, not just assumed from the docs.
     nonisolated private static func notesRecursively(under directory: URL, fm: FileManager) -> [URL] {
         let templatesDirectory = directory.appendingPathComponent("Templates", isDirectory: true).resolvingSymlinksInPath()
         guard let enumerator = fm.enumerator(
@@ -432,6 +438,74 @@ public final class NoteStore: ObservableObject {
         }
     }
 
+    /// A folder's own `.trash` subfolder is where delete(_:) sends its notes
+    /// first, ahead of the real macOS Trash — not one single Trash/ at The
+    /// Index's top level, but one hidden `.trash` sibling per folder a note
+    /// actually lives in. That's what makes restoreFromTrash(_:) trivial:
+    /// a trashed note's own parent folder always *is* the folder it came
+    /// from, no separate bookkeeping of "original location" required, and
+    /// it survives across app restarts for free. Being dot-prefixed also
+    /// means it's simply never visible — not in Finder, not to
+    /// scanDirectory()/notesRecursively() (skipsHiddenFiles already
+    /// excludes a hidden directory's whole subtree), and it can never
+    /// collide with a real folder of the user's own already named "Trash".
+    nonisolated private static let trashDirectoryName = ".trash"
+
+    /// Every `.trash` directory anywhere under `directory`, however deep —
+    /// there's one per folder that's ever had a note deleted from it, not
+    /// just one at the top.
+    nonisolated private static func allTrashDirectories(under directory: URL) -> [URL] {
+        guard let enumerator = FileManager.default.enumerator(
+            at: directory,
+            includingPropertiesForKeys: [.isDirectoryKey],
+            options: []
+        ) else { return [] }
+        var results: [URL] = []
+        for case let url as URL in enumerator {
+            guard url.lastPathComponent == trashDirectoryName,
+                  (try? url.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true else { continue }
+            results.append(url)
+            enumerator.skipDescendants()
+        }
+        return results
+    }
+
+    /// Every note currently sitting in any of The Index's `.trash`
+    /// subfolders — what backs the `trash:` search operator (browse,
+    /// restore, or permanently delete a trashed note without leaving
+    /// Envy). A real published property (not computed on demand, the way
+    /// templates() is) since it needs to update immediately after
+    /// delete(_:)/restoreFromTrash(_:)/deleteFromTrash(_:)/emptyTrash(), all
+    /// of which refresh it explicitly rather than waiting on the next
+    /// unrelated reload.
+    @Published public private(set) var trashedNotes: [Note] = []
+
+    /// Not parallelized like scanDirectory() — trash is expected to hold far
+    /// fewer notes than the whole Index at any given time (it only
+    /// accumulates between emptyTrash() sweeps), so a plain synchronous
+    /// scan on the main actor is simpler and in practice just as fast.
+    nonisolated private static func scanTrashedNotes(under directory: URL) -> [Note] {
+        let fm = FileManager.default
+        var results: [Note] = []
+        for trashDirectory in allTrashDirectories(under: directory) {
+            guard let entries = try? fm.contentsOfDirectory(
+                at: trashDirectory,
+                includingPropertiesForKeys: [.contentModificationDateKey],
+                options: [.skipsHiddenFiles]
+            ) else { continue }
+            for url in entries where url.pathExtension.lowercased() == "md" {
+                guard let content = try? String(contentsOf: url, encoding: .utf8) else { continue }
+                let modified = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? Date()
+                results.append(Note(id: url.path, url: url, content: content, modifiedDate: modified))
+            }
+        }
+        return results.sorted { $0.modifiedDate > $1.modifiedDate }
+    }
+
+    private func refreshTrashedNotes() {
+        trashedNotes = Self.scanTrashedNotes(under: noteDirectory)
+    }
+
     /// The most recently deleted note(s) — a single delete or a whole bulk
     /// delete counts as one "action" for undo purposes, so this holds
     /// everything from the last call to `delete(_:)` together, not a full
@@ -445,30 +519,38 @@ public final class NoteStore: ObservableObject {
         delete([note])
     }
 
+    /// Soft-deletes by moving each note's file into its own parent folder's
+    /// `.trash` subfolder — not straight to the real macOS Trash, so it
+    /// stays fully reversible via restoreLastDeleted() (or, later,
+    /// restoreFromTrash(_:)) until emptyTrash() eventually sweeps it further.
     public func delete(_ notesToDelete: [Note]) {
         guard !notesToDelete.isEmpty else { return }
         markInternalWrite()
         var trashed: [(note: Note, trashedURL: URL)] = []
         for note in notesToDelete {
-            var resultingURL: NSURL?
-            // trashItem's resultingItemURL is the *actual* on-disk location
-            // in Trash, which may differ from a naive guess (macOS renames
-            // on a filename collision there) — capturing it is what makes
-            // restoring back to the exact right place possible.
-            if (try? FileManager.default.trashItem(at: note.url, resultingItemURL: &resultingURL)) != nil,
-               let trashedURL = resultingURL as URL? {
-                trashed.append((note, trashedURL))
+            let trashDirectory = note.url.deletingLastPathComponent().appendingPathComponent(Self.trashDirectoryName, isDirectory: true)
+            try? FileManager.default.createDirectory(at: trashDirectory, withIntermediateDirectories: true)
+            let filename = Self.uniqueFilename(for: note.title, in: trashDirectory)
+            let destination = trashDirectory.appendingPathComponent(filename)
+            do {
+                try FileManager.default.moveItem(at: note.url, to: destination)
+                trashed.append((note, destination))
+            } catch {
+                continue
             }
         }
         lastDeleted = trashed
         let deletedIDs = Set(notesToDelete.map(\.id))
         notes.removeAll { deletedIDs.contains($0.id) }
+        refreshTrashedNotes()
     }
 
-    /// Moves the most recently deleted note(s) back out of Trash to their
+    /// Moves the most recently deleted note(s) back out of .trash/ to their
     /// original location and re-adds them to `notes`. A note whose original
     /// location has since been reused (e.g. a new note created with the same
-    /// filename) is silently skipped rather than overwriting it.
+    /// filename), or that emptyTrash()/deleteFromTrash(_:) already swept on
+    /// to the real macOS Trash in the meantime, is silently skipped rather
+    /// than overwriting it or failing loudly.
     @discardableResult
     public func restoreLastDeleted() -> [Note] {
         guard !lastDeleted.isEmpty else { return [] }
@@ -485,7 +567,71 @@ public final class NoteStore: ObservableObject {
         }
         lastDeleted = []
         notes.append(contentsOf: restored)
+        refreshTrashedNotes()
         return restored
+    }
+
+    /// Restores an arbitrary trashed note found via `trashedNotes`/`trash:`
+    /// search — unlike restoreLastDeleted() (which only remembers the most
+    /// recent delete, and only for the lifetime of the app process), this
+    /// works for anything currently sitting in any `.trash` subfolder,
+    /// including ones left over from a previous session. Always lands back
+    /// in its `.trash` folder's own parent directory — the same folder it
+    /// was deleted from, which is exactly what the per-folder `.trash`
+    /// layout guarantees without needing to separately remember it.
+    @discardableResult
+    public func restoreFromTrash(_ note: Note) -> Note? {
+        let trashDirectory = note.url.deletingLastPathComponent()
+        let destinationDirectory = trashDirectory.deletingLastPathComponent()
+        let filename = Self.uniqueFilename(for: note.title, in: destinationDirectory)
+        let destination = destinationDirectory.appendingPathComponent(filename)
+        markInternalWrite()
+        do {
+            try FileManager.default.moveItem(at: note.url, to: destination)
+        } catch {
+            return nil
+        }
+        let restored = Note(id: destination.path, url: destination, content: note.content, modifiedDate: Date())
+        notes.insert(restored, at: 0)
+        refreshTrashedNotes()
+        return restored
+    }
+
+    /// Moves one trashed note straight into the real macOS Trash — the same
+    /// thing emptyTrash() does in bulk on its own schedule, just for a
+    /// single item picked out via `trashedNotes`/`trash:` search, still
+    /// recoverable afterward via Finder's own Trash.
+    public func deleteFromTrash(_ note: Note) {
+        markInternalWrite()
+        try? FileManager.default.trashItem(at: note.url, resultingItemURL: nil)
+        refreshTrashedNotes()
+    }
+
+    /// Sweeps everything currently sitting in any of The Index's `.trash`
+    /// subfolders into the real macOS Trash — the second, slower stage of
+    /// deletion after delete(_:)'s own soft-delete. Called on a schedule by
+    /// TrashPreference in the app layer, not tied to any particular delete;
+    /// a lastDeleted entry pointing at something this just swept away simply
+    /// fails its restore silently (see restoreLastDeleted()'s own doc
+    /// comment), so no extra bookkeeping is needed here for that.
+    public func emptyTrash() {
+        let directories = Self.allTrashDirectories(under: noteDirectory)
+        guard !directories.isEmpty else { return }
+        var swept = false
+        for trashDirectory in directories {
+            guard let entries = try? FileManager.default.contentsOfDirectory(
+                at: trashDirectory,
+                includingPropertiesForKeys: nil,
+                options: [.skipsHiddenFiles]
+            ), !entries.isEmpty else { continue }
+            for url in entries {
+                try? FileManager.default.trashItem(at: url, resultingItemURL: nil)
+            }
+            swept = true
+        }
+        guard swept else { return }
+        markInternalWrite()
+        refreshTrashedNotes()
     }
 
     /// Renames the note by moving its underlying file to a new filename derived
