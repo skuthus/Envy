@@ -21,13 +21,15 @@ This repository is published for source transparency. The code is proprietary (s
 - **Tags** — write `#tag` anywhere in a note and Envy picks it up automatically, rendered bold with a tinted background. Search `tag:name` (or exclude with `-tag:name`) to filter by it, with ghost-text autocomplete against tags you've already used.
 - **Templates** — type `template:` in the search box to browse and open a template live and editable; "Create Note from Template" starts a new note from it, with `{{date}}`, `{{time}}`, and `{{title}}` filled in automatically.
 - **Trash, not gone for good** — deleted notes go to a hidden per-folder `.trash`, restorable with `⌘⇧⌫` or browsable with `trash:`. Settings controls how often it gets swept into the real macOS Trash.
-- **Backlinks** — the footer shows a count of notes linking to the one you're viewing, expandable into a clickable list.
+- **Interlinks** — the footer shows the notes connected to the one you're viewing, expandable into three side-by-side columns: notes it links *out* to, notes that link *to* it (backlinks), and "Suggested" links — other notes you've mentioned by name but not yet linked, each a click away from being wired up.
+- **Renaming updates links** — rename a note and every `[[link]]` and `![[embed]]` pointing to it across your vault is rewritten to the new name automatically, so nothing breaks.
+- **AI provenance** — Envy recognizes notes an AI assistant has signed with a `⎈` line: filter them with `ai:` / `ai:created` / `ai:edited` (or `-ai:` for only your own writing), see a `⎈` badge in the list, and optionally protect the signature from accidental edits. A companion MCP server that lets an AI assistant safely read and write your notes is in development.
 - **Pinning** — pin a note (`⌥⌘P`) to keep it at the top of the list regardless of sort, or pin one note to the menu bar icon so a click opens it directly instead of summoning the app.
 - **Scattered multi-word search** — search several words at once and Envy finds notes containing all of them anywhere in the text; comma-separate groups (`dog, cat`) to search for either instead of both.
 - **Live external-edit detection** — editing a note in another app while it's open in Envy updates it automatically, with the changed portion briefly flashing so you don't miss it.
 - **Fully remappable shortcuts** — every keyboard shortcut in the app, including the global summon hotkey, can be customized in Settings → Shortcuts.
 - **Global hotkey & menu bar access** — `⌥⌘↩` shows or hides Envy from anywhere, even when another app is focused. The menu bar icon does the same on click, or opens your pinned note instead if you have one.
-- **Themes & appearance** — a gallery of ready-made themes (Tokyo Night, Dracula, Monokai, Solarized, and more), every color individually editable, adjustable window blur, note list density, and independent System/Light/Dark mode.
+- **Themes & appearance** — a gallery of ready-made themes (Tokyo Night, Dracula, Monokai, Solarized, and more), every color individually editable, adjustable window blur, note list density, an interface text-size slider for the app's chrome, and independent System/Light/Dark mode.
 - **Quality-of-life text tools** — emoji shortcodes (`:smile:`), arrow ligatures (`->` becomes `→`), auto-pairing brackets, and Bold/Italic shortcuts that wrap or unwrap selected text.
 - **Open at login** — optional toggle to launch Envy automatically when you log in.
 

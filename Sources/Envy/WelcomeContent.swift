@@ -91,6 +91,10 @@ enum WelcomeContent {
 
     Hold **⌥** (Option) and click a link instead to peek at it without leaving where you are — a small floating preview opens, and you can click straight into it to edit right there. Works on backlinks too. Settings → General can turn this off or change the trigger.
 
+    The footer's **Interlinks** panel shows everything connected to the note you're reading, side by side: the notes it links out to, the notes that link back to it, and *Suggested* links — other notes you've mentioned by name but haven't linked yet, each a click away from wiring up.
+
+    **Renaming a note updates its links everywhere.** Rename a note (click its title, or right-click it in the list) and every `[[link]]` and `![[embed]]` pointing to it across your notes is rewritten to the new name, so nothing breaks.
+
     ## 📆 Due Dates
 
     Write `@04-16-26` (or `@2026-04-16`) anywhere in a note, like this: Finish the quarterly report @04-16-26
@@ -135,6 +139,7 @@ enum WelcomeContent {
     - Export a theme to a file to share it, or import one someone else made.
     - A blur strength control adjusts how translucent the window background is.
     - A note list density picker controls how much space each note takes up in the list.
+    - An Interface Text Size slider scales the note list, search bar, and the rest of the app's chrome — separately from the editor's own text, which has its own font size and the **⌘+** / **⌘-** zoom.
     - A mode setting matches System, Light, or Dark, independent of your custom colors.
     - Moving focus to the search box, note list, or editor (by clicking, or with ⌥↓/⌥↑) highlights it with a border. A "Fade out focus highlight" toggle controls whether that border stays as long as it's focused or fades away after a moment, and its color and thickness are both customizable too.
 

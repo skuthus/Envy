@@ -2,6 +2,13 @@
 
 Also published at [envynote.app/changelog.html](https://envynote.app/changelog.html).
 
+## 1.2.2 — July 17, 2026
+
+- **Interlinks.** The footer's backlinks panel is now Interlinks: alongside the notes that link *to* the one you're viewing, it shows the notes it links *out* to, and "Suggested" links — other notes you've mentioned by name but haven't linked yet, each with a one-click button to wire it up. The three sections sit side by side, and stack automatically when the pane is narrow.
+- **Renaming a note now updates its links everywhere.** Rename a note and every `[[link]]` and `![[embed]]` pointing to it across your vault is rewritten to the new name, so nothing breaks. The notes whose links changed keep their modified dates, so renaming a widely-linked note doesn't shove them all to the top of a date-sorted list.
+- **Interface text size.** Settings → Theme → Appearance has a new Interface Text Size slider that scales the note list, search bar, and the rest of the app's chrome — separately from the editor's own font size.
+- **AI provenance (early).** Envy now recognizes notes an AI assistant has signed with a `⎈` line. Filter them with `ai:`, `ai:created`, or `ai:edited` (or `-ai:` to see only your own untouched writing); a `⎈` badge marks them in the note list; and Settings → General → "Protect AI signatures" renders the signature as a protected pill that can't be edited away by accident — right-click it to remove it deliberately. A companion MCP server — a connector that lets an AI assistant safely read and write your notes and stamp that provenance — is in development.
+
 ## 1.2.1 — July 16, 2026
 
 - Fixed a handful of issues with the new note embeds feature (`![[Note Title]]`): embeds now work anywhere in a line, not just alone on its own line; the required blank line underneath is now inserted automatically instead of needing to be typed by hand; retyping an embed's title no longer shows the previous note's content; and the collapse arrow's clickable area is now much larger.

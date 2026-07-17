@@ -28,12 +28,12 @@ struct WhatsNewView: View {
             }
 
             VStack(spacing: 10) {
-                Image(systemName: "square.on.square")
+                Image(systemName: "point.3.connected.trianglepath.dotted")
                     .font(.system(size: 44))
                     .foregroundStyle(EnvyLogoView.irisColor)
-                Text("Embed a Note Inside Another")
+                Text("See How Your Notes Connect")
                     .font(.title3.bold())
-                Text("![[Note Title]] embeds that note's live content right here instead of just linking to it — edit the source anywhere and every place it's embedded updates immediately. The link stays visible above the embed; edit or delete it directly to change or remove the embed, or click the collapse arrow to shrink it down to just that link.")
+                Text("The footer's backlinks panel is now Interlinks — side by side it shows the notes this one links out to, the notes that link back to it, and \u{201C}Suggested\u{201D} links: other notes you've mentioned by name but haven't linked yet, each a click away from wiring up. Renaming a note now updates every link to it across your vault too, so nothing breaks. Plus a new interface text-size slider, and early support for recognizing AI-authored notes.")
                     .font(.body)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
