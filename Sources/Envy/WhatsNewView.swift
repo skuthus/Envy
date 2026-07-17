@@ -33,7 +33,7 @@ struct WhatsNewView: View {
                     .foregroundStyle(EnvyLogoView.irisColor)
                 Text("Embed a Note Inside Another")
                     .font(.title3.bold())
-                Text("![[Note Title]], on its own line followed by a blank line, embeds that note's live content right here instead of just linking to it — edit the source anywhere and every place it's embedded updates immediately. The link stays visible above the embed; edit or delete it directly to change or remove the embed, or click the collapse arrow to shrink it down to just that link.")
+                Text("![[Note Title]] embeds that note's live content right here instead of just linking to it — edit the source anywhere and every place it's embedded updates immediately. The link stays visible above the embed; edit or delete it directly to change or remove the embed, or click the collapse arrow to shrink it down to just that link.")
                     .font(.body)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)

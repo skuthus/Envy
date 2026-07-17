@@ -556,7 +556,14 @@ struct MarkdownTextView: NSViewRepresentable {
         /// state survives a restyle triggered by editing the host note
         /// somewhere else, the same reasoning that comment gives for why
         /// checkboxes are pooled instead of rebuilt each time.
-        private var embedOverlayViews: [NSHostingView<EmbeddedNoteView>] = []
+        // AnyView, not NSHostingView<EmbeddedNoteView> — wrapping the root
+        // view in .id(title) below forces a genuinely fresh @State
+        // container when a pooled slot's title changes, rather than
+        // relying on reassigning `rootView` to update an already-live
+        // EmbeddedNoteView's @State in place (which doesn't reliably
+        // re-run its onChange handlers, so a retyped title could keep
+        // showing the *previous* title's content).
+        private var embedOverlayViews: [NSHostingView<AnyView>] = []
         /// Embed titles collapsed via EmbeddedNoteView's own chevron —
         /// plain in-memory UI state, not saved anywhere (same as
         /// ContentView's own backlinksExpanded), and owned here rather
@@ -667,6 +674,9 @@ struct MarkdownTextView: NSViewRepresentable {
                 }
                 expandEmojiShortcodeIfNeeded(in: textView)
                 expandLigatureIfNeeded(in: textView)
+                if parent.allowsEmbeds {
+                    ensureEmbedRoomIfNeeded(in: textView)
+                }
             }
             parent.text = textView.string
             restyle(textView)
@@ -851,6 +861,35 @@ struct MarkdownTextView: NSViewRepresentable {
             // textDidChange once, but the two characters right before the
             // cursor are now just the single arrow glyph, which isn't a key
             // in the map, so it can't loop.
+            textView.didChangeText()
+        }
+
+        /// A resolved "![[Title]]" embed has nowhere to reserve its block
+        /// until a genuinely blank line follows it — MarkdownStyler.
+        /// embedRanges requires one. Rather than making the user manage
+        /// that by hand, insert it automatically the moment the marker
+        /// resolves, the same "room just appears" feel Obsidian's own
+        /// embeds have, and the same "noticing markdown as you type"
+        /// precedent as auto-pairing and list renumbering above.
+        @MainActor
+        private func ensureEmbedRoomIfNeeded(in textView: NSTextView) {
+            guard let insertion = MarkdownStyler.embedRoomInsertion(in: textView.string, noteTitles: parent.noteTitles) else { return }
+            let selectionBefore = textView.selectedRange()
+            let range = NSRange(location: insertion.at, length: 0)
+            guard textView.shouldChangeText(in: range, replacementString: insertion.text) else { return }
+            textView.textStorage?.replaceCharacters(in: range, with: insertion.text)
+            // The insertion point is always at or after wherever the user
+            // was typing (the marker they just finished) — keep the cursor
+            // exactly where it was rather than letting it drift into the
+            // newly reserved blank block.
+            if insertion.at <= selectionBefore.location {
+                let shift = (insertion.text as NSString).length
+                textView.setSelectedRange(NSRange(location: selectionBefore.location + shift, length: selectionBefore.length))
+            } else {
+                textView.setSelectedRange(selectionBefore)
+            }
+            // Re-enters textDidChange once per fix; each pass leaves one
+            // fewer marker missing room, so this can't loop.
             textView.didChangeText()
         }
 
@@ -1283,7 +1322,7 @@ struct MarkdownTextView: NSViewRepresentable {
                 // Placeholder content — overwritten by the real title/frame
                 // in the loop below before this ever actually draws, since
                 // every index just added here is by construction < embeds.count.
-                let hostingView = NSHostingView(rootView: EmbeddedNoteView(
+                let hostingView = NSHostingView(rootView: AnyView(EmbeddedNoteView(
                     store: store,
                     title: "",
                     theme: parent.theme,
@@ -1293,7 +1332,7 @@ struct MarkdownTextView: NSViewRepresentable {
                     isCollapsed: false,
                     onNavigate: parent.onNavigate,
                     onToggleCollapse: {}
-                ))
+                ).id("")))
                 textView.addSubview(hostingView)
                 embedOverlayViews.append(hostingView)
             }
@@ -1323,7 +1362,7 @@ struct MarkdownTextView: NSViewRepresentable {
                 let isCurrentlyOpenElsewhere = parent.currentNoteID != nil
                     && store.exactTitleMatch(for: embed.title)?.id == parent.currentNoteID
                 let embedTitle = embed.title
-                hostingView.rootView = EmbeddedNoteView(
+                hostingView.rootView = AnyView(EmbeddedNoteView(
                     store: store,
                     title: embed.title,
                     theme: parent.theme,
@@ -1335,7 +1374,7 @@ struct MarkdownTextView: NSViewRepresentable {
                     onToggleCollapse: { [weak self] in
                         self?.toggleEmbedCollapse(title: embedTitle)
                     }
-                )
+                ).id(embed.title))
                 hostingView.isHidden = false
             }
         }

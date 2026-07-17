@@ -47,12 +47,12 @@ enum MarkdownStyler {
         pattern: #"(?<![\w])@(today|tomorrow|yesterday|monday|tuesday|wednesday|thursday|friday|saturday|sunday|[0-9/-]+)(?!\w)"#,
         options: [.caseInsensitive]
     )
-    // Alone on its own line, nothing before or after but optional trailing
-    // whitespace — deliberately narrower than wikiLinkRegex's own mid-
-    // sentence matching, since an embed reserves a block of vertical space
-    // below it (see embedHeight) that only makes sense as a standalone line,
-    // not something sitting inline within a sentence.
-    private static let embedRegex = try! NSRegularExpression(pattern: #"^!\[\[([^\[\]]+)\]\][ \t]*$"#, options: [.anchorsMatchLines])
+    // Matches "![[Title]]" anywhere — mid-sentence is fine, same as
+    // wikiLinkRegex. The reserved space (see embedHeight) is never on the
+    // marker's own line regardless of what else shares that line; it's
+    // always the next, separately-required blank line, so nothing about
+    // the marker's own surrounding text has to change to make room for it.
+    private static let embedRegex = try! NSRegularExpression(pattern: #"!\[\[([^\[\]]+)\]\]"#)
 
     static func wikiLinkFullRanges(in text: String) -> [NSRange] {
         let full = NSRange(location: 0, length: (text as NSString).length)
@@ -89,9 +89,9 @@ enum MarkdownStyler {
     /// dependency and takes plain title strings instead) AND that are
     /// immediately followed by a blank line — see embedHeight's own doc
     /// comment for why that second condition exists. `spacerRange` is that
-    /// blank line's own single terminating newline character — the one
-    /// real, unambiguous thing style() can pin minimumLineHeight/
-    /// maximumLineHeight to.
+    /// blank line's own full NSString line range (content plus whatever
+    /// terminates it, LF/CRLF/CR alike) — the one real, unambiguous thing
+    /// style() can pin minimumLineHeight/maximumLineHeight to.
     ///
     /// The title check alone is deliberately NOT "any syntactically valid
     /// ![[...]] span": while a title is still mid-typing (auto-pairing
@@ -107,21 +107,58 @@ enum MarkdownStyler {
         }
         guard !candidates.isEmpty else { return [] }
         let existingTitles = Set(noteTitles.map { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() })
-        let newline: unichar = 10
-        let space: unichar = 32
-        let tab: unichar = 9
 
         return candidates.compactMap { candidate in
             guard existingTitles.contains(candidate.title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()) else { return nil }
-            let markerEnd = candidate.range.location + candidate.range.length
-            guard markerEnd < nsText.length, nsText.character(at: markerEnd) == newline else { return nil }
-            var cursor = markerEnd + 1
-            while cursor < nsText.length, nsText.character(at: cursor) == space || nsText.character(at: cursor) == tab {
-                cursor += 1
-            }
-            guard cursor < nsText.length, nsText.character(at: cursor) == newline else { return nil }
-            return (markerRange: candidate.range, spacerRange: NSRange(location: cursor, length: 1), title: candidate.title)
+            // Use NSString's own line-boundary APIs rather than hardcoding
+            // "\n" as the newline byte — a note's line endings depend on
+            // whatever app or sync pipeline last touched the file (e.g.
+            // "\r\n"), and a literal-\n scan silently rejects every embed
+            // on such a file.
+            let markerLineRange = nsText.lineRange(for: candidate.range)
+            let afterMarkerLine = markerLineRange.location + markerLineRange.length
+            guard afterMarkerLine < nsText.length else { return nil }
+            let spacerLineRange = nsText.lineRange(for: NSRange(location: afterMarkerLine, length: 0))
+            guard spacerLineRange.length > 0 else { return nil }
+            let spacerContent = nsText.substring(with: spacerLineRange)
+            guard spacerContent.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+            return (markerRange: candidate.range, spacerRange: spacerLineRange, title: candidate.title)
         }
+    }
+
+    /// What MarkdownTextView.Coordinator should insert, and where, so a
+    /// resolved "![[Title]]" marker gets its block reserved automatically —
+    /// same as Obsidian, where the room just appears rather than the user
+    /// having to leave a blank line by hand. Scans every marker in
+    /// document order and returns the fix for the first one still missing
+    /// its blank line after (whether that's because real content already
+    /// follows it, or because it's the very last thing in the note); the
+    /// caller re-runs this after applying one fix, so multiple markers
+    /// needing room in the same edit (e.g. a paste) converge one at a time
+    /// rather than needing every insertion computed and offset-adjusted up
+    /// front.
+    static func embedRoomInsertion(in text: String, noteTitles: [String]) -> (at: Int, text: String)? {
+        let nsText = text as NSString
+        guard nsText.length > 0 else { return nil }
+        let full = NSRange(location: 0, length: nsText.length)
+        let existingTitles = Set(noteTitles.map { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() })
+        for match in embedRegex.matches(in: text, range: full) {
+            let title = nsText.substring(with: match.range(at: 1)).trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            guard existingTitles.contains(title) else { continue }
+            let markerLineRange = nsText.lineRange(for: match.range)
+            let markerLineEnd = markerLineRange.location + markerLineRange.length
+            guard markerLineEnd < nsText.length else {
+                let markerLineEndsInNewline = markerLineRange.length > 0
+                    && nsText.character(at: markerLineRange.location + markerLineRange.length - 1) == 10
+                return (at: nsText.length, text: markerLineEndsInNewline ? "\n" : "\n\n")
+            }
+            let spacerLineRange = nsText.lineRange(for: NSRange(location: markerLineEnd, length: 0))
+            let spacerContent = nsText.substring(with: spacerLineRange)
+            guard spacerContent.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                return (at: markerLineEnd, text: "\n")
+            }
+        }
+        return nil
     }
 
     /// The range within `newText` that actually differs from `oldText`, found

@@ -118,7 +118,18 @@ struct NoteEditorView: View {
                 searchQuery: searchQuery,
                 fontZoom: fontZoom,
                 plainTextMode: plainTextMode,
-                store: linkPreviewTrigger == .off ? nil : store,
+                // Always the real store, not nil'd out when link previews
+                // are off — store also gates embed expansion
+                // (MarkdownTextView.Coordinator.updateEmbedOverlays), an
+                // entirely separate feature from the option-click preview
+                // popover, which already independently checks
+                // linkPreviewTrigger == .optionClick itself
+                // (handleOptionClick) before doing anything with this.
+                // Nil-ing it here meant turning off "Preview linked notes"
+                // silently broke embeds too — the actual root cause behind
+                // "embeds don't work" in a real install with that setting
+                // off, not anything about the embed feature itself.
+                store: store,
                 linkPreviewTrigger: linkPreviewTrigger,
                 currentNoteID: noteID,
                 showDuePill: showDuePill,

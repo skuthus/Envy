@@ -89,7 +89,8 @@ struct EmbeddedNoteView: View {
                     Image(systemName: isCollapsed ? "chevron.right" : "chevron.down")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
-                        .frame(width: 12)
+                        .frame(width: 20, height: 20)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .help(isCollapsed ? "Expand" : "Collapse")
@@ -155,6 +156,21 @@ struct EmbeddedNoteView: View {
             guard !isEditable, let newValue, newValue != content else { return }
             content = newValue
             lastSyncedContent = newValue
+        }
+        // updateEmbedOverlays pools NSHostingView<EmbeddedNoteView> by
+        // index and reassigns rootView with a new title as the host text
+        // changes — SwiftUI keeps this view's @State alive across that
+        // reassignment (same identity, just new input values), so without
+        // an explicit reset here `content` would keep showing whatever
+        // note the *previous* title resolved to. Reacting to note?.content
+        // alone isn't enough: two different notes can happen to share
+        // identical content, which wouldn't register as a change there.
+        .onChange(of: title) { _, newTitle in
+            saveTask?.cancel()
+            isEditable = false
+            let resolved = store.exactTitleMatch(for: newTitle)
+            content = resolved?.content ?? ""
+            lastSyncedContent = resolved?.content ?? ""
         }
     }
 
