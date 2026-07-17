@@ -219,18 +219,19 @@ extension AppDelegate {
         statusItem?.button?.image = (mainWindow?.isVisible == true) ? openEyeImage : closedEyeImage
     }
 
-    /// Left-click summons/hides the app exactly like the global hotkey (or,
-    /// with "Show Pinned Note" selected in Settings and a note actually
-    /// pinned, shows that note in a small panel instead); right-click
-    /// shows a small menu — the two need to be told apart manually since a
-    /// status item's .button.action alone doesn't distinguish which mouse
-    /// button was used.
+    /// Left-click opens the pinned note if one's actually pinned, or
+    /// summons/hides the app otherwise — no user-facing choice between the
+    /// two anymore, since "click summons the app even though I pinned a
+    /// note specifically so one click would reach it" was never a
+    /// combination anyone wanted. Right-click shows a small menu — the two
+    /// need to be told apart manually since a status item's .button.action
+    /// alone doesn't distinguish which mouse button was used.
     @MainActor
     @objc private func statusItemClicked(_ sender: Any?) {
         guard let event = NSApp.currentEvent else { return }
         if event.type == .rightMouseUp {
             showStatusMenu()
-        } else if shouldShowPinnedNotePopover, let pinnedNoteURL {
+        } else if let pinnedNoteURL {
             togglePinnedNotePanel(for: pinnedNoteURL)
         } else {
             toggleWindow()
@@ -254,6 +255,11 @@ extension AppDelegate {
         templateParent.submenu = templateSubmenu()
         menu.addItem(templateParent)
 
+        let unpinNote = NSMenuItem(title: "Unpin Note", action: #selector(unpinNoteFromStatusMenu), keyEquivalent: "")
+        unpinNote.target = self
+        unpinNote.isEnabled = pinnedNoteURL != nil
+        menu.addItem(unpinNote)
+
         menu.addItem(.separator())
 
         let settings = NSMenuItem(title: "Settings…", action: #selector(openSettingsFromStatusMenu), keyEquivalent: "")
@@ -268,6 +274,11 @@ extension AppDelegate {
     @objc private func newNoteFromStatusMenu() {
         activateAndShowWindow()
         NotificationCenter.default.post(name: .newNoteRequested, object: nil)
+    }
+
+    @MainActor
+    @objc private func unpinNoteFromStatusMenu() {
+        unpinMenuBarNote()
     }
 
     /// A NoteStore scoped to whatever folders are actually configured, used
@@ -323,14 +334,11 @@ extension AppDelegate {
     /// Shared tail end of both "New Pinned Note" and "…from Template" —
     /// pins the just-created note (replacing whatever was pinned before,
     /// same one-slot behavior as pinning from the note list's own context
-    /// menu), switches "Clicking the menu bar icon" over to "Show Pinned
-    /// Note" so the note just created is actually reachable that way
-    /// afterward, and shows it immediately so there's no extra click
-    /// between "make a pinned note" and "start typing in it."
+    /// menu) and shows it immediately, so there's no extra click between
+    /// "make a pinned note" and "start typing in it."
     @MainActor
     private func pinToMenuBarAndShow(_ note: Note) {
         UserDefaults.standard.set(note.id, forKey: "menuBarPinnedNotePath")
-        UserDefaults.standard.set(MenuBarClickAction.showPinnedNote.rawValue, forKey: "menuBarClickAction")
         showPinnedNotePanel(for: note.url)
     }
 

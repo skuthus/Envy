@@ -143,7 +143,7 @@ enum WelcomeContent {
     - **⌘+** and **⌘-** zoom the note text larger or smaller. **⌘0** resets it.
     - **⌘↩** centers the window on screen.
     - **⌥⌘↩** shows or hides Envy from anywhere on your Mac, even when another app is focused.
-    - A menu bar icon does the same thing on click. Right-click it for New Note, Settings, and Quit.
+    - A menu bar icon does the same thing on click — unless a note is pinned to the menu bar (right-click a note in the list and choose "Pin to Menu Bar"), in which case clicking opens that note instead. Right-click the icon for New Note, "Unpin Note," Settings, and Quit.
     - Settings → General has a toggle to automatically hide Envy the moment you click into a different app or an empty part of the screen.
     - Settings → General has a toggle for whether pressing Return in the search box also moves your cursor into the editor, in case you'd rather stay in the search box instead.
     - Settings → General can also show a small clock in the editor's footer, with an optional date in a few different formats, and an option to only show it while in full screen.

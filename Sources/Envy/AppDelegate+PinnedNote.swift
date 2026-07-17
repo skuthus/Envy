@@ -14,22 +14,31 @@ private let pinnedPanelHeightKey = "menuBarPopoverHeight"
 private let defaultPinnedPanelSize = NSSize(width: 320, height: 400)
 
 extension AppDelegate {
-    // Read straight from UserDefaults rather than @AppStorage — AppDelegate
-    // is a plain NSObject, not a SwiftUI view, so @AppStorage has nothing to
-    // invalidate/re-render here; a direct read of whatever's current at
-    // click time is all this needs.
-    var shouldShowPinnedNotePopover: Bool {
-        UserDefaults.standard.string(forKey: "menuBarClickAction") == MenuBarClickAction.showPinnedNote.rawValue
-    }
-
     /// nil if nothing's pinned, or if the pinned path no longer exists on
     /// disk (renamed, moved, deleted since being pinned) — falls back to
     /// the normal toggleWindow() behavior in either case rather than
     /// popping up an empty/broken panel.
+    ///
+    /// Read straight from UserDefaults rather than @AppStorage — AppDelegate
+    /// is a plain NSObject, not a SwiftUI view, so @AppStorage has nothing to
+    /// invalidate/re-render here; a direct read of whatever's current at
+    /// click time is all this needs.
     var pinnedNoteURL: URL? {
         let path = UserDefaults.standard.string(forKey: "menuBarPinnedNotePath") ?? ""
         guard !path.isEmpty, FileManager.default.fileExists(atPath: path) else { return nil }
         return URL(fileURLWithPath: path)
+    }
+
+    /// Clears the menu bar's pinned note — "Unpin Note" in the status
+    /// item's right-click menu, or its own dedicated global shortcut
+    /// (Settings → Shortcuts). Closes the pinned panel too, if it's open,
+    /// since it'd otherwise keep showing a note that's no longer "the"
+    /// pinned one. No-op if nothing's currently pinned.
+    @MainActor
+    func unpinMenuBarNote() {
+        guard pinnedNoteURL != nil else { return }
+        UserDefaults.standard.set("", forKey: "menuBarPinnedNotePath")
+        pinnedNotePanel?.close()
     }
 
     /// A plain NSPopover doesn't support user drag-to-resize at all — no

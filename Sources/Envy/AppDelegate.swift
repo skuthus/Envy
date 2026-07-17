@@ -18,8 +18,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var resignActiveObserver: Any?
     private var appliedSummonBinding: ShortcutBinding?
     private var appliedPinnedNoteBinding: ShortcutBinding?
+    private var appliedUnpinNoteBinding: ShortcutBinding?
     private static let summonHotKeyID: UInt32 = 1
     private static let pinnedNoteHotKeyID: UInt32 = 2
+    private static let unpinNoteHotKeyID: UInt32 = 3
     var blinkTimer: Timer?
     private var appliedVisibility: AppVisibility?
     private var windowStateObservers: [Any] = []
@@ -118,9 +120,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 self?.summonPinnedNote()
             }
         }
+        hotKey.handlers[Self.unpinNoteHotKeyID] = { [weak self] in
+            Task { @MainActor in
+                self?.unpinMenuBarNote()
+            }
+        }
         applySummonHotKey()
         applyPinnedNoteHotKey()
-        // Both global hotkeys are registered once with whatever keyCode/
+        applyUnpinNoteHotKey()
+        // All three global hotkeys are registered once with whatever keyCode/
         // modifiers were current at launch — re-applied whenever any
         // UserDefaults value changes (cheap: guarded by an equality check
         // against what's already registered) so a change in Settings →
@@ -132,6 +140,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         ) { [weak self] _ in
             self?.applySummonHotKey()
             self?.applyPinnedNoteHotKey()
+            self?.applyUnpinNoteHotKey()
             self?.applyAppVisibility()
         }
 
@@ -219,10 +228,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         hotKey.register(id: Self.pinnedNoteHotKeyID, keyCode: UInt32(binding.keyCode), modifiers: binding.carbonModifiers)
     }
 
-    /// Always targets the pinned note directly, regardless of what
-    /// "Clicking the menu bar icon" is set to in Settings — that setting is
-    /// specifically about the icon click, while this is its own dedicated
-    /// shortcut. No-op if nothing's currently pinned.
+    private func applyUnpinNoteHotKey() {
+        let raw = UserDefaults.standard.string(forKey: ShortcutPreferences.storageKey) ?? ""
+        let binding = ShortcutPreferences.binding(for: .unpinFromMenuBar, raw: raw)
+        guard binding != appliedUnpinNoteBinding else { return }
+        appliedUnpinNoteBinding = binding
+        hotKey.register(id: Self.unpinNoteHotKeyID, keyCode: UInt32(binding.keyCode), modifiers: binding.carbonModifiers)
+    }
+
+    /// Always targets the pinned note directly. No-op if nothing's
+    /// currently pinned.
     @MainActor
     private func summonPinnedNote() {
         guard let pinnedNoteURL else { return }

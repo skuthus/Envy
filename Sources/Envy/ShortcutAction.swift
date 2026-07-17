@@ -99,6 +99,7 @@ enum ShortcutAction: String, CaseIterable, Identifiable {
     case togglePin
     case toggleBacklinks
     case showPinnedNote
+    case unpinFromMenuBar
 
     var id: String { rawValue }
 
@@ -122,6 +123,7 @@ enum ShortcutAction: String, CaseIterable, Identifiable {
         case .togglePin: "Pin/Unpin Note"
         case .toggleBacklinks: "Toggle Backlinks"
         case .showPinnedNote: "Show/Hide Pinned Note (works from any app)"
+        case .unpinFromMenuBar: "Unpin Note from Menu Bar (works from any app)"
         }
     }
 
@@ -168,6 +170,8 @@ enum ShortcutAction: String, CaseIterable, Identifiable {
             ShortcutBinding(character: "b", keyCode: kVK_ANSI_B, modifiers: SwiftUI.EventModifiers([.command, .shift]).rawValue)
         case .showPinnedNote:
             ShortcutBinding(character: String(KeyEquivalent.downArrow.character), keyCode: kVK_DownArrow, modifiers: SwiftUI.EventModifiers([.command, .option]).rawValue)
+        case .unpinFromMenuBar:
+            ShortcutBinding(character: "p", keyCode: kVK_ANSI_P, modifiers: SwiftUI.EventModifiers([.command, .option, .shift]).rawValue)
         }
     }
 }

@@ -24,11 +24,11 @@ struct GeneralSettingsView: View {
     @AppStorage("hideOnFocusLoss") private var hideOnFocusLoss = false
     @AppStorage("restoreFocusOnSummon") private var restoreFocusOnSummon = true
     @AppStorage("appVisibility") private var appVisibilityRaw = AppVisibility.both.rawValue
-    @AppStorage("menuBarClickAction") private var menuBarClickActionRaw = MenuBarClickAction.toggleWindow.rawValue
     @AppStorage("menuBarPinnedNotePath") private var menuBarPinnedNotePath = ""
     @AppStorage("templateDateFormatPattern") private var templateDateFormatPattern = TemplateDateFormat.defaultPattern
     @AppStorage(TrashPreference.intervalValueKey) private var trashEmptyIntervalValue = TrashPreference.defaultIntervalValue
     @AppStorage(TrashPreference.intervalUnitKey) private var trashEmptyIntervalUnitRaw = TrashPreference.defaultIntervalUnit.rawValue
+    @AppStorage(ShortcutPreferences.storageKey) private var customShortcutsRaw = ""
     @State private var showingMarkupHelp = false
     @State private var openAtLogin = SMAppService.mainApp.status == .enabled
 
@@ -57,13 +57,6 @@ struct GeneralSettingsView: View {
         Binding(
             get: { AppVisibility(rawValue: appVisibilityRaw) ?? .both },
             set: { appVisibilityRaw = $0.rawValue }
-        )
-    }
-
-    private var menuBarClickAction: Binding<MenuBarClickAction> {
-        Binding(
-            get: { MenuBarClickAction(rawValue: menuBarClickActionRaw) ?? .toggleWindow },
-            set: { menuBarClickActionRaw = $0.rawValue }
         )
     }
 
@@ -118,19 +111,12 @@ struct GeneralSettingsView: View {
                         Text(visibility.label).tag(visibility)
                     }
                 }
-                Picker("Clicking the menu bar icon", selection: menuBarClickAction) {
-                    ForEach(MenuBarClickAction.allCases) { action in
-                        Text(action.label).tag(action)
-                    }
-                }
-                if menuBarClickAction.wrappedValue == .showPinnedNote {
-                    if let menuBarPinnedNoteTitle {
-                        Text("Pinned: \(menuBarPinnedNoteTitle)")
-                            .foregroundStyle(.secondary)
-                    } else {
-                        Text("No note pinned yet — right-click a note and choose \"Pin to Menu Bar.\"")
-                            .foregroundStyle(.secondary)
-                    }
+                if let menuBarPinnedNoteTitle {
+                    Text("Clicking the menu bar icon opens \"\(menuBarPinnedNoteTitle)\" — right-click the icon for \"Unpin Note,\" or press \(ShortcutPreferences.binding(for: .unpinFromMenuBar, raw: customShortcutsRaw).displayString) from anywhere.")
+                        .foregroundStyle(.secondary)
+                } else {
+                    Text("Clicking the menu bar icon shows or hides Envy. Right-click a note and choose \"Pin to Menu Bar\" to have it open that note instead.")
+                        .foregroundStyle(.secondary)
                 }
             }
 
