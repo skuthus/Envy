@@ -398,6 +398,41 @@ struct SelfCheck {
             check("-todo: matches a note with no tasks", excludeResults.contains { $0.id == noTasks.id })
         }
 
+        // filteredAIProvenanceOperator
+        do {
+            let store = await makeTempStore()
+            var aiCreated = store.create(title: "AI Made This")
+            aiCreated.content = "Some generated content.\n\n⎈ created by claude · 2026-07-17"
+            store.save(aiCreated)
+
+            var aiEdited = store.create(title: "AI Touched This")
+            aiEdited.content = "My own note, then changed.\n\n⎈ edited by claude · 2026-07-17"
+            store.save(aiEdited)
+
+            var human = store.create(title: "All Mine")
+            human.content = "Purely my own writing."
+            store.save(human)
+
+            check("aiProvenance parses created", aiCreated.aiProvenance == .created)
+            check("aiProvenance parses edited", aiEdited.aiProvenance == .edited)
+            check("aiProvenance is none for a plain note", human.aiProvenance == .none)
+
+            let anyAI = store.filtered(query: "ai:")
+            check("ai: matches an AI-created note", anyAI.contains { $0.id == aiCreated.id })
+            check("ai: matches an AI-edited note", anyAI.contains { $0.id == aiEdited.id })
+            check("ai: excludes a purely human note", !anyAI.contains { $0.id == human.id })
+
+            let created = store.filtered(query: "ai:created")
+            check("ai:created matches only the created note", created.contains { $0.id == aiCreated.id } && !created.contains { $0.id == aiEdited.id })
+
+            let edited = store.filtered(query: "ai:edited")
+            check("ai:edited matches only the edited note", edited.contains { $0.id == aiEdited.id } && !edited.contains { $0.id == aiCreated.id })
+
+            let mineOnly = store.filtered(query: "-ai:")
+            check("-ai: matches a purely human note", mineOnly.contains { $0.id == human.id })
+            check("-ai: excludes any AI-touched note", !mineOnly.contains { $0.id == aiCreated.id } && !mineOnly.contains { $0.id == aiEdited.id })
+        }
+
         // filteredExcludeTermRemovesMatchingNotes
         do {
             let store = await makeTempStore()

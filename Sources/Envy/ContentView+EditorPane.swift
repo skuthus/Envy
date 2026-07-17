@@ -52,6 +52,7 @@ extension ContentView {
                         linkPreviewTrigger: linkPreviewTrigger,
                         fontZoom: CGFloat(editorFontZoom),
                         plainTextMode: plainTextMode,
+                        protectAISignature: protectAISignature,
                         noteTitles: noteTitlesByRecencyCache,
                         onStatsChange: { words, characters in
                             editorWordCount = words
@@ -83,8 +84,8 @@ extension ContentView {
             // Sits directly above the footer bar (rather than the bar
             // growing to contain it) so expanding the list grows the panel
             // upward into the editor instead of pushing the footer down.
-            if backlinksExpanded && !currentBacklinkNotes.isEmpty && !isTemplateQuery {
-                backlinksExpandedList
+            if backlinksExpanded && hasAnyInterlinks && !isTemplateQuery {
+                interlinksExpandedList
                 Divider()
             }
             editorFooter
@@ -101,7 +102,7 @@ extension ContentView {
                 editorWordCount = 0
                 editorCharacterCount = 0
             }
-            recomputeBacklinkNotes()
+            recomputeInterlinks()
         }
     }
 
@@ -183,7 +184,7 @@ extension ContentView {
                         }
                         .transition(.opacity)
                     }
-                    if selectedID != nil, showBacklinks, !currentBacklinkNotes.isEmpty {
+                    if selectedID != nil, showBacklinks, hasAnyInterlinks {
                         Button {
                             withAnimation(.easeInOut(duration: 0.15)) { backlinksExpanded.toggle() }
                         } label: {
@@ -193,7 +194,7 @@ extension ContentView {
                                 // down to collapse back.
                                 Image(systemName: backlinksExpanded ? "chevron.down" : "chevron.up")
                                     .font(.system(size: 10 * interfaceFontScale))
-                                Text("\(currentBacklinkNotes.count) Backlink\(currentBacklinkNotes.count == 1 ? "" : "s")")
+                                Text("\(interlinksCount) Interlink\(interlinksCount == 1 ? "" : "s")")
                                     .font(.system(size: 10 * interfaceFontScale))
                             }
                             .foregroundStyle(.secondary)
@@ -219,47 +220,108 @@ extension ContentView {
         .animation(.easeInOut(duration: 0.15), value: showLoadingIndicator)
     }
 
-    private var backlinksExpandedList: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            ForEach(currentBacklinkNotes) { linked in
-                Button {
-                    // Same NSEvent.modifierFlags check ContentView+ListPane
-                    // already uses to distinguish shift/cmd-click on a note
-                    // row — a plain SwiftUI Button action has no modifier
-                    // info of its own to inspect otherwise. Only actually
-                    // means "open the preview instead" in .optionClick
-                    // trigger mode, and only for a note that isn't already
-                    // the one open in the main editor (see
-                    // WikilinkPreviewController.show's own note on why
-                    // previewing that note specifically is skipped) — every
-                    // other case, option-click is just an ordinary click
-                    // that navigates like any other.
-                    if linkPreviewTrigger == .optionClick, NSEvent.modifierFlags.contains(.option), linked.id != selectedID,
-                       let anchorView = backlinkAnchorViews[linked.id] {
-                        showBacklinkPreview(for: linked, anchorView: anchorView)
-                    } else {
-                        navigateToNote(titled: linked.title)
+    var hasAnyInterlinks: Bool {
+        !currentBacklinkNotes.isEmpty || !currentForwardLinkedNotes.isEmpty || !currentSuggestedLinks.isEmpty
+    }
+
+    var interlinksCount: Int {
+        currentBacklinkNotes.count + currentForwardLinkedNotes.count + currentSuggestedLinks.count
+    }
+
+    private var interlinksExpandedList: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            if !currentForwardLinkedNotes.isEmpty {
+                interlinkSection(title: "Links") {
+                    ForEach(currentForwardLinkedNotes) { linked in
+                        interlinkRow(for: linked)
                     }
-                } label: {
-                    Text(linked.title)
-                        .font(.system(size: 13 * interfaceFontScale))
-                        .foregroundStyle(Color(nsColor: theme.resolvedLinkColor))
-                        .lineLimit(1)
-                        .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
-                .background(
-                    WikilinkAnchorProbe(anchorView: Binding(
-                        get: { backlinkAnchorViews[linked.id] },
-                        set: { backlinkAnchorViews[linked.id] = $0 }
-                    ))
-                )
+            }
+            if !currentBacklinkNotes.isEmpty {
+                interlinkSection(title: "Backlinks") {
+                    ForEach(currentBacklinkNotes) { linked in
+                        interlinkRow(for: linked)
+                    }
+                }
+            }
+            if !currentSuggestedLinks.isEmpty {
+                interlinkSection(title: "Suggested") {
+                    ForEach(currentSuggestedLinks) { suggestion in
+                        suggestedLinkRow(for: suggestion)
+                    }
+                }
             }
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(.bar)
+    }
+
+    @ViewBuilder
+    private func interlinkSection<Content: View>(title: String, @ViewBuilder rows: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title)
+                .font(.system(size: 10 * interfaceFontScale, weight: .semibold))
+                .foregroundStyle(.secondary)
+            rows()
+        }
+    }
+
+    /// Shared row for both the "Links" (forward) and "Backlinks" sections —
+    /// same navigate/preview behavior either direction, since both are
+    /// just "another note this one is connected to."
+    private func interlinkRow(for linked: Note) -> some View {
+        Button {
+            // Same NSEvent.modifierFlags check ContentView+ListPane
+            // already uses to distinguish shift/cmd-click on a note
+            // row — a plain SwiftUI Button action has no modifier
+            // info of its own to inspect otherwise. Only actually
+            // means "open the preview instead" in .optionClick
+            // trigger mode, and only for a note that isn't already
+            // the one open in the main editor (see
+            // WikilinkPreviewController.show's own note on why
+            // previewing that note specifically is skipped) — every
+            // other case, option-click is just an ordinary click
+            // that navigates like any other.
+            if linkPreviewTrigger == .optionClick, NSEvent.modifierFlags.contains(.option), linked.id != selectedID,
+               let anchorView = backlinkAnchorViews[linked.id] {
+                showBacklinkPreview(for: linked, anchorView: anchorView)
+            } else {
+                navigateToNote(titled: linked.title)
+            }
+        } label: {
+            Text(linked.title)
+                .font(.system(size: 13 * interfaceFontScale))
+                .foregroundStyle(Color(nsColor: theme.resolvedLinkColor))
+                .lineLimit(1)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .background(
+            WikilinkAnchorProbe(anchorView: Binding(
+                get: { backlinkAnchorViews[linked.id] },
+                set: { backlinkAnchorViews[linked.id] = $0 }
+            ))
+        )
+    }
+
+    /// A mentioned-but-unlinked title — clicking "Link" is the only thing
+    /// that ever wraps it in "[[...]]"; the row itself doesn't navigate,
+    /// since the note doesn't have a real link there yet to follow.
+    private func suggestedLinkRow(for suggestion: SuggestedLink) -> some View {
+        HStack(spacing: 6) {
+            Text(suggestion.title)
+                .font(.system(size: 13 * interfaceFontScale))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+            Button("Link") {
+                acceptSuggestedLink(suggestion)
+            }
+            .buttonStyle(.plain)
+            .font(.system(size: 10 * interfaceFontScale, weight: .semibold))
+            .foregroundStyle(Color(nsColor: theme.resolvedLinkColor))
+        }
     }
 
     /// Same panel WikilinkPreviewController already shows for the editor's

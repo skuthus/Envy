@@ -17,6 +17,7 @@ struct NoteEditorView: View {
     var linkPreviewTrigger: LinkPreviewTrigger
     var fontZoom: CGFloat
     var plainTextMode: Bool
+    var protectAISignature: Bool = false
     /// Passed in (ContentView caches it) rather than derived from `store`
     /// here — building it inline meant an O(n log n) sort plus a title copy
     /// per note inside this body, which re-evaluates on every
@@ -76,6 +77,7 @@ struct NoteEditorView: View {
         linkPreviewTrigger: LinkPreviewTrigger,
         fontZoom: CGFloat,
         plainTextMode: Bool,
+        protectAISignature: Bool = false,
         noteTitles: [String],
         onStatsChange: @escaping (Int, Int) -> Void
     ) {
@@ -93,6 +95,7 @@ struct NoteEditorView: View {
         self.linkPreviewTrigger = linkPreviewTrigger
         self.fontZoom = fontZoom
         self.plainTextMode = plainTextMode
+        self.protectAISignature = protectAISignature
         self.noteTitles = noteTitles
         self.onStatsChange = onStatsChange
         // Seeded here rather than in .onAppear: with .id(noteID) forcing a
@@ -137,7 +140,8 @@ struct NoteEditorView: View {
                 noteTitles: noteTitles,
                 externalReloadToken: externalReloadToken,
                 highlightRange: pendingHighlightRange,
-                highlightTrigger: highlightTrigger
+                highlightTrigger: highlightTrigger,
+                protectAISignature: protectAISignature
             )
             .focusable()
             .focused(focusedField, equals: .editor)

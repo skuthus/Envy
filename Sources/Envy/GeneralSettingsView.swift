@@ -20,6 +20,7 @@ struct GeneralSettingsView: View {
     @AppStorage("footerClockDateFormat") private var footerClockDateFormatRaw = ClockDateFormat.short.rawValue
     @AppStorage("showFooterClockOnlyWhenFullScreen") private var showFooterClockOnlyWhenFullScreen = false
     @AppStorage("plainTextMode") private var plainTextMode = false
+    @AppStorage("protectAISignature") private var protectAISignature = false
     @AppStorage("showBacklinks") private var showBacklinks = true
     @AppStorage("hideOnFocusLoss") private var hideOnFocusLoss = false
     @AppStorage("restoreFocusOnSummon") private var restoreFocusOnSummon = true
@@ -200,7 +201,11 @@ struct GeneralSettingsView: View {
                     }
                 }
                 Toggle("Plain-text mode (ignore markdown formatting)", isOn: $plainTextMode)
-                Toggle("Show backlinks in footer", isOn: $showBacklinks)
+                Toggle("Show interlinks in footer", isOn: $showBacklinks)
+                Toggle("Protect AI signatures from deletion", isOn: $protectAISignature)
+                Text("When on, deleting a note's ⎈ AI-provenance line here puts it right back. Editing the file in any other app still removes it.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
 
             Section("Footer Clock") {

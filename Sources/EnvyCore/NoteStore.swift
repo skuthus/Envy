@@ -2,6 +2,32 @@ import Foundation
 import Combine
 import CoreServices
 
+/// What an "ai:" / "-ai:" search token constrains to — `any` for a bare
+/// "ai:" (touched by an AI at all), or a specific provenance verb.
+private enum AIFilter {
+    case any, created, edited
+
+    func matches(_ provenance: AIProvenance) -> Bool {
+        switch self {
+        case .any: return provenance != .none
+        case .created: return provenance == .created
+        case .edited: return provenance == .edited
+        }
+    }
+
+    /// nil for an unrecognized value ("ai:cats") — treated as no constraint,
+    /// the same lenient handling date: uses, rather than due:'s stricter
+    /// match-nothing.
+    static func parse(_ suffix: String) -> AIFilter? {
+        switch suffix {
+        case "": return .any
+        case "created": return .created
+        case "edited": return .edited
+        default: return nil
+        }
+    }
+}
+
 /// A template is just a plain `.md` file living in The Index's own
 /// `Templates` subfolder — never a Note itself. scanDirectory() explicitly
 /// skips descending into `Templates/` even when subfolders are included, so
@@ -750,6 +776,8 @@ public final class NoteStore: ObservableObject {
         var excludeDueTokenSeen = false
         var isTodoOnly = false
         var isTodoExcluded = false
+        var aiCondition: AIFilter?
+        var excludeAiCondition: AIFilter?
         var excludeTerms: [String] = []
         var freeTerms: [String] = []
 
@@ -764,6 +792,14 @@ public final class NoteStore: ObservableObject {
                 isTodoExcluded = true
             } else if token == "todo:" {
                 isTodoOnly = true
+            } else if token.hasPrefix("-ai:") {
+                if excludeAiCondition == nil {
+                    excludeAiCondition = AIFilter.parse(String(token.dropFirst("-ai:".count)))
+                }
+            } else if token.hasPrefix("ai:") {
+                if aiCondition == nil {
+                    aiCondition = AIFilter.parse(String(token.dropFirst("ai:".count)))
+                }
             } else if token.hasPrefix("-tag:") {
                 let name = String(token.dropFirst("-tag:".count))
                 if !name.isEmpty { excludeTags.append(name) }
@@ -819,6 +855,7 @@ public final class NoteStore: ObservableObject {
         let hasOperator = isTodoOnly || isTodoExcluded || tagFilter != nil || !excludeTags.isEmpty
             || dateFilter != nil
             || dueCondition != nil || excludeDueCondition != nil || isDueInvalid
+            || aiCondition != nil || excludeAiCondition != nil
 
         // Computed once for the whole group rather than per-note — same
         // reasoning as dateRange's own `now`, just needing today's start
@@ -834,6 +871,8 @@ public final class NoteStore: ObservableObject {
             if isDueInvalid { return nil }
             if let dueCondition, !Self.dueConditionMatches(dueCondition, note: note, overdueThreshold: overdueThreshold) { return nil }
             if let excludeDueCondition, Self.dueConditionMatches(excludeDueCondition, note: note, overdueThreshold: overdueThreshold) { return nil }
+            if let aiCondition, !aiCondition.matches(note.aiProvenance) { return nil }
+            if let excludeAiCondition, excludeAiCondition.matches(note.aiProvenance) { return nil }
             if !excludeTerms.isEmpty {
                 let titleLower = note.lowercasedTitle
                 let contentLower = note.lowercasedContent

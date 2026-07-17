@@ -1,5 +1,17 @@
 import Foundation
 
+/// Whether a note carries an AI-provenance signature — the "⎈ created/edited
+/// by … · <date>" line an external AI connector stamps as the last line (see
+/// the Envy Connector project). Envy itself never writes these; it only
+/// reads them, to surface which notes an AI touched. A self-attested claim,
+/// not something Envy can verify — so UI wording says "marked as," never
+/// asserts. Backs the "ai:" search operator and the note-list badge.
+public enum AIProvenance: String, Sendable {
+    case none      // no signature — a purely human note
+    case created   // authored from scratch by an AI
+    case edited    // a human note an AI later modified
+}
+
 // Title/tags/wikiLinks/lowercased-content used to be recomputed from scratch
 // (regex scans, or a fresh .lowercased() of the full content) on every single
 // access — fine for one note, but NoteStore.filtered(query:) touches these
@@ -44,6 +56,7 @@ private final class NoteDerivedCache: @unchecked Sendable {
     private var _hasUncheckedTask: Bool?
     private var _preview: String?
     private var _activeDueDates: [Date]?
+    private var _aiProvenance: AIProvenance?
 
     init(url: URL, content: String) {
         self.url = url
@@ -96,6 +109,15 @@ private final class NoteDerivedCache: @unchecked Sendable {
                 let title = content[range].trimmingCharacters(in: .whitespaces).lowercased()
                 return title.isEmpty ? nil : title
             })
+        }
+    }
+
+    var aiProvenance: AIProvenance {
+        memoized(&_aiProvenance) {
+            let full = NSRange(content.startIndex..., in: content)
+            guard let match = Note.aiSignatureRegex.firstMatch(in: content, range: full),
+                  let range = Range(match.range(at: 1), in: content) else { return .none }
+            return content[range] == "created" ? .created : .edited
         }
     }
 
@@ -248,6 +270,21 @@ public struct Note: Identifiable, Sendable {
     public var wikiLinks: Set<String> { cache.wikiLinks }
 
     fileprivate static let wikiLinkRegex = try! NSRegularExpression(pattern: #"\[\[([^\[\]]+)\]\]"#)
+
+    /// Which AI-provenance signature, if any, this note carries — see the
+    /// AIProvenance enum. Backs the "ai:" search operator and the note-list
+    /// badge.
+    public var aiProvenance: AIProvenance { cache.aiProvenance }
+
+    /// The "⎈ created/edited by … · <date>" signature line. Anchored to the
+    /// helm glyph (U+2388) at line start — deliberately the same glyph the
+    /// connector stamps, and one no note-taker types by accident. Lenient on
+    /// what follows the verb (agent name / separator / date vary); only the
+    /// verb is captured, since that's all Envy needs to tell created from
+    /// edited.
+    fileprivate static let aiSignatureRegex = try! NSRegularExpression(
+        pattern: #"^⎈[ \t]+(created|edited)\b"#, options: [.anchorsMatchLines]
+    )
 
     /// Whether this note has at least one still-unchecked task-list item —
     /// backs the "todo:" search operator.

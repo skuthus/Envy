@@ -171,6 +171,32 @@ final class NestedAwareScrollView: NSScrollView {
     }
 }
 
+/// The pill drawn over a note's "⎈" provenance line while signature
+/// protection is on — shows the line's own text as a non-editable capsule.
+/// Purely visual; the shouldChangeTextIn veto is what enforces the
+/// uneditability. Styled with the theme's marker color, the same quiet
+/// palette collapsed markdown markers use.
+private struct SignaturePillView: View {
+    let text: String
+    var theme: Theme
+    var onRemove: () -> Void
+
+    var body: some View {
+        Text(text)
+            .font(.system(size: 11))
+            .lineLimit(1)
+            .foregroundStyle(Color(nsColor: theme.resolvedMarkerColor))
+            .padding(.horizontal, 9)
+            .padding(.vertical, 3)
+            .background(Capsule().fill(Color(nsColor: theme.resolvedMarkerColor).opacity(0.12)))
+            .overlay(Capsule().strokeBorder(Color(nsColor: theme.resolvedMarkerColor).opacity(0.35), lineWidth: 1))
+            .help("Marked as AI-authored and protected. Right-click to remove it, or turn off \u{201C}Protect AI signatures\u{201D} in Settings.")
+            .contextMenu {
+                Button("Remove AI Mark", role: .destructive, action: onRemove)
+            }
+    }
+}
+
 struct MarkdownTextView: NSViewRepresentable {
     @Binding var text: String
     var onNavigate: (String) -> Void
@@ -247,6 +273,12 @@ struct MarkdownTextView: NSViewRepresentable {
     /// NestedAwareScrollView's own doc comment for why that's the one
     /// context that needs scroll-passthrough instead of a plain NSScrollView.
     var allowsScrollPassthrough: Bool = false
+    /// When true, an edit in *this* editor that removes the note's "⎈"
+    /// provenance line puts it right back — the opt-in signature-protection
+    /// setting. Soft and Envy-only by nature: the file stays plain text and
+    /// any other editor can still strip the line. Only the main note editor
+    /// sets this; embeds/templates/previews leave it off.
+    var protectAISignature: Bool = false
 
     func makeCoordinator() -> Coordinator {
         Coordinator(self)
@@ -323,6 +355,7 @@ struct MarkdownTextView: NSViewRepresentable {
         }
         context.coordinator.updateCheckboxOverlays(in: textView)
         context.coordinator.updateEmbedOverlays(in: textView)
+        context.coordinator.updateSignaturePill(in: textView)
         // SwiftUI's first call to makeNSView often happens before this view
         // has its real, final width from the surrounding layout (the note
         // list/editor split isn't necessarily settled yet) — the checkbox
@@ -343,6 +376,7 @@ struct MarkdownTextView: NSViewRepresentable {
             guard let coordinator, let textView else { return }
             coordinator.updateCheckboxOverlays(in: textView)
             coordinator.updateEmbedOverlays(in: textView)
+            coordinator.updateSignaturePill(in: textView)
         }
         // Belt and suspenders alongside ensureLayout() (inside
         // updateCheckboxOverlays itself) and the frame observer above: this
@@ -356,6 +390,7 @@ struct MarkdownTextView: NSViewRepresentable {
             guard let coordinator, let textView else { return }
             coordinator.updateCheckboxOverlays(in: textView)
             coordinator.updateEmbedOverlays(in: textView)
+            coordinator.updateSignaturePill(in: textView)
         }
         // Same "wait one runloop turn for real layout/geometry" reasoning as
         // the checkbox overlay positioning above — scrollRangeToVisible
@@ -417,7 +452,8 @@ struct MarkdownTextView: NSViewRepresentable {
         if justReplacedText || context.coordinator.lastTheme != theme
             || context.coordinator.lastSearchQuery != searchQuery
             || context.coordinator.lastFontZoom != fontZoom
-            || context.coordinator.lastPlainTextMode != plainTextMode {
+            || context.coordinator.lastPlainTextMode != plainTextMode
+            || context.coordinator.lastProtectAISignature != protectAISignature {
             if let textStorage = textView.textStorage {
                 if plainTextMode {
                     MarkdownStyler.clearFormatting(textStorage: textStorage, text: textView.string, theme: theme, fontSizeAdjustment: fontZoom)
@@ -438,10 +474,12 @@ struct MarkdownTextView: NSViewRepresentable {
             }
             context.coordinator.updateCheckboxOverlays(in: textView)
             context.coordinator.updateEmbedOverlays(in: textView)
+            context.coordinator.updateSignaturePill(in: textView)
             context.coordinator.lastTheme = theme
             context.coordinator.lastSearchQuery = searchQuery
             context.coordinator.lastFontZoom = fontZoom
             context.coordinator.lastPlainTextMode = plainTextMode
+            context.coordinator.lastProtectAISignature = protectAISignature
         }
 
         if context.coordinator.lastHighlightTrigger != highlightTrigger {
@@ -520,6 +558,7 @@ struct MarkdownTextView: NSViewRepresentable {
         var lastSearchQuery: String = ""
         var lastFontZoom: CGFloat = 0
         var lastPlainTextMode: Bool = false
+        var lastProtectAISignature: Bool = false
         var lastExternalReloadToken: Int = 0
         var lastHighlightTrigger: Int = 0
         private var highlightFadeTask: Task<Void, Never>?
@@ -527,6 +566,9 @@ struct MarkdownTextView: NSViewRepresentable {
         private var cachedText: String = ""
         private var cachedWikiLinkRanges: [NSRange] = []
         private var isHandlingTextChange = false
+        /// True only for the brief span of the "Remove AI Mark" edit, so the
+        /// signature-protection veto lets that one deliberate removal through.
+        private var isRemovingSignature = false
         /// Set by shouldChangeText(in:replacementString:) when the in-flight
         /// edit is a single plain character typed at the cursor (as opposed
         /// to a paste, a deletion, or a programmatic edit) and consumed by
@@ -564,6 +606,11 @@ struct MarkdownTextView: NSViewRepresentable {
         // re-run its onChange handlers, so a retyped title could keep
         // showing the *previous* title's content).
         private var embedOverlayViews: [NSHostingView<AnyView>] = []
+        /// The floating pill drawn over the "⎈" provenance line when
+        /// signature protection is on — a single view (one signature per
+        /// note), created lazily. Hidden when protection is off or the note
+        /// has no signature.
+        private var signaturePillView: NSHostingView<SignaturePillView>?
         /// Embed titles collapsed via EmbeddedNoteView's own chevron —
         /// plain in-memory UI state, not saved anywhere (same as
         /// ContentView's own backlinksExpanded), and owned here rather
@@ -627,6 +674,40 @@ struct MarkdownTextView: NSViewRepresentable {
             // (affected range) and the incoming replacement's extent.
             let replacementLength = (replacementString as NSString?)?.length ?? 0
             noteRestyleInvalidation(NSRange(location: affectedCharRange.location, length: max(affectedCharRange.length, replacementLength)))
+            // Signature protection. Two rejections, no more:
+            //   (a) any edit that touches the "⎈" line's own characters, and
+            //   (b) an edit ending exactly at the signature that would leave a
+            //       non-newline right before it — i.e. pull the ⎈ off the
+            //       start of its line, which is how a merge (backspace at the
+            //       line start) or an insert-just-before would quietly defeat
+            //       the ^⎈ detection and unprotect it.
+            // Everything else is allowed — crucially, ⌘A-then-delete: the
+            // selection is clamped to end at the signature (see
+            // willChangeSelectionFromCharacterRanges), so deleting it clears
+            // the whole body and just leaves the signature at the top, still
+            // line-anchored. Runs even in plainTextMode. External reloads set
+            // textView.string directly and never pass through here, so the
+            // connector can still re-stamp freely.
+            if parent.protectAISignature, !isHandlingTextChange, !isRemovingSignature,
+               let signatureRange = MarkdownStyler.aiSignatureRange(in: textView.string) {
+                let signatureEnd = signatureRange.location + signatureRange.length
+                let editEnd = affectedCharRange.location + affectedCharRange.length
+                let touchesSignature = affectedCharRange.location < signatureEnd && editEnd > signatureRange.location
+                var wouldUnanchor = false
+                if editEnd == signatureRange.location {
+                    let replacement = replacementString ?? ""
+                    if !replacement.isEmpty {
+                        wouldUnanchor = !replacement.hasSuffix("\n")
+                    } else if affectedCharRange.location > 0 {
+                        wouldUnanchor = (textView.string as NSString).character(at: affectedCharRange.location - 1) != 10
+                    }
+                }
+                if touchesSignature || wouldUnanchor {
+                    pendingAutoCloseTrigger = nil
+                    pendingBackspaceTrigger = nil
+                    return false
+                }
+            }
             guard !parent.plainTextMode else {
                 pendingAutoCloseTrigger = nil
                 pendingBackspaceTrigger = nil
@@ -1074,6 +1155,32 @@ struct MarkdownTextView: NSViewRepresentable {
             return true
         }
 
+        /// Keeps a selection from ever including the protected "⎈" signature
+        /// line — the pill stands in for that text, so selecting the hidden
+        /// characters underneath it (a drag across the pill, or ⌘A) would be
+        /// both pointless and confusing. Clamps any proposed selection so it
+        /// stops at the signature's first character; a caret that lands
+        /// inside collapses to just before it. Only active while protection
+        /// is on and a signature exists — otherwise the proposal is returned
+        /// untouched.
+        func textView(_ textView: NSTextView, willChangeSelectionFromCharacterRanges oldSelectedCharRanges: [NSValue], toCharacterRanges newSelectedCharRanges: [NSValue]) -> [NSValue] {
+            guard parent.protectAISignature,
+                  let signatureRange = MarkdownStyler.aiSignatureRange(in: textView.string) else {
+                return newSelectedCharRanges
+            }
+            let limit = signatureRange.location
+            return newSelectedCharRanges.map { value in
+                let range = value.rangeValue
+                if range.location >= limit {
+                    return NSValue(range: NSRange(location: limit, length: 0))
+                }
+                if range.location + range.length > limit {
+                    return NSValue(range: NSRange(location: range.location, length: limit - range.location))
+                }
+                return value
+            }
+        }
+
         func textViewDidChangeSelection(_ notification: Notification) {
             // Typing moves the cursor too, which fires this delegate method in
             // addition to textDidChange for the same keystroke. If it ran again
@@ -1098,6 +1205,7 @@ struct MarkdownTextView: NSViewRepresentable {
                 MarkdownStyler.clearFormatting(textStorage: textStorage, text: textView.string, theme: parent.theme, fontSizeAdjustment: parent.fontZoom)
                 updateCheckboxOverlays(in: textView)
                 updateEmbedOverlays(in: textView)
+                updateSignaturePill(in: textView)
                 return
             }
             let window = windowedRestyleRange(for: textView)
@@ -1118,6 +1226,7 @@ struct MarkdownTextView: NSViewRepresentable {
             pendingRestyleInvalidationRange = nil
             updateCheckboxOverlays(in: textView)
             updateEmbedOverlays(in: textView)
+            updateSignaturePill(in: textView)
         }
 
         /// Everything restyle() runs on is per-keystroke (typing, arrow
@@ -1168,6 +1277,14 @@ struct MarkdownTextView: NSViewRepresentable {
             // unpositioned rather than just unstyled text, a worse failure
             // mode than the plain-text case windowing already avoids below.
             guard nsText.range(of: "![[").location == NSNotFound else { return nil }
+            // When signature protection is on, updateSignaturePill re-clears
+            // the pill's underlying text every restyle; a window that skipped
+            // the signature line would leave stale styling there. The line is
+            // always at the very end (past any typical edit window), so just
+            // decline windowing whenever a protected signature exists.
+            if parent.protectAISignature, MarkdownStyler.aiSignatureRange(in: textView.string) != nil {
+                return nil
+            }
 
             let cursor = min(textView.selectedRange().location, length)
             var low = min(cursor, min(lastRestyleCursorLocation, length))
@@ -1377,6 +1494,83 @@ struct MarkdownTextView: NSViewRepresentable {
                 ).id(embed.title))
                 hostingView.isHidden = false
             }
+        }
+
+        /// Draws the "⎈" provenance line as a non-editable pill (and hides
+        /// its underlying text) when signature protection is on. The veto in
+        /// shouldChangeTextIn is what actually makes the range uneditable;
+        /// this is the visual half that makes that legible — the line reads
+        /// as a distinct object, not plain text the user is mysteriously
+        /// unable to edit. No-op (and pill hidden) when protection is off or
+        /// the note has no signature.
+        @MainActor
+        func updateSignaturePill(in textView: NSTextView) {
+            guard parent.protectAISignature,
+                  let signatureRange = MarkdownStyler.aiSignatureRange(in: textView.string),
+                  let layoutManager = textView.layoutManager,
+                  let textContainer = textView.textContainer,
+                  let textStorage = textView.textStorage else {
+                signaturePillView?.isHidden = true
+                return
+            }
+            // Hide the raw signature text — the pill stands in for it. Applied
+            // after style() each restyle (windowing is disabled while a
+            // protected signature exists, so style() always re-touches it).
+            textStorage.addAttribute(.foregroundColor, value: NSColor.clear, range: signatureRange)
+            // Lay out everything up to and including the signature, not just
+            // its own line — the pill's y-position depends on how tall the
+            // body above it wrapped, and laying out only the signature range
+            // leaves that stale (the pill lands overlapping text above until
+            // some later relayout). Same reasoning as updateEmbedOverlays.
+            let signatureEnd = signatureRange.location + signatureRange.length
+            layoutManager.ensureLayout(forCharacterRange: NSRange(location: 0, length: signatureEnd))
+            let glyphRange = layoutManager.glyphRange(forCharacterRange: signatureRange, actualCharacterRange: nil)
+            let lineRect = layoutManager.boundingRect(forGlyphRange: glyphRange, in: textContainer)
+            let origin = textView.textContainerOrigin
+
+            let removeAction: () -> Void = { [weak self] in self?.removeSignature() }
+            let pill: NSHostingView<SignaturePillView>
+            if let existing = signaturePillView {
+                pill = existing
+            } else {
+                pill = NSHostingView(rootView: SignaturePillView(text: "", theme: parent.theme, onRemove: removeAction))
+                textView.addSubview(pill)
+                signaturePillView = pill
+            }
+            pill.rootView = SignaturePillView(
+                text: (textView.string as NSString).substring(with: signatureRange),
+                theme: parent.theme,
+                onRemove: removeAction
+            )
+            let size = pill.fittingSize
+            pill.frame = NSRect(
+                x: origin.x + lineRect.minX,
+                y: origin.y + lineRect.minY + max(0, (lineRect.height - size.height) / 2),
+                width: size.width,
+                height: size.height
+            )
+            pill.isHidden = false
+        }
+
+        /// The "Remove AI Mark" action on the pill's right-click menu — the
+        /// one deliberate, in-app way to strip the provenance line while
+        /// protection is on (short of turning the setting off). Removes the
+        /// signature and the blank line(s) separating it from the body, and
+        /// sets isRemovingSignature so the protection veto lets this single
+        /// edit through. Goes via shouldChangeText/didChangeText so it's
+        /// undoable like any other edit.
+        @MainActor
+        private func removeSignature() {
+            guard let textView, let signatureRange = MarkdownStyler.aiSignatureRange(in: textView.string) else { return }
+            let nsText = textView.string as NSString
+            var start = signatureRange.location
+            while start > 0, nsText.character(at: start - 1) == 10 { start -= 1 }
+            let removeRange = NSRange(location: start, length: signatureRange.location + signatureRange.length - start)
+            isRemovingSignature = true
+            defer { isRemovingSignature = false }
+            guard textView.shouldChangeText(in: removeRange, replacementString: "") else { return }
+            textView.textStorage?.replaceCharacters(in: removeRange, with: "")
+            textView.didChangeText()
         }
 
         /// EmbeddedNoteView's own collapse chevron calls this — flips

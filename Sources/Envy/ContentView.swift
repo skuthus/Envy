@@ -7,6 +7,17 @@ enum LayoutMode: String {
     case vertical
 }
 
+/// A note title mentioned in the current note's own text without being
+/// linked yet — Interlinks' "Suggested" section. `range` is that specific
+/// occurrence's location in the note's content, the one spot a click
+/// wraps in "[[...]]"; title as `id` is safe since suggestedLinkMatches
+/// only ever returns one match per title.
+struct SuggestedLink: Identifiable {
+    let title: String
+    let range: NSRange
+    var id: String { title }
+}
+
 enum NoteSortField: String {
     case name
     case date
@@ -88,6 +99,7 @@ struct ContentView: View {
     @AppStorage("showFooterClockOnlyWhenFullScreen") var showFooterClockOnlyWhenFullScreen = false
     @AppStorage("editorFontZoom") var editorFontZoom: Double = 0
     @AppStorage("plainTextMode") var plainTextMode = false
+    @AppStorage("protectAISignature") var protectAISignature = false
     @AppStorage("fadeFocusHighlight") var fadeFocusHighlight = false
     @AppStorage("boldFileListText") var boldFileListText = false
     @AppStorage("showBacklinks") var showBacklinks = true
@@ -344,36 +356,81 @@ struct ContentView: View {
     /// cached in @State, recomputed only when selectedID or store.notes
     /// actually change.
     @State var currentBacklinkNotesCache: [Note] = []
-    @State private var backlinksGeneration = 0
+    /// Notes this one already links to via "[[...]]" — the forward-
+    /// direction counterpart to currentBacklinkNotesCache, shown in
+    /// Interlinks' own "Links" section right alongside it.
+    @State var currentForwardLinkedNotesCache: [Note] = []
+    /// Other notes' titles mentioned in this note's own text but never
+    /// actually linked — Interlinks' "Suggested" section. Clicking one
+    /// wraps that exact occurrence in "[[...]]"; nothing is ever inserted
+    /// automatically just from a title matching somewhere.
+    @State var currentSuggestedLinksCache: [SuggestedLink] = []
+    @State private var interlinksGeneration = 0
 
     var currentBacklinkNotes: [Note] { currentBacklinkNotesCache }
+    var currentForwardLinkedNotes: [Note] { currentForwardLinkedNotesCache }
+    var currentSuggestedLinks: [SuggestedLink] { currentSuggestedLinksCache }
 
     /// Off the main thread like the search pipeline — `wikiLinks` is
-    /// computed lazily per note, so the very first backlink pass after a
-    /// load runs the wiki-link regex over every note's full content, which
-    /// on a large library is far too much to do synchronously in a
-    /// selection-change handler.
-    func recomputeBacklinkNotes() {
-        backlinksGeneration += 1
-        let generation = backlinksGeneration
+    /// computed lazily per note, so the very first pass after a load runs
+    /// the wiki-link regex over every note's full content, which on a
+    /// large library is far too much to do synchronously in a selection-
+    /// change handler. Backlinks, forward links, and suggested-but-
+    /// unlinked matches all come from this one pass since all three are
+    /// triggered by exactly the same events (selection change, notes
+    /// reload, the Interlinks toggle itself).
+    func recomputeInterlinks() {
+        interlinksGeneration += 1
+        let generation = interlinksGeneration
         guard showBacklinks, let selectedID,
-              let currentTitle = store.notes.first(where: { $0.id == selectedID })?.title
+              let currentNote = store.notes.first(where: { $0.id == selectedID })
         else {
             currentBacklinkNotesCache = []
+            currentForwardLinkedNotesCache = []
+            currentSuggestedLinksCache = []
             return
         }
-        let lowered = currentTitle.lowercased()
+        let lowered = currentNote.lowercasedTitle
+        let content = currentNote.content
+        let wikiLinks = currentNote.wikiLinks
         let notesSnapshot = store.notes
         let selected = selectedID
         Task { @MainActor in
-            let backlinks = await Task.detached(priority: .utility) {
-                notesSnapshot
+            let result = await Task.detached(priority: .utility) {
+                let backlinks = notesSnapshot
                     .filter { $0.id != selected && $0.wikiLinks.contains(lowered) }
                     .sorted { $0.modifiedDate > $1.modifiedDate }
+                let forward = notesSnapshot
+                    .filter { $0.id != selected && wikiLinks.contains($0.lowercasedTitle) }
+                    .sorted { $0.title.localizedStandardCompare($1.title) == .orderedAscending }
+                let candidateTitles = notesSnapshot.filter { $0.id != selected }.map(\.title)
+                let suggested = MarkdownStyler.suggestedLinkMatches(in: content, candidateTitles: candidateTitles)
+                    .map { SuggestedLink(title: $0.title, range: $0.range) }
+                    .sorted { $0.title.localizedStandardCompare($1.title) == .orderedAscending }
+                return (backlinks, forward, suggested)
             }.value
-            guard generation == backlinksGeneration else { return }
-            currentBacklinkNotesCache = backlinks
+            guard generation == interlinksGeneration else { return }
+            currentBacklinkNotesCache = result.0
+            currentForwardLinkedNotesCache = result.1
+            currentSuggestedLinksCache = result.2
         }
+    }
+
+    /// Wraps a suggested match's exact occurrence in "[[...]]" and saves —
+    /// the only thing that ever mutates a note's text from a suggestion,
+    /// and only on this explicit click. Re-resolves the note fresh from
+    /// the store rather than trusting a captured copy, since the
+    /// suggestion could be a little stale (a background recompute racing
+    /// a fast edit) — if the exact substring's moved or changed underneath
+    /// it, this just quietly does nothing rather than corrupting the text.
+    func acceptSuggestedLink(_ suggestion: SuggestedLink) {
+        guard let noteID = selectedID, var note = store.notes.first(where: { $0.id == noteID }) else { return }
+        let nsContent = note.content as NSString
+        guard suggestion.range.location + suggestion.range.length <= nsContent.length else { return }
+        let occurrence = nsContent.substring(with: suggestion.range)
+        guard occurrence.caseInsensitiveCompare(suggestion.title) == .orderedSame else { return }
+        note.content = nsContent.replacingCharacters(in: suggestion.range, with: "[[\(occurrence)]]")
+        store.save(note)
     }
 
     // Split out of `body` — the full modifier chain in one expression (this
@@ -475,7 +532,7 @@ struct ContentView: View {
         notificationHandledLayout
         .onAppear {
             Task { await recomputeFilteredNotes() }
-            recomputeBacklinkNotes()
+            recomputeInterlinks()
             recomputeNoteTitles()
             recomputeAllTags()
             isFullScreen = NSApp.windows.first?.styleMask.contains(.fullScreen) ?? false
@@ -537,11 +594,11 @@ struct ContentView: View {
                 await recomputeFilteredNotes()
                 reconcileSelectionAfterNotesChange()
             }
-            recomputeBacklinkNotes()
+            recomputeInterlinks()
             recomputeNoteTitles()
             recomputeAllTags()
         }
-        .onChange(of: showBacklinks) { _, _ in recomputeBacklinkNotes() }
+        .onChange(of: showBacklinks) { _, _ in recomputeInterlinks() }
         .onChange(of: sortFieldRaw) { _, _ in Task { await recomputeFilteredNotes() } }
         // Toggling this off in Settings changes what sortField *resolves
         // to* (falls back to .date) without touching sortFieldRaw itself —

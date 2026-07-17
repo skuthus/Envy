@@ -3,13 +3,13 @@ import EnvyCore
 
 @MainActor
 enum MarkdownStyler {
-    private static let wikiLinkRegex = try! NSRegularExpression(pattern: #"\[\[([^\[\]]+)\]\]"#)
+    private nonisolated(unsafe) static let wikiLinkRegex = try! NSRegularExpression(pattern: #"\[\[([^\[\]]+)\]\]"#)
     private static let boldItalicRegex = try! NSRegularExpression(pattern: #"\*\*\*([^*\n]+)\*\*\*"#)
     private static let boldRegex = try! NSRegularExpression(pattern: #"\*\*([^*\n]+)\*\*"#)
     private static let italicRegex = try! NSRegularExpression(pattern: #"(?<!\*)\*([^*\n]+)\*(?!\*)"#)
     private static let strikethroughRegex = try! NSRegularExpression(pattern: #"~~([^~\n]+)~~"#)
-    private static let codeRegex = try! NSRegularExpression(pattern: #"`([^`\n]+)`"#)
-    private static let fencedCodeBlockRegex = try! NSRegularExpression(pattern: #"^```[^\n]*\n([\s\S]*?)\n```[ \t]*$"#, options: [.anchorsMatchLines])
+    private nonisolated(unsafe) static let codeRegex = try! NSRegularExpression(pattern: #"`([^`\n]+)`"#)
+    private nonisolated(unsafe) static let fencedCodeBlockRegex = try! NSRegularExpression(pattern: #"^```[^\n]*\n([\s\S]*?)\n```[ \t]*$"#, options: [.anchorsMatchLines])
     private static let headerRegex = try! NSRegularExpression(pattern: #"^(#{1,6})[ \t]+(.*)$"#, options: [.anchorsMatchLines])
     private static let blockquoteRegex = try! NSRegularExpression(pattern: #"^(>[ \t]?)(.*)$"#, options: [.anchorsMatchLines])
     private static let horizontalRuleRegex = try! NSRegularExpression(pattern: #"^ {0,3}([-*_])[ \t]*(?:\1[ \t]*){2,}$"#, options: [.anchorsMatchLines])
@@ -54,9 +54,74 @@ enum MarkdownStyler {
     // the marker's own surrounding text has to change to make room for it.
     private static let embedRegex = try! NSRegularExpression(pattern: #"!\[\[([^\[\]]+)\]\]"#)
 
-    static func wikiLinkFullRanges(in text: String) -> [NSRange] {
+    nonisolated static func wikiLinkFullRanges(in text: String) -> [NSRange] {
         let full = NSRange(location: 0, length: (text as NSString).length)
         return wikiLinkRegex.matches(in: text, range: full).map(\.range)
+    }
+
+    /// The full text of a note's "⎈ created/edited by … · <date>" provenance
+    /// line, or nil if it has none. Matches the whole line (glyph through
+    /// end of line) so the signature-protection feature can restore it
+    /// verbatim — Envy never authors one, only refuses to let its own editor
+    /// strip an existing one. Anchored on the helm glyph at line start, same
+    /// as EnvyCore's own aiSignatureRegex.
+    nonisolated private static let aiSignatureLineRegex = try! NSRegularExpression(
+        pattern: #"^⎈[ \t]+(?:created|edited)\b.*$"#, options: [.anchorsMatchLines]
+    )
+
+    nonisolated static func aiSignatureLine(in text: String) -> String? {
+        guard let range = aiSignatureRange(in: text) else { return nil }
+        return (text as NSString).substring(with: range)
+    }
+
+    /// The character range of the "⎈" provenance line, or nil. Used both to
+    /// render it as a non-editable pill and to veto edits that would touch
+    /// it (see MarkdownTextView's signature protection).
+    nonisolated static func aiSignatureRange(in text: String) -> NSRange? {
+        let ns = text as NSString
+        return aiSignatureLineRegex.firstMatch(in: text, range: NSRange(location: 0, length: ns.length))?.range
+    }
+
+    /// For a note's own text, every OTHER note whose title appears
+    /// somewhere as an ordinary, case-insensitive, whole-word match that
+    /// isn't already wrapped in "[[...]]" or sitting inside a code span —
+    /// the "you already wrote this note's name but never linked it" gap
+    /// Interlinks' Suggested section surfaces. Only the first matching
+    /// range per title, even when a title appears more than once — that's
+    /// the one occurrence a click actually wraps in brackets.
+    nonisolated static func suggestedLinkMatches(in text: String, candidateTitles: [String]) -> [(title: String, range: NSRange)] {
+        guard !text.isEmpty, !candidateTitles.isEmpty else { return [] }
+        let nsText = text as NSString
+        let existingLinkRanges = wikiLinkFullRanges(in: text)
+
+        func isWordCharacter(_ character: unichar) -> Bool {
+            guard let scalar = Unicode.Scalar(character) else { return false }
+            return CharacterSet.alphanumerics.contains(scalar)
+        }
+
+        var results: [(title: String, range: NSRange)] = []
+        for rawTitle in candidateTitles {
+            let title = rawTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !title.isEmpty else { continue }
+            var searchRange = NSRange(location: 0, length: nsText.length)
+            while searchRange.length > 0 {
+                let found = nsText.range(of: title, options: [.caseInsensitive], range: searchRange)
+                guard found.location != NSNotFound else { break }
+                let before = found.location - 1
+                let after = found.location + found.length
+                let beforeIsWord = before >= 0 && isWordCharacter(nsText.character(at: before))
+                let afterIsWord = after < nsText.length && isWordCharacter(nsText.character(at: after))
+                let isAlreadyLinked = existingLinkRanges.contains { NSIntersectionRange($0, found).length > 0 }
+                if !beforeIsWord, !afterIsWord, !isAlreadyLinked, !isInsideCode(at: found.location, in: text) {
+                    results.append((title: title, range: found))
+                    break
+                }
+                let nextStart = found.location + max(found.length, 1)
+                guard nextStart < nsText.length else { break }
+                searchRange = NSRange(location: nextStart, length: nsText.length - nextStart)
+            }
+        }
+        return results
     }
 
     /// The fixed height reserved for the floating embed view, applied (via
@@ -240,7 +305,7 @@ enum MarkdownStyler {
     /// all is skipped unless the note contains a "```" somewhere — the same
     /// cheap pre-check windowedRestyleRange (in MarkdownTextView) already
     /// relies on for the same reason.
-    static func isInsideCode(at location: Int, in text: String) -> Bool {
+    nonisolated static func isInsideCode(at location: Int, in text: String) -> Bool {
         let nsText = text as NSString
         let clampedLocation = min(location, nsText.length)
 
