@@ -139,6 +139,28 @@ extension ContentView {
         selectedID = list.first?.id
     }
 
+    /// Same fallback-to-first-when-gone idea as reconcileSelection() above,
+    /// but only treats the selection as gone when the note itself no longer
+    /// exists in store.notes — not merely when it stopped matching the
+    /// active search filter. Used after store.notes itself changes (an edit
+    /// lands, a note's added/removed/renamed, a reload finishes), where the
+    /// far more common case is the *currently open* note's own edit knocking
+    /// it out of a filter like "todo:" (checking off its last unchecked
+    /// task, say) — the user is still looking right at it and typing in it,
+    /// so it should stay open even though the note list itself no longer
+    /// shows it (the editor pane already keys off store.notes for exactly
+    /// this reason, see ContentView+EditorPane's own selectedID check).
+    ///
+    /// reconcileSelection() itself is still what a direct query edit uses —
+    /// snapping to the new top result as the user types a new search is the
+    /// expected, search-as-you-type behavior there, a genuinely different
+    /// situation from a note quietly falling out of a filter it used to
+    /// match because of its own content changing.
+    func reconcileSelectionAfterNotesChange() {
+        if let selectedID, store.notes.contains(where: { $0.id == selectedID }) { return }
+        selectedID = filteredNotes.first?.id
+    }
+
     func moveTemplateSelection(_ delta: Int) {
         multiSelectedTemplateIDs.removeAll()
         templateSelectionAnchorID = nil

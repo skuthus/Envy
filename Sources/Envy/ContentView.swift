@@ -494,13 +494,16 @@ struct ContentView: View {
         .onChange(of: store.notes) { _, _ in
             // Fires once a reload actually finishes (folder switch, note
             // added/removed/renamed elsewhere, etc.) — falls back to the
-            // first note only if the current selection no longer exists in
-            // the fresh list, rather than assuming it doesn't.
+            // first note only if the current selection no longer exists at
+            // all, rather than assuming it doesn't just because it fell out
+            // of the active search filter (reconcileSelectionAfterNotesChange,
+            // not reconcileSelection — see its own doc comment for why this
+            // site specifically needs the distinction).
             // Selection reconciliation waits for the recompute to land —
             // it reads filteredNotes, which the await is what refreshes.
             Task {
                 await recomputeFilteredNotes()
-                reconcileSelection()
+                reconcileSelectionAfterNotesChange()
             }
             recomputeBacklinkNotes()
             recomputeNoteTitles()
