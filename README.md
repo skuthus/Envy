@@ -13,26 +13,27 @@ This repository is published for source transparency. The code is proprietary (s
 ## Features
 
 - **Instant search-driven workflow** — type to filter notes as you type; press Return to open the top match or create a new note from your search text if nothing matches. Stays fast at scale — tested up to 15,000 notes in one folder.
-- **Flat-file storage** — every note is a plain `.md` file on disk. No database, no proprietary format.
-- **Live markdown styling** — headings, bold, italic, strikethrough, code, lists, task checkboxes, footnotes, and blockquotes all render directly in the editor as you type, no separate preview mode. A plain-text mode toggle shows the raw markdown instead when you want it.
-- **Wiki-links** — link notes with `[[Note Title]]`; ⌘-click to follow a link, which creates the target note on the spot if it doesn't exist yet.
-- **Templates** — type `template:` in the search box to browse, create, or use a template, stored as a plain `.md` file. `{{date}}`, `{{time}}`, and `{{title}}` fill in automatically, with a configurable date format.
-- **Backlinks** — the footer shows a count of notes linking to the one you're viewing, expandable into a clickable list that opens upward from the footer.
-- **Tags** — write `#tag` anywhere in a note and Envy picks it up automatically, rendered bold with a tinted background. Search `tag:name` to filter by it, including partial matches.
-- **Date search** — `date:today`, `date:week`, `date:month`, or an exact date in whatever format you'd naturally type it.
-- **Scattered multi-word search** — search several words at once and Envy finds notes containing all of them anywhere in the text, not just as one phrase.
-- **Pinning** — pin a note to keep it at the top of the list regardless of sort. A search that doesn't match a pinned note still hides it, same as any other note.
+- **Flat-file storage** — every note is a plain `.md` file on disk, kept in one folder called The Index. No database, no proprietary format.
+- **Live markdown styling** — headings, bold, italic, strikethrough, inline/fenced code, lists (bulleted, numbered, nested), task checkboxes, footnotes, and blockquotes all render directly in the editor as you type, no separate preview mode. A plain-text mode toggle shows the raw markdown instead when you want it.
+- **Wiki-links** — link notes with `[[Note Title]]`; ⌘-click to follow a link, which creates the target note on the spot if it doesn't exist yet. Option-click instead to preview it in a small floating panel without leaving where you are.
+- **Note embeds** — `![[Note Title]]`, on its own line, embeds another note's live content right there instead of just linking to it. Edit either copy and both stay in sync; collapse it down to just the link when you don't need it expanded.
+- **Due dates** — write `@04-16-26` (or `@monday` for the next Monday, `@today`) anywhere in a note and Envy picks it up automatically, shown as a color-coded pill. Search `due:today`, `due:overdue`, `due:week`, an exact date, or exclude with `-due:`. Click a due date (or check off a task-list box containing one) to retire it.
+- **Tags** — write `#tag` anywhere in a note and Envy picks it up automatically, rendered bold with a tinted background. Search `tag:name` (or exclude with `-tag:name`) to filter by it, with ghost-text autocomplete against tags you've already used.
+- **Templates** — type `template:` in the search box to browse and open a template live and editable; "Create Note from Template" starts a new note from it, with `{{date}}`, `{{time}}`, and `{{title}}` filled in automatically.
+- **Trash, not gone for good** — deleted notes go to a hidden per-folder `.trash`, restorable with `⌘⇧⌫` or browsable with `trash:`. Settings controls how often it gets swept into the real macOS Trash.
+- **Backlinks** — the footer shows a count of notes linking to the one you're viewing, expandable into a clickable list.
+- **Pinning** — pin a note (`⌥⌘P`) to keep it at the top of the list regardless of sort, or pin one note to the menu bar icon so a click opens it directly instead of summoning the app.
+- **Scattered multi-word search** — search several words at once and Envy finds notes containing all of them anywhere in the text; comma-separate groups (`dog, cat`) to search for either instead of both.
 - **Live external-edit detection** — editing a note in another app while it's open in Envy updates it automatically, with the changed portion briefly flashing so you don't miss it.
-- **Multiple note folders** — merge notes from more than one folder into a single searchable list, with per-folder cycling.
-- **Undo a delete** — deleted notes go to Trash, not gone for good, and can be restored right back where they were.
-- **Fully remappable shortcuts** — every keyboard shortcut in the app can be customized in Settings → Shortcuts.
-- **Global hotkey** — `⌥⌘↩` shows or hides Envy from anywhere, even when another app is focused.
-- **Themes & appearance** — customizable fonts and colors (including per-syntax-element colors), adjustable window blur, note list density, and independent System/Light/Dark mode.
+- **Fully remappable shortcuts** — every keyboard shortcut in the app, including the global summon hotkey, can be customized in Settings → Shortcuts.
+- **Global hotkey & menu bar access** — `⌥⌘↩` shows or hides Envy from anywhere, even when another app is focused. The menu bar icon does the same on click, or opens your pinned note instead if you have one.
+- **Themes & appearance** — a gallery of ready-made themes (Tokyo Night, Dracula, Monokai, Solarized, and more), every color individually editable, adjustable window blur, note list density, and independent System/Light/Dark mode.
+- **Quality-of-life text tools** — emoji shortcodes (`:smile:`), arrow ligatures (`->` becomes `→`), auto-pairing brackets, and Bold/Italic shortcuts that wrap or unwrap selected text.
 - **Open at login** — optional toggle to launch Envy automatically when you log in.
 
 ## Notes Storage
 
-By default, notes live in `~/Documents/Envy`. This folder (and any additional folders you configure in Settings → General) is created automatically on first launch, along with a welcome note covering the basics.
+By default, notes live in `~/Documents/Envy` — a single folder called The Index, created automatically on first launch along with a welcome note covering the basics. Point it somewhere else any time in Settings → General.
 
 ## Keyboard Shortcuts
 
@@ -41,19 +42,22 @@ Every shortcut below can be remapped in Settings → Shortcuts.
 | Keys | Action |
 |---|---|
 | `⌥⌘↩` | Show or hide Envy — works from any app |
-| `⌘N` | New note |
+| `⌥⌘↓` | Show or hide your pinned note — works from any app |
+| `⌘L` | Jump to the search box from anywhere in the app |
 | `⌘⇧N` | New note from template |
 | `⌘⌫` | Delete the selected note |
 | `⌘⇧⌫` | Restore the most recently deleted note(s) |
 | `⌥⌘P` | Pin or unpin the selected note |
+| `⌥⌘⇧P` | Unpin the note pinned to the menu bar — works from any app |
 | `⌘⇧B` | Toggle the backlinks list in the footer |
 | `⌘`-click a `[[link]]` | Open the linked note (creates it if it doesn't exist) |
+| `⌥`-click a `[[link]]` | Preview the linked note without leaving where you are |
 | `↑` / `↓` | Move the highlighted note while searching |
+| `⇧↑` / `⇧↓` | Extend the selection to the next / previous note |
 | `↩` | Open the highlighted note, or create one from your search text |
 | `⌘↩` | Center the window on screen |
 | `⌘⇧L` | Toggle horizontal / vertical layout |
 | `⌘⇧P` | Toggle plain-text mode |
-| `⌥→` / `⌥←` | Show only the next / previous folder's notes |
 | `⌥↓` / `⌥↑` | Move focus between search, list, and editor |
 | `⌘B` / `⌘I` | Bold / italicize the selected text |
 | `⌘+` / `⌘-` / `⌘0` | Zoom the note text in, out, or reset it |

@@ -28,12 +28,12 @@ struct WhatsNewView: View {
             }
 
             VStack(spacing: 10) {
-                Image(systemName: "checkmark.circle")
+                Image(systemName: "square.on.square")
                     .font(.system(size: 44))
                     .foregroundStyle(EnvyLogoView.irisColor)
-                Text("Simpler Due Dates")
+                Text("Embed a Note Inside Another")
                     .font(.title3.bold())
-                Text("Due dates are now just @04-16-26 (was due@04-16-26 — retype any old ones). Day names work too: @monday always means the next Monday, and @today means today. Click a due date to cross it out — it stops counting the instant it's crossed, no more pill, no more due: match — or just check off a task-list box that has one, which does the same thing automatically.")
+                Text("![[Note Title]], on its own line followed by a blank line, embeds that note's live content right here instead of just linking to it — edit the source anywhere and every place it's embedded updates immediately. The link stays visible above the embed; edit or delete it directly to change or remove the embed, or click the collapse arrow to shrink it down to just that link.")
                     .font(.body)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)

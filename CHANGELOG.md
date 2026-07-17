@@ -2,7 +2,7 @@
 
 Also published at [envynote.app/changelog.html](https://envynote.app/changelog.html).
 
-## 1.2.0 — unreleased
+## 1.2.0 — July 16, 2026
 
 **The Index.** Envy now keeps notes in one folder, called The Index, instead of a list of configurable folders. Settings → General shows where it lives and lets you point it elsewhere at any time. This removes the `folder:`/`-folder:` search operators, the ⌥→/⌥← folder-cycling shortcuts, and "Move to Folder" — all meaningful only when more than one folder existed. A new "Show items in subfolders" toggle (off by default) has Envy also pick up notes nested inside The Index, for anyone who already organizes with subfolders — `Templates/` is always excluded either way.
 
