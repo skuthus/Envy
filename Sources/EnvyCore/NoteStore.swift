@@ -683,7 +683,52 @@ public final class NoteStore: ObservableObject {
         if let idx = notes.firstIndex(where: { $0.id == note.id }) {
             notes[idx] = renamed
         }
+        updateWikiLinkReferences(from: note.title, to: renamed.title)
         return renamed
+    }
+
+    /// After a rename, rewrite every `[[old]]` / `![[old]]` reference across
+    /// the vault to point at the new title, so links and embeds don't break.
+    /// Matching is case-insensitive (the same way a wiki-link resolves) and an
+    /// embed's leading `!` is preserved. Candidates come from the wikiLinks
+    /// cache, so only notes that actually reference the old title are read.
+    /// A reference-only rewrite keeps each note's modified date (both in
+    /// memory and on disk), so renaming a widely-linked note doesn't shove all
+    /// its referrers to the top of a date-sorted list — the user renamed one
+    /// note, they didn't edit thirty others.
+    private func updateWikiLinkReferences(from oldTitle: String, to newTitle: String) {
+        guard oldTitle.caseInsensitiveCompare(newTitle) != .orderedSame else { return }
+        let oldLower = oldTitle.lowercased()
+        let escaped = NSRegularExpression.escapedPattern(for: oldTitle)
+        guard let regex = try? NSRegularExpression(
+            pattern: "(!?)\\[\\[[ \\t]*\(escaped)[ \\t]*\\]\\]",
+            options: [.caseInsensitive]
+        ) else { return }
+        let template = "$1[[" + NSRegularExpression.escapedTemplate(for: newTitle) + "]]"
+
+        let candidateIDs = notes.filter { $0.wikiLinks.contains(oldLower) }.map(\.id)
+        for id in candidateIDs {
+            guard let idx = notes.firstIndex(where: { $0.id == id }) else { continue }
+            let content = notes[idx].content
+            let updated = regex.stringByReplacingMatches(
+                in: content,
+                range: NSRange(location: 0, length: (content as NSString).length),
+                withTemplate: template
+            )
+            guard updated != content else { continue }
+            let url = notes[idx].url
+            let originalDate = notes[idx].modifiedDate
+            markInternalWrite()
+            do {
+                try updated.write(to: url, atomically: true, encoding: .utf8)
+            } catch {
+                continue
+            }
+            try? FileManager.default.setAttributes([.modificationDate: originalDate], ofItemAtPath: url.path)
+            // Assigning `.content` swaps the derived cache (so wikiLinks/
+            // backlinks recompute) without touching modifiedDate.
+            notes[idx].content = updated
+        }
     }
 
     // MARK: - Search

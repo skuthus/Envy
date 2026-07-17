@@ -54,6 +54,42 @@ struct SelfCheck {
             check("save persists content", reloaded.notes.first?.content == "Draft\nSome body text.")
         }
 
+        // renameUpdatesWikiLinkReferencesAcrossTheVault
+        do {
+            let store = await makeTempStore()
+            var target = store.create(title: "Old Name")
+            target.content = "the target note"
+            store.save(target)
+
+            var referrer = store.create(title: "Referrer")
+            referrer.content = "see [[Old Name]] and embed ![[old name]] here"
+            store.save(referrer)
+
+            var unrelated = store.create(title: "Unrelated")
+            unrelated.content = "links elsewhere [[Something Else]]"
+            store.save(unrelated)
+
+            let referrerDateBefore = store.notes.first { $0.title == "Referrer" }?.modifiedDate
+
+            let renamed = store.rename(target, to: "New Name")
+            check("rename yields the new title", renamed.title == "New Name")
+
+            let updated = store.notes.first { $0.title == "Referrer" }
+            check("rename rewrote the [[link]]", updated?.content.contains("[[New Name]]") == true)
+            check("rename removed the old [[link]]", updated?.content.contains("[[Old Name]]") == false)
+            check("rename rewrote a case-insensitive embed", updated?.content.contains("![[New Name]]") == true)
+            check("rename preserves the referrer's modified date",
+                  store.notes.first { $0.title == "Referrer" }?.modifiedDate == referrerDateBefore)
+            check("rename leaves unrelated notes untouched",
+                  store.notes.first { $0.title == "Unrelated" }?.content.contains("[[Something Else]]") == true)
+
+            // Persisted to disk, not just in memory.
+            let reloaded = NoteStore(directory: store.noteDirectory)
+            await waitForLoad(reloaded)
+            check("rename's reference rewrite persisted to disk",
+                  reloaded.notes.first { $0.title == "Referrer" }?.content.contains("[[New Name]]") == true)
+        }
+
         // deleteRemovesNoteFromListAndDisk
         do {
             let store = await makeTempStore()
