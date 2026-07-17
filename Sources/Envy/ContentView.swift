@@ -67,6 +67,9 @@ struct ContentView: View {
     @State var editorWordCount = 0
     @State var editorCharacterCount = 0
     @State var backlinksExpanded = false
+    /// Measured width of the interlinks panel — drives its side-by-side vs
+    /// stacked layout (see interlinksExpandedList). 0 until first measured.
+    @State var interlinksWidth: CGFloat = 0
     @State var isFullScreen = false
     @State var showLoadingIndicator = false
     @State var loadingIndicatorTask: Task<Void, Never>?

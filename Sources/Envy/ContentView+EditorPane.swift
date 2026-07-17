@@ -229,33 +229,54 @@ extension ContentView {
     }
 
     private var interlinksExpandedList: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            if !currentForwardLinkedNotes.isEmpty {
-                interlinkSection(title: "Links") {
-                    ForEach(currentForwardLinkedNotes) { linked in
-                        interlinkRow(for: linked)
-                    }
-                }
-            }
-            if !currentBacklinkNotes.isEmpty {
-                interlinkSection(title: "Backlinks") {
-                    ForEach(currentBacklinkNotes) { linked in
-                        interlinkRow(for: linked)
-                    }
-                }
-            }
-            if !currentSuggestedLinks.isEmpty {
-                interlinkSection(title: "Suggested") {
-                    ForEach(currentSuggestedLinks) { suggestion in
-                        suggestedLinkRow(for: suggestion)
-                    }
-                }
+        // Side by side when there's room; falls back to stacked when the pane
+        // gets too narrow for readable columns (slim window, or the vertical
+        // layout's editor pane). The threshold leaves ~130pt per column for
+        // three columns. Width 0 = not yet measured → default to columns.
+        let stacked = interlinksWidth > 0 && interlinksWidth < 400
+        return Group {
+            if stacked {
+                VStack(alignment: .leading, spacing: 10) { interlinkColumns }
+            } else {
+                HStack(alignment: .top, spacing: 20) { interlinkColumns }
             }
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
         .frame(maxWidth: .infinity, alignment: .leading)
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { interlinksWidth = $0 }
         .background(.bar)
+    }
+
+    /// The three interlink sections (only the non-empty ones), each an
+    /// equal-width, top-aligned column. Shared by both the side-by-side and
+    /// stacked arrangements above — the container decides the axis.
+    @ViewBuilder
+    private var interlinkColumns: some View {
+        if !currentForwardLinkedNotes.isEmpty {
+            interlinkSection(title: "Links") {
+                ForEach(currentForwardLinkedNotes) { linked in
+                    interlinkRow(for: linked)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        if !currentBacklinkNotes.isEmpty {
+            interlinkSection(title: "Backlinks") {
+                ForEach(currentBacklinkNotes) { linked in
+                    interlinkRow(for: linked)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        if !currentSuggestedLinks.isEmpty {
+            interlinkSection(title: "Suggested") {
+                ForEach(currentSuggestedLinks) { suggestion in
+                    suggestedLinkRow(for: suggestion)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
     }
 
     @ViewBuilder
