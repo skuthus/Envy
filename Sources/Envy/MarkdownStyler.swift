@@ -47,10 +47,81 @@ enum MarkdownStyler {
         pattern: #"(?<![\w])@(today|tomorrow|yesterday|monday|tuesday|wednesday|thursday|friday|saturday|sunday|[0-9/-]+)(?!\w)"#,
         options: [.caseInsensitive]
     )
+    // Alone on its own line, nothing before or after but optional trailing
+    // whitespace — deliberately narrower than wikiLinkRegex's own mid-
+    // sentence matching, since an embed reserves a block of vertical space
+    // below it (see embedHeight) that only makes sense as a standalone line,
+    // not something sitting inline within a sentence.
+    private static let embedRegex = try! NSRegularExpression(pattern: #"^!\[\[([^\[\]]+)\]\][ \t]*$"#, options: [.anchorsMatchLines])
 
     static func wikiLinkFullRanges(in text: String) -> [NSRange] {
         let full = NSRange(location: 0, length: (text as NSString).length)
         return wikiLinkRegex.matches(in: text, range: full).map(\.range)
+    }
+
+    /// The fixed height reserved for the floating embed view, applied (via
+    /// minimumLineHeight/maximumLineHeight, in style() below) to the blank
+    /// line immediately after an "![[Note Title]]" marker — never to the
+    /// marker's own line. NSParagraphStyle attributes are paragraph-scoped:
+    /// a single line can't be part-normal-height (for its own visible
+    /// marker text) and part-inflated (for reserved space) at once, which
+    /// is exactly what every earlier attempt at this tried to do — a tall
+    /// line the cursor could land on rendered a cursor as tall as the line
+    /// itself, and text position within an inflated line turned out not to
+    /// be reliably top-anchored the way collapsing it had assumed. Putting
+    /// the reservation on a wholly separate, genuinely empty line sidesteps
+    /// both problems at once: nothing else is competing for space within
+    /// it, so its rect unambiguously *is* the reserved block.
+    static let embedHeight: CGFloat = 220
+
+    /// The reserved height for a *collapsed* embed — just enough for
+    /// EmbeddedNoteView's own header row (its collapse chevron lives
+    /// there), not the full embedHeight. Kept in exact agreement with that
+    /// header's own explicit frame height (see MarkdownTextView.Coordinator.
+    /// updateEmbedOverlays) rather than letting either side guess at the
+    /// other's size — the same shared-constant discipline embedHeight
+    /// itself already relies on.
+    static let collapsedEmbedHeight: CGFloat = 32
+
+    /// Only "![[...]]" markers whose title exactly matches an existing
+    /// note (same case-insensitive comparison as NoteStore.exactTitleMatch,
+    /// duplicated rather than shared since this file has no NoteStore
+    /// dependency and takes plain title strings instead) AND that are
+    /// immediately followed by a blank line — see embedHeight's own doc
+    /// comment for why that second condition exists. `spacerRange` is that
+    /// blank line's own single terminating newline character — the one
+    /// real, unambiguous thing style() can pin minimumLineHeight/
+    /// maximumLineHeight to.
+    ///
+    /// The title check alone is deliberately NOT "any syntactically valid
+    /// ![[...]] span": while a title is still mid-typing (auto-pairing
+    /// completes "![[" to "![[|]]" immediately, so there's a real syntax
+    /// match on every keystroke of the title, long before the user's
+    /// actually named a real note) this must return nothing, or style()
+    /// would reserve a large block of blank space under half-typed text.
+    static func embedRanges(in text: String, noteTitles: [String]) -> [(markerRange: NSRange, spacerRange: NSRange, title: String)] {
+        let nsText = text as NSString
+        let full = NSRange(location: 0, length: nsText.length)
+        let candidates = embedRegex.matches(in: text, range: full).map { match in
+            (range: match.range, title: nsText.substring(with: match.range(at: 1)))
+        }
+        guard !candidates.isEmpty else { return [] }
+        let existingTitles = Set(noteTitles.map { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() })
+        let newline: unichar = 10
+        let space: unichar = 32
+        let tab: unichar = 9
+
+        return candidates.compactMap { candidate in
+            guard existingTitles.contains(candidate.title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()) else { return nil }
+            let markerEnd = candidate.range.location + candidate.range.length
+            guard markerEnd < nsText.length, nsText.character(at: markerEnd) == newline else { return nil }
+            var cursor = markerEnd + 1
+            while cursor < nsText.length, nsText.character(at: cursor) == space || nsText.character(at: cursor) == tab {
+                cursor += 1
+            }
+            guard cursor < nsText.length, nsText.character(at: cursor) == newline else { return nil }
+            return (markerRange: candidate.range, spacerRange: NSRange(location: cursor, length: 1), title: candidate.title)
+        }
     }
 
     /// The range within `newText` that actually differs from `oldText`, found
@@ -338,7 +409,25 @@ enum MarkdownStyler {
         searchQuery: String = "",
         cursorSelection: NSRange? = nil,
         fontSizeAdjustment: CGFloat = 0,
-        restyleRange: NSRange? = nil
+        restyleRange: NSRange? = nil,
+        // False only for a note already being shown *as* an embed — an
+        // embedded note's own "![[...]]" markers render as a plain,
+        // clickable [[wikilink]] instead of expanding into a further
+        // embed, since nesting embeds has no natural depth limit (A embeds
+        // B embeds A...) and one level is already what "click to peek,
+        // click to edit" needs.
+        allowsEmbeds: Bool = true,
+        // Which "![[...]]" markers are real embeds vs. still-being-typed
+        // text — see embedRanges(in:noteTitles:) above for why this can't
+        // just be "any syntactically valid span."
+        noteTitles: [String] = [],
+        // Embed titles the user has collapsed via EmbeddedNoteView's own
+        // chevron — reserves collapsedEmbedHeight instead of embedHeight
+        // for that specific embed's spacer line. Owned by
+        // MarkdownTextView.Coordinator, not this caller-agnostic function;
+        // just a plain title match here, same as embedRanges' own title
+        // resolution.
+        collapsedEmbedTitles: Set<String> = []
     ) {
         let wholeDocument = NSRange(location: 0, length: (text as NSString).length)
         let full = restyleRange.map { NSIntersectionRange($0, wholeDocument) } ?? wholeDocument
@@ -403,6 +492,39 @@ enum MarkdownStyler {
             textStorage.addAttribute(.font, value: monoFont, range: match.range)
             textStorage.addAttribute(.backgroundColor, value: codeBackground, range: match.range)
             claimed.append(match.range)
+        }
+
+        // The marker line itself is completely untouched (just colored, the
+        // same technique headers/blockquotes/etc. already use for their own
+        // marker characters) and stays permanently visible — Obsidian's own
+        // convention for the same feature, and it means it's always an
+        // ordinary, directly-clickable/editable/deletable line of real
+        // text — deleting the "!" (or the whole line) is how an embed gets
+        // undone, no separate UI needed for that. The *separate*, genuinely
+        // blank line right after it (required by embedRanges(in:
+        // noteTitles:) — see its own doc comment) is what actually gets
+        // inflated to embedHeight, via minimumLineHeight/maximumLineHeight
+        // on its own single terminating newline character. See
+        // embedHeight's doc comment for why this needs to be a second line
+        // rather than one line doing both jobs.
+        //
+        // Left entirely unclaimed when allowsEmbeds is false (a note
+        // already being shown *as* an embed) — its own "![[...]]" markers
+        // just fall through to the ordinary wikiLinkRegex loop below
+        // instead, rendering as a plain, visible, clickable [[link]]
+        // rather than expanding into a further embed.
+        if allowsEmbeds {
+            for embed in embedRanges(in: text, noteTitles: noteTitles) {
+                guard !isClaimed(embed.markerRange) else { continue }
+                textStorage.addAttribute(.foregroundColor, value: markerColor, range: embed.markerRange)
+                let reservedHeight = collapsedEmbedTitles.contains(embed.title) ? Self.collapsedEmbedHeight : Self.embedHeight
+                let paragraphStyle = NSMutableParagraphStyle()
+                paragraphStyle.minimumLineHeight = reservedHeight
+                paragraphStyle.maximumLineHeight = reservedHeight
+                textStorage.addAttribute(.paragraphStyle, value: paragraphStyle, range: embed.spacerRange)
+                claimed.append(embed.markerRange)
+                claimed.append(embed.spacerRange)
+            }
         }
 
         // Bold + a tinted background chip, same technique as inline code

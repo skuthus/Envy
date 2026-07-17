@@ -99,6 +99,78 @@ private final class CheckboxOverlayLabel: NSTextField {
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
 }
 
+/// A plain NSScrollView, except it doesn't start claiming scroll-wheel
+/// events the instant the mouse crosses into its bounds — only once the
+/// mouse has rested there for dwellThreshold. Before that, scroll events
+/// are handed to the nearest enclosing NSScrollView instead. Without this,
+/// scrolling through the host note past an embedded note's own box hijacks
+/// the scroll the moment the cursor merely passes over it, even though the
+/// user's clearly still scrolling the *host* document, not that specific
+/// embed. Only used where MarkdownTextView is itself nested inside another
+/// scrollable region (see allowsScrollPassthrough) — every other caller
+/// (the main editor, the pinned popup, preview popovers) is its own
+/// top-level scrollable surface with nothing above it to hand off to.
+///
+/// Walking `superview` (not the responder chain via `nextResponder`) to
+/// find that enclosing scroll view — `superview` is unambiguous even
+/// across the SwiftUI hosting bridge in between (an NSHostingView's own
+/// content still has to sit somewhere in the real AppKit view hierarchy to
+/// render or receive events at all), which the responder chain crossing
+/// that same bridge turned out not to be reliably.
+final class NestedAwareScrollView: NSScrollView {
+    private var mouseEnteredAt: Date?
+    private var hoverTrackingArea: NSTrackingArea?
+    /// Short enough that deliberately scrolling through an embed still
+    /// feels immediate once you've paused on it; long enough that a scroll
+    /// gesture already in progress on the host note, whose cursor merely
+    /// passes over an embed along the way, doesn't get momentarily
+    /// hijacked the instant it crosses the embed's bounds.
+    private static let dwellThreshold: TimeInterval = 0.6
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let hoverTrackingArea { removeTrackingArea(hoverTrackingArea) }
+        let area = NSTrackingArea(
+            rect: bounds,
+            options: [.mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect],
+            owner: self,
+            userInfo: nil
+        )
+        addTrackingArea(area)
+        hoverTrackingArea = area
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        super.mouseEntered(with: event)
+        if mouseEnteredAt == nil { mouseEnteredAt = Date() }
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        super.mouseExited(with: event)
+        mouseEnteredAt = nil
+    }
+
+    override func scrollWheel(with event: NSEvent) {
+        let dwelled = mouseEnteredAt.map { Date().timeIntervalSince($0) >= Self.dwellThreshold } ?? false
+        guard dwelled else {
+            forwardToEnclosingScrollView(event)
+            return
+        }
+        super.scrollWheel(with: event)
+    }
+
+    private func forwardToEnclosingScrollView(_ event: NSEvent) {
+        var candidate = superview
+        while let view = candidate {
+            if let scrollView = view as? NSScrollView, scrollView !== self {
+                scrollView.scrollWheel(with: event)
+                return
+            }
+            candidate = view.superview
+        }
+    }
+}
+
 struct MarkdownTextView: NSViewRepresentable {
     @Binding var text: String
     var onNavigate: (String) -> Void
@@ -167,6 +239,14 @@ struct MarkdownTextView: NSViewRepresentable {
     /// this view (e.g. the pinned note popup, which reloads fresh from disk
     /// on every reopen rather than staying alive in the background).
     var onSelectionChange: ((NSRange) -> Void)?
+    /// False only for a note already being shown *as* an embed — see
+    /// MarkdownStyler.style's own allowsEmbeds parameter for why nesting
+    /// stops at one level.
+    var allowsEmbeds: Bool = true
+    /// True only for a note being shown *as* an embed — see
+    /// NestedAwareScrollView's own doc comment for why that's the one
+    /// context that needs scroll-passthrough instead of a plain NSScrollView.
+    var allowsScrollPassthrough: Bool = false
 
     func makeCoordinator() -> Coordinator {
         Coordinator(self)
@@ -227,7 +307,7 @@ struct MarkdownTextView: NSViewRepresentable {
                 || coordinator.dueTokenHitRects().contains(where: { $0.contains(point) })
         }
 
-        let scrollView = NSScrollView()
+        let scrollView: NSScrollView = allowsScrollPassthrough ? NestedAwareScrollView() : NSScrollView()
         scrollView.hasVerticalScroller = true
         scrollView.hasHorizontalScroller = false
         scrollView.documentView = textView
@@ -238,10 +318,11 @@ struct MarkdownTextView: NSViewRepresentable {
             if plainTextMode {
                 MarkdownStyler.clearFormatting(textStorage: textStorage, text: text, theme: theme, fontSizeAdjustment: fontZoom)
             } else {
-                MarkdownStyler.style(textStorage: textStorage, text: text, theme: theme, searchQuery: searchQuery, fontSizeAdjustment: fontZoom)
+                MarkdownStyler.style(textStorage: textStorage, text: text, theme: theme, searchQuery: searchQuery, fontSizeAdjustment: fontZoom, allowsEmbeds: allowsEmbeds, noteTitles: noteTitles, collapsedEmbedTitles: context.coordinator.collapsedEmbedTitles)
             }
         }
         context.coordinator.updateCheckboxOverlays(in: textView)
+        context.coordinator.updateEmbedOverlays(in: textView)
         // SwiftUI's first call to makeNSView often happens before this view
         // has its real, final width from the surrounding layout (the note
         // list/editor split isn't necessarily settled yet) — the checkbox
@@ -261,6 +342,7 @@ struct MarkdownTextView: NSViewRepresentable {
         ) { [weak coordinator = context.coordinator, weak textView] _ in
             guard let coordinator, let textView else { return }
             coordinator.updateCheckboxOverlays(in: textView)
+            coordinator.updateEmbedOverlays(in: textView)
         }
         // Belt and suspenders alongside ensureLayout() (inside
         // updateCheckboxOverlays itself) and the frame observer above: this
@@ -273,6 +355,7 @@ struct MarkdownTextView: NSViewRepresentable {
         DispatchQueue.main.async { [weak coordinator = context.coordinator, weak textView] in
             guard let coordinator, let textView else { return }
             coordinator.updateCheckboxOverlays(in: textView)
+            coordinator.updateEmbedOverlays(in: textView)
         }
         // Same "wait one runloop turn for real layout/geometry" reasoning as
         // the checkbox overlay positioning above — scrollRangeToVisible
@@ -346,11 +429,15 @@ struct MarkdownTextView: NSViewRepresentable {
                         revealedLinkRange: context.coordinator.hoveredLinkRange,
                         searchQuery: searchQuery,
                         cursorSelection: Self.currentSelection(of: textView),
-                        fontSizeAdjustment: fontZoom
+                        fontSizeAdjustment: fontZoom,
+                        allowsEmbeds: allowsEmbeds,
+                        noteTitles: noteTitles,
+                        collapsedEmbedTitles: context.coordinator.collapsedEmbedTitles
                     )
                 }
             }
             context.coordinator.updateCheckboxOverlays(in: textView)
+            context.coordinator.updateEmbedOverlays(in: textView)
             context.coordinator.lastTheme = theme
             context.coordinator.lastSearchQuery = searchQuery
             context.coordinator.lastFontZoom = fontZoom
@@ -462,6 +549,21 @@ struct MarkdownTextView: NSViewRepresentable {
         /// recreated each time — see that function for why checkboxes are
         /// drawn this way instead of via NSGlyphInfo substitution.
         private var checkboxOverlayLabels: [CheckboxOverlayLabel] = []
+        /// One floating overlay per "![[Note Title]]" embed currently in the
+        /// text, pooled and repositioned in updateEmbedOverlays() exactly
+        /// like checkboxOverlayLabels above — reused by index (not
+        /// recreated) so an embed's own in-progress edit or click-to-edit
+        /// state survives a restyle triggered by editing the host note
+        /// somewhere else, the same reasoning that comment gives for why
+        /// checkboxes are pooled instead of rebuilt each time.
+        private var embedOverlayViews: [NSHostingView<EmbeddedNoteView>] = []
+        /// Embed titles collapsed via EmbeddedNoteView's own chevron —
+        /// plain in-memory UI state, not saved anywhere (same as
+        /// ContentView's own backlinksExpanded), and owned here rather
+        /// than as @State inside EmbeddedNoteView itself since it also has
+        /// to reach MarkdownStyler.style()'s reservation height, which
+        /// runs before any SwiftUI view for the embed even exists yet.
+        var collapsedEmbedTitles: Set<String> = []
         /// The suggested remainder text currently on screen, and the cursor
         /// location it was computed for. Accepting only applies if the
         /// cursor still matches — Tab/Right-arrow otherwise fall through to
@@ -956,6 +1058,7 @@ struct MarkdownTextView: NSViewRepresentable {
             if parent.plainTextMode {
                 MarkdownStyler.clearFormatting(textStorage: textStorage, text: textView.string, theme: parent.theme, fontSizeAdjustment: parent.fontZoom)
                 updateCheckboxOverlays(in: textView)
+                updateEmbedOverlays(in: textView)
                 return
             }
             let window = windowedRestyleRange(for: textView)
@@ -967,11 +1070,15 @@ struct MarkdownTextView: NSViewRepresentable {
                 searchQuery: parent.searchQuery,
                 cursorSelection: MarkdownTextView.currentSelection(of: textView),
                 fontSizeAdjustment: parent.fontZoom,
-                restyleRange: window
+                restyleRange: window,
+                allowsEmbeds: parent.allowsEmbeds,
+                noteTitles: parent.noteTitles,
+                collapsedEmbedTitles: collapsedEmbedTitles
             )
             lastRestyleCursorLocation = textView.selectedRange().location
             pendingRestyleInvalidationRange = nil
             updateCheckboxOverlays(in: textView)
+            updateEmbedOverlays(in: textView)
         }
 
         /// Everything restyle() runs on is per-keystroke (typing, arrow
@@ -1013,6 +1120,15 @@ struct MarkdownTextView: NSViewRepresentable {
             guard length > Self.windowedRestyleThreshold else { return nil }
             guard parent.searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
             guard nsText.range(of: "```").location == NSNotFound else { return nil }
+            // Same reasoning as the fence check above — an embed marker
+            // reserves a fixed block of vertical space wherever it sits,
+            // and updateEmbedOverlays (which positions the floating view
+            // into that space) walks MarkdownStyler.embedRanges(in:) over
+            // the *whole* current string, not just whatever window style()
+            // happened to restyle — so a stale window would leave overlays
+            // unpositioned rather than just unstyled text, a worse failure
+            // mode than the plain-text case windowing already avoids below.
+            guard nsText.range(of: "![[").location == NSNotFound else { return nil }
 
             let cursor = min(textView.selectedRange().location, length)
             var low = min(cursor, min(lastRestyleCursorLocation, length))
@@ -1132,6 +1248,113 @@ struct MarkdownTextView: NSViewRepresentable {
                 label.frame.origin = NSPoint(x: xPosition, y: lineRect.origin.y + origin.y + verticalOffset)
                 label.isHidden = false
             }
+        }
+
+        /// Repositions/recreates one floating, live-editable view per
+        /// "![[Note Title]]" embed in the current text — same pooled-by-
+        /// index approach as updateCheckboxOverlays above. Positioned at
+        /// the blank line MarkdownStyler reserves right after each marker
+        /// (embed.spacerRange — see embedHeight's own doc comment for why
+        /// it's a separate line from the marker rather than the marker's
+        /// own line inflated), never the marker's own line, so the visible
+        /// "![[Note Title]]" text stays a completely ordinary, uncovered
+        /// line the cursor can sit on normally. Needs a live NoteStore to
+        /// resolve titles against — nil for the pinned popup and template
+        /// editor (see MarkdownTextView.store's own doc comment), so
+        /// embeds simply don't expand there rather than trying to share a
+        /// second NoteStore instance.
+        @MainActor
+        func updateEmbedOverlays(in textView: NSTextView) {
+            guard let layoutManager = textView.layoutManager, let textContainer = textView.textContainer else { return }
+            guard !parent.plainTextMode, parent.allowsEmbeds, let store = parent.store else {
+                embedOverlayViews.forEach { $0.isHidden = true }
+                return
+            }
+            let embeds = MarkdownStyler.embedRanges(in: textView.string, noteTitles: parent.noteTitles)
+            guard !embeds.isEmpty else {
+                embedOverlayViews.forEach { $0.isHidden = true }
+                return
+            }
+            let textLength = (textView.string as NSString).length
+            let lastEmbedEnd = embeds.map { $0.spacerRange.location + $0.spacerRange.length }.max() ?? textLength
+            layoutManager.ensureLayout(forCharacterRange: NSRange(location: 0, length: min(lastEmbedEnd, textLength)))
+
+            while embedOverlayViews.count < embeds.count {
+                // Placeholder content — overwritten by the real title/frame
+                // in the loop below before this ever actually draws, since
+                // every index just added here is by construction < embeds.count.
+                let hostingView = NSHostingView(rootView: EmbeddedNoteView(
+                    store: store,
+                    title: "",
+                    theme: parent.theme,
+                    requireModifierForLinkClick: parent.requireModifierForLinkClick,
+                    noteTitles: parent.noteTitles,
+                    isCurrentlyOpenElsewhere: false,
+                    isCollapsed: false,
+                    onNavigate: parent.onNavigate,
+                    onToggleCollapse: {}
+                ))
+                textView.addSubview(hostingView)
+                embedOverlayViews.append(hostingView)
+            }
+
+            let origin = textView.textContainerOrigin
+            let width = max(textContainer.size.width, 100)
+
+            for (index, hostingView) in embedOverlayViews.enumerated() {
+                guard index < embeds.count else {
+                    hostingView.isHidden = true
+                    continue
+                }
+                let embed = embeds[index]
+                let glyphRange = layoutManager.glyphRange(forCharacterRange: embed.spacerRange, actualCharacterRange: nil)
+                // The blank line's own rect *is* the reserved block —
+                // there's no text on it to be positioned somewhere other
+                // than filling its own full extent, unlike the marker's
+                // line (which is why this targets spacerRange, not
+                // markerRange).
+                let lineRect = layoutManager.lineFragmentRect(forGlyphAt: glyphRange.location, effectiveRange: nil)
+                hostingView.frame = NSRect(
+                    x: origin.x,
+                    y: lineRect.origin.y + origin.y,
+                    width: width,
+                    height: lineRect.height
+                )
+                let isCurrentlyOpenElsewhere = parent.currentNoteID != nil
+                    && store.exactTitleMatch(for: embed.title)?.id == parent.currentNoteID
+                let embedTitle = embed.title
+                hostingView.rootView = EmbeddedNoteView(
+                    store: store,
+                    title: embed.title,
+                    theme: parent.theme,
+                    requireModifierForLinkClick: parent.requireModifierForLinkClick,
+                    noteTitles: parent.noteTitles,
+                    isCurrentlyOpenElsewhere: isCurrentlyOpenElsewhere,
+                    isCollapsed: collapsedEmbedTitles.contains(embed.title),
+                    onNavigate: parent.onNavigate,
+                    onToggleCollapse: { [weak self] in
+                        self?.toggleEmbedCollapse(title: embedTitle)
+                    }
+                )
+                hostingView.isHidden = false
+            }
+        }
+
+        /// EmbeddedNoteView's own collapse chevron calls this — flips
+        /// whether MarkdownStyler.style() reserves collapsedEmbedHeight or
+        /// the full embedHeight for this specific embed's spacer line, then
+        /// restyles and repositions immediately so the visible reserved
+        /// block resizes right away instead of waiting for some other,
+        /// unrelated edit to trigger the next restyle pass.
+        @MainActor
+        private func toggleEmbedCollapse(title: String) {
+            if collapsedEmbedTitles.contains(title) {
+                collapsedEmbedTitles.remove(title)
+            } else {
+                collapsedEmbedTitles.insert(title)
+            }
+            guard let textView else { return }
+            restyle(textView)
         }
 
         /// Briefly flags an externally-changed range so the user notices it
@@ -1334,6 +1557,15 @@ struct MarkdownTextView: NSViewRepresentable {
             let charIndex = textView.characterIndexForInsertion(at: point)
             let text = textView.string
             guard let hit = wikiLinkRanges(for: text).first(where: { NSLocationInRange(charIndex, $0) }) else { return false }
+            // A "[[Note Title]]" immediately preceded by "!" is an embed
+            // marker, not an ordinary link — it's already showing this
+            // note's content live, right below it, so popping a second,
+            // separate preview of the same note on top of that would just
+            // be a redundant, confusing second surface for the same thing.
+            let nsText = text as NSString
+            if hit.location > 0, nsText.substring(with: NSRange(location: hit.location - 1, length: 1)) == "!" {
+                return false
+            }
             configurePreviewController(store: store)
             let title = wikilinkTitle(forFullRange: hit, in: text)
             let requireModifier = parent.requireModifierForLinkClick

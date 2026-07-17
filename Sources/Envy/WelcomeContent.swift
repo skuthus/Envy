@@ -68,6 +68,7 @@ enum WelcomeContent {
     - `[text](url)` links to a web address. Cmd-click opens it in your browser.
     - A bare URL like https://example.com becomes clickable on its own.
     - `[text](#heading)` jumps to a heading in this note, like this link to [Structure](#structure). Click it, no modifier needed. The heading part matches the heading's own text, lowercased with spaces turned into hyphens.
+    - `![[Note Title]]`, on its own line followed by a blank line, embeds that note's live content right here instead of just linking to it — edit the source note anywhere and every place it's embedded shows the update immediately. The link itself stays visible above the embed, exactly as typed — edit or delete it directly to change or remove the embed. Click into the embed to edit that note directly, and edits save straight back to it.
 
     ### 🔖 Footnotes
 

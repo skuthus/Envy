@@ -42,6 +42,7 @@ struct MarkupHelpView: View {
             Entry(syntax: "[text](url)", description: "Link to a web address. Cmd+Click to open in your browser."),
             Entry(syntax: "<https://…>", description: "Autolink — bare URLs are also detected and made clickable automatically"),
             Entry(syntax: "[text](#heading)", description: "Jump to a heading in this note — click, no modifier needed. Matches the heading's text lowercased with spaces turned into hyphens."),
+            Entry(syntax: "![[Note Title]]", description: "Embed another note's live content inline — on its own line, followed by a blank line. The link itself stays visible above the embed; edit or delete it directly to change or remove the embed. Click the ⌄ to collapse it down to just that link. Click into the embed to edit that note directly; edits save to it, not this note. Starts read-only so scrolling past it can't accidentally start typing into a different note."),
         ]),
         Group(title: "Footnotes", entries: [
             Entry(syntax: "text[^1]", description: "Footnote reference — click it to jump straight to its definition"),
