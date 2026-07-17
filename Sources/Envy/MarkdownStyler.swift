@@ -119,6 +119,43 @@ enum MarkdownStyler {
         }
     }
 
+    /// Whether `location` (a cursor position, not a character index — 0 and
+    /// text.count are both valid) sits inside a fenced code block or an
+    /// inline code span. Used to keep code content — which can genuinely
+    /// contain "->"-style sequences with their own unrelated meaning — from
+    /// being reinterpreted as a ligature to expand.
+    ///
+    /// Inline spans are checked against just the current paragraph, not the
+    /// whole document — codeRegex can't cross a newline, so nothing outside
+    /// it could ever match anyway, and this runs on every keystroke. Fenced
+    /// blocks are a real document-global construct, but scanning for them at
+    /// all is skipped unless the note contains a "```" somewhere — the same
+    /// cheap pre-check windowedRestyleRange (in MarkdownTextView) already
+    /// relies on for the same reason.
+    static func isInsideCode(at location: Int, in text: String) -> Bool {
+        let nsText = text as NSString
+        let clampedLocation = min(location, nsText.length)
+
+        func contains(_ range: NSRange) -> Bool {
+            clampedLocation >= range.location && clampedLocation <= NSMaxRange(range)
+        }
+
+        let paragraphRange = nsText.paragraphRange(for: NSRange(location: clampedLocation, length: 0))
+        let paragraph = nsText.substring(with: paragraphRange)
+        let paragraphFull = NSRange(location: 0, length: (paragraph as NSString).length)
+        for match in codeRegex.matches(in: paragraph, range: paragraphFull) {
+            let rangeInDocument = NSRange(location: paragraphRange.location + match.range.location, length: match.range.length)
+            if contains(rangeInDocument) { return true }
+        }
+
+        guard nsText.range(of: "```").location != NSNotFound else { return false }
+        let full = NSRange(location: 0, length: nsText.length)
+        for match in fencedCodeBlockRegex.matches(in: text, range: full) {
+            if contains(match.range) { return true }
+        }
+        return false
+    }
+
     enum ListContinuation {
         /// Insert "\n" + this marker text at the cursor to continue the list.
         case `continue`(marker: String)

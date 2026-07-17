@@ -564,6 +564,7 @@ struct MarkdownTextView: NSViewRepresentable {
                     collapseMatchingCloseIfNeeded(afterDeletingOpener: trigger.deletedCharacter, at: trigger.location, in: textView)
                 }
                 expandEmojiShortcodeIfNeeded(in: textView)
+                expandLigatureIfNeeded(in: textView)
             }
             parent.text = textView.string
             restyle(textView)
@@ -721,6 +722,33 @@ struct MarkdownTextView: NSViewRepresentable {
             // signal to close it out correctly. This re-enters textDidChange
             // once, but the cursor no longer sits right after a ":" the
             // second time, so the regex can't match again — no loop.
+            textView.didChangeText()
+        }
+
+        /// Replaces a just-completed two-character sequence like "->" with
+        /// its arrow the moment the second character lands — see
+        /// TextLigatures for the full (deliberately short) list. Skips
+        /// anywhere inside a fenced code block or inline code span, where
+        /// the same characters are far more likely to be actual code (a
+        /// Rust/TypeScript return-type arrow, a SQL JSON path, and so on)
+        /// than something meant to become a visual arrow.
+        @MainActor
+        private func expandLigatureIfNeeded(in textView: NSTextView) {
+            let cursor = textView.selectedRange()
+            guard cursor.length == 0, cursor.location >= 2 else { return }
+            let nsText = textView.string as NSString
+            let matchRange = NSRange(location: cursor.location - 2, length: 2)
+            let candidate = nsText.substring(with: matchRange)
+            guard let replacement = TextLigatures.map[candidate] else { return }
+            guard !MarkdownStyler.isInsideCode(at: cursor.location, in: textView.string) else { return }
+            guard textView.shouldChangeText(in: matchRange, replacementString: replacement) else { return }
+            textView.textStorage?.replaceCharacters(in: matchRange, with: replacement)
+            textView.setSelectedRange(NSRange(location: matchRange.location + (replacement as NSString).length, length: 0))
+            // Same didChangeText()-closes-the-undo-group reasoning as
+            // expandEmojiShortcodeIfNeeded above — this re-enters
+            // textDidChange once, but the two characters right before the
+            // cursor are now just the single arrow glyph, which isn't a key
+            // in the map, so it can't loop.
             textView.didChangeText()
         }
 

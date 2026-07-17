@@ -19,6 +19,7 @@ Also published at [envynote.app/changelog.html](https://envynote.app/changelog.h
 - Typing `tag:` (or `-tag:`) in the search box now ghost-text-completes against tags you've actually used, most-used first, the same "rest shows up in grey, press → to accept" behavior note-title search already had.
 - Fixed `-due:` and `-todo:` silently doing nothing in search — both were falling through to plain text-exclusion (matching the literal substring "due:today" in a note's own text, essentially never), rather than actually excluding notes by due-date bucket or unchecked-task status. `-due:` accepts every bucket `due:` does (`-due:overdue`, `-due:week`, an exact date, a bare `-due:` for "has no due date at all," and so on).
 - Fixed drag-selecting text in the search box: the highlight was drawn on top of the styled/ghost-suggestion text instead of underneath it, so selecting a search operator (`tag:`, `-due:`, etc.) blotted out the very text it was highlighting.
+- Typing `->`, `<-`, or `=>` now expands into an arrow (→, ←, ⇒) the instant it's finished, the same "replace immediately" behavior emoji shortcodes already had — skipped inside inline code and fenced code blocks, where the same characters are more likely to be actual code.
 
 ## 1.1.9 — July 16, 2026
 

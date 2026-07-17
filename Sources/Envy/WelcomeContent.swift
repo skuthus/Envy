@@ -78,6 +78,10 @@ enum WelcomeContent {
 
     - Type a shortcode like `:smile:` and finish it with the closing colon. It's replaced with the real emoji right away.
 
+    ### ➡️ Arrows
+
+    - Type `->`, `<-`, or `=>` and the last character lands as an arrow instead — →, ←, ⇒. Skipped inside code, where the same characters usually mean something else.
+
     ## 🔗 Linking Notes
 
     `[[Note Title]]` links work throughout Envy, not just in the list above. Here's one to a small companion note: [[Example Linked Note]]

@@ -59,6 +59,11 @@ struct MarkupHelpView: View {
         Group(title: "Emoji", entries: [
             Entry(syntax: ":smile:", description: "Replaced with 😄 as soon as you finish typing it — the note just contains the emoji itself"),
         ]),
+        Group(title: "Ligatures", entries: [
+            Entry(syntax: "->", description: "Replaced with → as soon as you finish typing it — same instant-expansion as emoji shortcodes. Skipped inside code."),
+            Entry(syntax: "<-", description: "Replaced with ←"),
+            Entry(syntax: "=>", description: "Replaced with ⇒"),
+        ]),
     ]
 
     var body: some View {
