@@ -8,6 +8,7 @@ import EnvyCore
 /// disk rather than through NoteStore, since a template is deliberately
 /// never one of the notes NoteStore tracks.
 struct TemplateEditorView: View {
+    @Environment(\.interfaceFontScale) private var interfaceFontScale
     @ObservedObject var store: NoteStore
     let template: NoteTemplate
     var theme: Theme
@@ -71,9 +72,9 @@ struct TemplateEditorView: View {
     private var header: some View {
         HStack(spacing: 8) {
             Text(template.name)
-                .font(.headline)
+                .font(.system(size: 13 * interfaceFontScale, weight: .semibold))
             Text("Template")
-                .font(.caption)
+                .font(.system(size: 11 * interfaceFontScale))
                 .foregroundStyle(.secondary)
                 .padding(.horizontal, 8)
                 .padding(.vertical, 2)

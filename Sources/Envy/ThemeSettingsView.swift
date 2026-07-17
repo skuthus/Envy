@@ -7,6 +7,7 @@ struct ThemeSettingsView: View {
     @AppStorage("backgroundBlurStrength") private var backgroundBlurStrengthRaw = BlurStrength.strong.rawValue
     @AppStorage("appearanceMode") private var appearanceModeRaw = AppearanceMode.system.rawValue
     @AppStorage("listDensity") private var listDensityRaw = ListDensity.compact.rawValue
+    @AppStorage("interfaceTextSize") private var interfaceTextSizeRaw = InterfaceTextSize.large.rawValue
     @AppStorage("fadeFocusHighlight") private var fadeFocusHighlight = false
     @AppStorage("boldFileListText") private var boldFileListText = false
     @AppStorage("savedThemes") private var savedThemesStorage = SavedThemesList()
@@ -42,6 +43,24 @@ struct ThemeSettingsView: View {
         Binding(
             get: { BlurStrength(rawValue: backgroundBlurStrengthRaw) ?? .strong },
             set: { backgroundBlurStrengthRaw = $0.rawValue }
+        )
+    }
+
+    // A Slider needs a numeric value, not the enum itself — bridges to/from
+    // InterfaceTextSize's position in its own allCases, the same way
+    // fontSizeBinding bridges Theme.fontSize's Double to its own Slider.
+    private var interfaceTextSizeBinding: Binding<Double> {
+        Binding(
+            get: {
+                let cases = InterfaceTextSize.allCases
+                let current = InterfaceTextSize(rawValue: interfaceTextSizeRaw) ?? .large
+                return Double(cases.firstIndex(of: current) ?? cases.firstIndex(of: .large)!)
+            },
+            set: {
+                let cases = InterfaceTextSize.allCases
+                let index = min(max(Int($0.rounded()), 0), cases.count - 1)
+                interfaceTextSizeRaw = cases[index].rawValue
+            }
         )
     }
 
@@ -146,6 +165,13 @@ struct ThemeSettingsView: View {
                     ForEach(ListDensity.allCases) { density in
                         Text(density.label).tag(density)
                     }
+                }
+                HStack {
+                    Text("Interface Text Size")
+                    Slider(value: interfaceTextSizeBinding, in: 0...Double(InterfaceTextSize.allCases.count - 1), step: 1)
+                    Text((InterfaceTextSize(rawValue: interfaceTextSizeRaw) ?? .large).label)
+                        .foregroundStyle(.secondary)
+                        .frame(width: 100, alignment: .trailing)
                 }
                 Picker("Blur Strength", selection: backgroundBlurStrength) {
                     ForEach(BlurStrength.allCases) { strength in

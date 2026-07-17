@@ -79,6 +79,7 @@ struct ContentView: View {
     @AppStorage("lastSeenWhatsNewVersion") var lastSeenWhatsNewVersion = ""
     @AppStorage("moveFocusToEditorOnEnter") var moveFocusToEditorOnEnter = true
     @AppStorage("listDensity") var listDensityRaw = ListDensity.compact.rawValue
+    @AppStorage("interfaceTextSize") var interfaceTextSizeRaw = InterfaceTextSize.large.rawValue
     @AppStorage("noteSortField") var sortFieldRaw = NoteSortField.date.rawValue
     @AppStorage("noteSortAscending") var sortAscending = false
     @AppStorage("showFooterClock") var showFooterClock = false
@@ -147,6 +148,23 @@ struct ContentView: View {
 
     var listDensity: ListDensity {
         ListDensity(rawValue: listDensityRaw) ?? .compact
+    }
+
+    var interfaceTextSize: InterfaceTextSize {
+        InterfaceTextSize(rawValue: interfaceTextSizeRaw) ?? .large
+    }
+
+    // ContentView+ListPane.swift/ContentView+EditorPane.swift's font() call
+    // sites reference this directly rather than through the
+    // interfaceFontScale *environment* value below — they're extensions of
+    // this same struct, not separate child views, so a plain property read
+    // is both simpler and avoids the classic SwiftUI trap of a view reading
+    // via @Environment a value it only ever injects for its own children.
+    // NoteRow/TemplateEditorView (genuinely separate View structs rendered
+    // inside this one) still need the environment value instead, since
+    // they have no other way to reach this property.
+    var interfaceFontScale: CGFloat {
+        interfaceTextSize.scale
     }
 
     var footerClockDateFormat: ClockDateFormat {
@@ -363,7 +381,11 @@ struct ContentView: View {
     // ("unable to type-check this expression in reasonable time"). Giving
     // this its own `some View`-typed property lets the compiler solve it
     // independently instead of as one combinatorially large expression.
-    private var notificationHandledLayout: some View {
+    // Split further out of notificationHandledLayout below for the same
+    // type-checker reason its own comment already gives — adding the
+    // interfaceFontScale environment() call to that already-long chain
+    // tipped it back over the threshold.
+    private var layoutSwitch: some View {
         Group {
             switch layoutMode {
             case .horizontal:
@@ -387,6 +409,16 @@ struct ContentView: View {
                 }
             }
         }
+        // Every chrome font() call site reads this directly (not
+        // DynamicTypeSize — see InterfaceTextSize's own doc comment for
+        // why), so a single top-level environment value is all that's
+        // needed; unlike dynamicTypeSize there's no NavigationSplitView
+        // propagation quirk to work around for a plain custom key.
+        .environment(\.interfaceFontScale, interfaceTextSize.scale)
+    }
+
+    private var notificationHandledLayout: some View {
+        layoutSwitch
         .background(backgroundView.ignoresSafeArea())
         .onReceive(NotificationCenter.default.publisher(for: .newNoteRequested)) { _ in
             createBlankNote()

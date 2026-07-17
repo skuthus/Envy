@@ -117,7 +117,7 @@ extension ContentView {
             VStack(alignment: .leading, spacing: 0) {
                 HStack {
                     Text(note.title)
-                        .font(.title3.bold())
+                        .font(.system(size: 15 * interfaceFontScale, weight: .bold))
                         .lineLimit(1)
                         .truncationMode(.tail)
                     Spacer()
@@ -135,7 +135,7 @@ extension ContentView {
                 Divider()
                 ScrollView {
                     Text(note.content)
-                        .font(.body)
+                        .font(.system(size: 13 * interfaceFontScale))
                         .foregroundStyle(Color(nsColor: theme.resolvedTextColor))
                         .textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -162,7 +162,7 @@ extension ContentView {
                 TimelineView(.periodic(from: .now, by: 30)) { context in
                     Text(clockString(for: context.date))
                         .foregroundStyle(.secondary)
-                        .font(.caption2)
+                        .font(.system(size: 10 * interfaceFontScale))
                 }
             }
             HStack {
@@ -178,7 +178,7 @@ extension ContentView {
                             ProgressView()
                                 .controlSize(.small)
                             Text("Loading notes…")
-                                .font(.caption2)
+                                .font(.system(size: 10 * interfaceFontScale))
                                 .foregroundStyle(.secondary)
                         }
                         .transition(.opacity)
@@ -192,9 +192,9 @@ extension ContentView {
                                 // tap — up to expand (the list grows upward),
                                 // down to collapse back.
                                 Image(systemName: backlinksExpanded ? "chevron.down" : "chevron.up")
-                                    .font(.caption2)
+                                    .font(.system(size: 10 * interfaceFontScale))
                                 Text("\(currentBacklinkNotes.count) Backlink\(currentBacklinkNotes.count == 1 ? "" : "s")")
-                                    .font(.caption2)
+                                    .font(.system(size: 10 * interfaceFontScale))
                             }
                             .foregroundStyle(.secondary)
                             .contentShape(Rectangle())
@@ -206,7 +206,7 @@ extension ContentView {
                 if selectedID != nil {
                     Text("\(editorWordCount) words, \(editorCharacterCount) characters")
                         .foregroundStyle(.secondary)
-                        .font(.caption2)
+                        .font(.system(size: 10 * interfaceFontScale))
                 }
             }
         }
@@ -242,7 +242,7 @@ extension ContentView {
                     }
                 } label: {
                     Text(linked.title)
-                        .font(.body)
+                        .font(.system(size: 13 * interfaceFontScale))
                         .foregroundStyle(Color(nsColor: theme.resolvedLinkColor))
                         .lineLimit(1)
                         .contentShape(Rectangle())

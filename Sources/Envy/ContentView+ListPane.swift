@@ -97,7 +97,7 @@ extension ContentView {
             // for a hint pill is imperceptible.
             if !query.trimmingCharacters(in: .whitespaces).isEmpty && !isSearchOperatorQuery && !queryHasExactTitleMatch {
                 Text("Press \u{23CE} to create \"\(query)\"")
-                    .font(.caption)
+                    .font(.system(size: 11 * interfaceFontScale))
                     .foregroundStyle(.secondary)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 6)
@@ -168,13 +168,13 @@ extension ContentView {
             // covers the readable text on top of it.
             TextField("Search or Create Note", text: $query)
                 .textFieldStyle(.plain)
-                .font(.body)
+                .font(.system(size: 13 * interfaceFontScale))
                 .foregroundColor(isSearchOperatorQuery ? .clear : nil)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 6)
             if let suggestionRemainder {
                 (Text(query).foregroundColor(.clear) + Text(suggestionRemainder).foregroundColor(.secondary))
-                    .font(.body)
+                    .font(.system(size: 13 * interfaceFontScale))
                     .padding(.horizontal, 10)
                     .padding(.vertical, 6)
                     .allowsHitTesting(false)
@@ -185,7 +185,7 @@ extension ContentView {
             // untouched, including the TextField's native placeholder.
             if isSearchOperatorQuery {
                 styledQueryText
-                    .font(.body)
+                    .font(.system(size: 13 * interfaceFontScale))
                     .padding(.horizontal, 10)
                     .padding(.vertical, 6)
                     .allowsHitTesting(false)
@@ -315,10 +315,10 @@ extension ContentView {
                 Text(label)
                 if sortField == field {
                     Image(systemName: sortAscending ? "chevron.up" : "chevron.down")
-                        .font(.system(size: 9, weight: .bold))
+                        .font(.system(size: 9 * interfaceFontScale, weight: .bold))
                 }
             }
-            .font(.caption.weight(.semibold))
+            .font(.system(size: 11 * interfaceFontScale, weight: .semibold))
             .foregroundStyle(sortField == field ? .primary : .secondary)
             .contentShape(Rectangle())
         }
@@ -342,13 +342,13 @@ extension ContentView {
         if matchingTemplatesForQuery.isEmpty {
             if let fragment = templateNameFragment?.trimmingCharacters(in: .whitespaces), !fragment.isEmpty {
                 Text("Press \u{23CE} to create template \"\(fragment)\"")
-                    .font(.caption)
+                    .font(.system(size: 11 * interfaceFontScale))
                     .foregroundStyle(.secondary)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 8)
             } else {
                 Text("No templates yet — type a name to create one.")
-                    .font(.caption)
+                    .font(.system(size: 11 * interfaceFontScale))
                     .foregroundStyle(.secondary)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 8)
@@ -362,6 +362,7 @@ extension ContentView {
             Image(systemName: "doc.badge.plus")
                 .foregroundStyle(.secondary)
             Text(template.name)
+                .font(.system(size: 13 * interfaceFontScale))
             Spacer()
         }
         .padding(.vertical, listDensity.rowVerticalPadding)
@@ -442,7 +443,7 @@ extension ContentView {
         }
         if matchingTrashForQuery.isEmpty {
             Text("Trash is empty.")
-                .font(.caption)
+                .font(.system(size: 11 * interfaceFontScale))
                 .foregroundStyle(.secondary)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
@@ -455,9 +456,10 @@ extension ContentView {
             Image(systemName: "trash")
                 .foregroundStyle(.secondary)
             Text(note.title)
+                .font(.system(size: 13 * interfaceFontScale))
             Spacer()
             Text(dateDisplayStyle.format(note.modifiedDate))
-                .font(.caption)
+                .font(.system(size: 11 * interfaceFontScale))
                 .foregroundStyle(.secondary)
         }
         .padding(.vertical, listDensity.rowVerticalPadding)
