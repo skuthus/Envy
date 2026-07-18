@@ -39,6 +39,8 @@ struct MarkupHelpView: View {
         ]),
         Group(title: "Links", entries: [
             Entry(syntax: "[[Note Title]]", description: "Link to another note. Cmd+Click to open it — creates the note if it doesn't exist yet. Option+Click instead to preview it without leaving where you are (Settings → General to change or turn off)."),
+            Entry(syntax: "[[Note Title|any words]]", description: "Same link, shown as your own words instead of the note's name — so a link can sit inside a sentence without the filename interrupting it. Rename the note and your wording stays. Click inside a link you're already in to put the cursor there and edit it."),
+            Entry(syntax: "[[Note Title#Heading]]", description: "Links to the note. Envy doesn't jump to the heading yet, but the reference is kept as written, so notes brought over from other apps stay linked."),
             Entry(syntax: "[text](url)", description: "Link to a web address. Cmd+Click to open in your browser."),
             Entry(syntax: "<https://…>", description: "Autolink — bare URLs are also detected and made clickable automatically"),
             Entry(syntax: "[text](#heading)", description: "Jump to a heading in this note — click, no modifier needed. Matches the heading's text lowercased with spaces turned into hyphens."),
