@@ -339,13 +339,40 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             window.orderOut(nil)
             restorePreviousAppFocus(envyWasFrontmost: wasFrontmost)
         } else {
-            captureFrontmostForRestore()
-            NSApp.activate(ignoringOtherApps: true)
-            window.makeKeyAndOrderFront(nil)
-            NotificationCenter.default.post(name: .summonRequested, object: nil)
-            performAeroSpaceHandoff(forWindowNumber: window.windowNumber)
+            summonMainWindow()
         }
         updateStatusItemIcon()
+    }
+
+    /// The single path that brings the main window back — the summon hot key,
+    /// the status item, and a Dock click all funnel through here so they
+    /// can't drift apart.
+    @MainActor
+    func summonMainWindow() {
+        guard let window = mainWindow ?? NSApp.windows.first else { return }
+        captureFrontmostForRestore()
+        NSApp.activate(ignoringOtherApps: true)
+        // A window hidden by orderOut isn't miniaturized, but one the user
+        // minimized to the Dock is, and makeKeyAndOrderFront alone won't
+        // restore that — it would come back as a Dock tile that never opens.
+        if window.isMiniaturized { window.deminiaturize(nil) }
+        window.makeKeyAndOrderFront(nil)
+        NotificationCenter.default.post(name: .summonRequested, object: nil)
+        performAeroSpaceHandoff(forWindowNumber: window.windowNumber)
+        updateStatusItemIcon()
+    }
+
+    /// Hiding uses orderOut (see hideIfAutoHideEnabled), so a hidden Envy has
+    /// no visible windows at all — which is exactly the state AppKit treats
+    /// as "nothing to reopen." Left to its default, SwiftUI's WindowGroup
+    /// answers a Dock click by building a *second* window, and since the
+    /// summon hot key and auto-hide both act on a window, the two then fight
+    /// over every summon. Returning false claims the click and reuses the
+    /// window that already exists.
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        guard !flag else { return true }
+        summonMainWindow()
+        return false
     }
 
     /// Moves/focuses Envy's window onto AeroSpace's currently focused
