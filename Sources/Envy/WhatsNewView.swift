@@ -28,12 +28,12 @@ struct WhatsNewView: View {
             }
 
             VStack(spacing: 10) {
-                Image(systemName: "point.3.connected.trianglepath.dotted")
+                Image(systemName: "circle.lefthalf.filled")
                     .font(.system(size: 44))
-                    .foregroundStyle(EnvyBrand.iris)
-                Text("See How Your Notes Connect")
+                    .foregroundStyle(EnvyBrand.mark)
+                Text("A New Look, and It Follows Yours")
                     .font(.title3.bold())
-                Text("The footer's backlinks panel is now Interlinks — side by side it shows the notes this one links out to, the notes that link back to it, and \u{201C}Suggested\u{201D} links: other notes you've mentioned by name but haven't linked yet, each a click away from wiring up. Renaming a note now updates every link to it across your vault too, so nothing breaks. Plus a new interface text-size slider, and early support for recognizing AI-authored notes.")
+                Text("Envy has a new icon and a house theme to match, called Envious. Pick it once and it follows your Mac between light and dark instead of freezing on whichever you chose \u{2014} a first for Envy's themes. Links can carry your own words now, too: [[Note Title|anything you like]] reads as your wording and still points at the note, and it survives a rename. Plus updates arrive on their own instead of waiting to be asked for.")
                     .font(.body)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)

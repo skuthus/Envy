@@ -65,6 +65,7 @@ enum WelcomeContent {
     ### 🌐 Links
 
     - `[[Note Title]]` links to another note. Cmd-click to follow it, and it creates the note if it doesn't exist yet.
+    - `[[Note Title|your own words]]` shows your wording instead of the note's name, so a link can sit inside a sentence without the filename interrupting it. Rename the note and your wording stays exactly as written.
     - `[text](url)` links to a web address. Cmd-click opens it in your browser.
     - A bare URL like https://example.com becomes clickable on its own.
     - `[text](#heading)` jumps to a heading in this note, like this link to [Structure](#structure). Click it, no modifier needed. The heading part matches the heading's own text, lowercased with spaces turned into hyphens.
@@ -93,7 +94,7 @@ enum WelcomeContent {
 
     The footer's **Interlinks** panel shows everything connected to the note you're reading, side by side: the notes it links out to, the notes that link back to it, and *Suggested* links — other notes you've mentioned by name but haven't linked yet, each a click away from wiring up.
 
-    **Renaming a note updates its links everywhere.** Rename a note (click its title, or right-click it in the list) and every `[[link]]` and `![[embed]]` pointing to it across your notes is rewritten to the new name, so nothing breaks.
+    **Renaming a note updates its links everywhere.** Rename a note (click its title, or right-click it in the list) and every `[[link]]` and `![[embed]]` pointing to it across your notes is rewritten to the new name, so nothing breaks — and if you gave a link your own wording with `|`, that wording is left alone.
 
     ## 📆 Due Dates
 
@@ -133,7 +134,8 @@ enum WelcomeContent {
 
     ## 🎨 Customizing the Look
 
-    - Settings → Theme has a gallery of ready-made looks — Tokyo Night, Dracula, Monokai, both Solarized themes, and Velocity Light/Dark (modeled on the original Notational Velocity) — plus any themes you've saved yourself. Click one to apply it instantly.
+    - Settings → Theme has a gallery of ready-made looks — Envious (Envy's own), Tokyo Night, Dracula, Monokai, both Solarized themes, and Velocity Light/Dark (modeled on the original Notational Velocity) — plus any themes you've saved yourself. Click one to apply it instantly.
+    - Envious comes in a light and a dark face and switches between them with your Mac, so it stays right whichever appearance you're in. Every other theme is a fixed set of colors and stays exactly as you picked it. Editing any color turns Envious into your own theme and stops it switching, since the edit is yours to keep.
     - Every color swatch is always editable. Change one and it becomes a custom variation of whatever theme you started from — save it as a new named theme, duplicate it, rename it, or reset any single swatch back to its default.
     - Colors are grouped by where they show up: Editor (text, background, links, code, tags, and more), List (file list background/text, the note editor's own title bar), and Highlight (search matches, focus border, text selection).
     - Export a theme to a file to share it, or import one someone else made.

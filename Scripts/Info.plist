@@ -2,47 +2,39 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<key>CFBundleName</key>
-	<string>Envy</string>
 	<key>CFBundleDisplayName</key>
 	<string>Envy</string>
-	<key>CFBundleIdentifier</key>
-	<string>com.skylerschoos.envy</string>
-	<key>CFBundleVersion</key>
-	<string>1.2.2</string>
-	<key>CFBundleShortVersionString</key>
-	<string>1.2.2</string>
-	<key>CFBundlePackageType</key>
-	<string>APPL</string>
 	<key>CFBundleExecutable</key>
 	<string>Envy</string>
 	<key>CFBundleIconFile</key>
 	<string>AppIcon</string>
+	<key>CFBundleIdentifier</key>
+	<string>com.skylerschoos.envy</string>
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
-	<key>LSMinimumSystemVersion</key>
-	<string>14.0</string>
+	<key>CFBundleName</key>
+	<string>Envy</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>1.3.0</string>
+	<key>CFBundleVersion</key>
+	<string>1.3.0</string>
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.productivity</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>14.0</string>
 	<key>NSHighResolutionCapable</key>
 	<true/>
 	<key>NSHumanReadableCopyright</key>
 	<string>© 2026 Skyler Schoos</string>
-	<!-- Present so new installs default to checking automatically. Its
-	     absence is what makes Sparkle ask each user once on first launch,
-	     and anyone who declined that prompt was left with no automatic
-	     checks and no way to re-enable them. -->
 	<key>SUEnableAutomaticChecks</key>
 	<true/>
-	<!-- Sparkle's default is 86400 — a release could sit unnoticed for a
-	     day, and only if the app happened to be running when the timer
-	     fired. 3600 is Sparkle's minimum. The check is one conditional GET
-	     of a small XML file, so hourly costs effectively nothing. -->
-	<key>SUScheduledCheckInterval</key>
-	<integer>3600</integer>
 	<key>SUFeedURL</key>
 	<string>https://envynote.app/assets/updates/appcast.xml</string>
 	<key>SUPublicEDKey</key>
 	<string>jdhL5MEnBaTkKVj4eO2nZLk+jQlGd35pC4fGGJsJdmY=</string>
+	<key>SUScheduledCheckInterval</key>
+	<integer>3600</integer>
 </dict>
 </plist>

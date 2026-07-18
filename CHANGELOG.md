@@ -2,6 +2,19 @@
 
 Also published at [envynote.app/changelog.html](https://envynote.app/changelog.html).
 
+## 1.3.0 — July 18, 2026
+
+- **A new look.** Envy has a new app icon — a lowered red brow over a cream eye with a green iris — and a house theme to match, called **Envious**. It's the first entry in Settings → Theme.
+- **Themes can follow your Mac.** Envious comes in a light and a dark face and switches between them with your appearance setting, instead of freezing on whichever you picked. Every other theme is a fixed set of colors and behaves exactly as before. Editing any color turns Envious into your own theme and stops it switching, since the edit is yours to keep; changing the font or size applies to both faces and keeps it switching.
+- **Links can carry your own words.** `[[Note Title|anything you like]]` reads as your wording and still points at the note, so a link can sit inside a sentence without the filename interrupting it. Rename the note and your wording is left exactly as written. `[[Note Title#Heading]]` now resolves to the note as well — Envy doesn't scroll to the heading yet, but the link works, the backlink registers, and a rename tracks it. Both forms were previously read as literal note titles, so notes brought over from another app linked to nothing; those links now connect.
+- **Links are editable text again.** Clicking inside a link the cursor is already in puts the caret where you clicked instead of following the link, and a plain click under "Require ⌘-click to open note links" now does the same rather than nothing at all. A revealed link is clickable across its whole span, so following one isn't a race against the text expanding under the pointer.
+- **Updates arrive on their own.** Envy now checks hourly rather than once a day, and checking is on by default. Settings → General → Updates has the toggle, a Check Now button, and when it last looked — previously, anyone who declined Sparkle's first-launch prompt had automatic checks off permanently with no way to turn them back on. When an update is waiting, the menu bar eye grows the icon's red brow.
+- Fixed clicking Envy's Dock icon while it was hidden opening a *second* window, after which both answered the summon shortcut.
+- Fixed collapsed link brackets sometimes rendering as text stacked on itself after a partial restyle.
+- Fixed the `[[` autocomplete painting its suggestion over text that was already there when editing inside a finished link.
+- The window no longer shows the "Envy" title beside the traffic lights.
+- **AI provenance is hidden for now.** The `⎈` badge and the "Protect AI signatures" setting introduced in 1.2.2 are no longer shown, pending a decision on how the feature should work. Nothing in your notes changed — signature lines are still plain text, and are left exactly as they are.
+
 ## 1.2.2 — July 17, 2026
 
 - **Interlinks.** The footer's backlinks panel is now Interlinks: alongside the notes that link *to* the one you're viewing, it shows the notes it links *out* to, and "Suggested" links — other notes you've mentioned by name but haven't linked yet, each with a one-click button to wire it up. The three sections sit side by side, and stack automatically when the pane is narrow.
