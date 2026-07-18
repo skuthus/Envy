@@ -1027,6 +1027,50 @@ struct SelfCheck {
             check("a pinned note excluded by search filtering stays excluded", filteredOut.map(\.id) == ["d", "a"])
         }
 
+        do {
+            print("Wiki-link parsing")
+
+            let plain = WikiLink.parse("Meeting Notes")
+            check("a plain link targets and displays the same title",
+                  plain.target == "Meeting Notes" && plain.display == "Meeting Notes" && plain.aliasPipeOffset == nil)
+
+            // The point of aliases: the target keeps the filename, the
+            // sentence gets readable words.
+            let alias = WikiLink.parse("2026-07-18 Meeting Notes|yesterday's meeting")
+            check("an alias targets the note and displays the alias",
+                  alias.target == "2026-07-18 Meeting Notes" && alias.display == "yesterday's meeting")
+
+            // Previously the whole body became the title, so this looked for
+            // a note literally named "Note#Heading" and found nothing.
+            let heading = WikiLink.parse("Project Plan#Milestones")
+            check("a heading reference resolves to the note",
+                  heading.target == "Project Plan")
+            check("a heading reference still shows the heading it meant",
+                  heading.display == "Project Plan#Milestones")
+
+            let both = WikiLink.parse("Project Plan#Milestones|the milestones")
+            check("an alias wins over the heading for display text",
+                  both.target == "Project Plan" && both.display == "the milestones")
+
+            let padded = WikiLink.parse("  Spaced Note  |  Shown  ")
+            check("surrounding whitespace is trimmed from both halves",
+                  padded.target == "Spaced Note" && padded.display == "Shown")
+
+            // An empty alias is a typo, not an instruction to render nothing.
+            let emptyAlias = WikiLink.parse("Real Note|")
+            check("an empty alias falls back to the target",
+                  emptyAlias.target == "Real Note" && emptyAlias.display == "Real Note")
+
+            let note = Note(
+                id: "n",
+                url: URL(fileURLWithPath: "/tmp/Referrer.md"),
+                content: "see [[Real Note|an alias]] and [[Other#Section]]",
+                modifiedDate: Date()
+            )
+            check("wikiLinks records targets, not raw link bodies",
+                  note.wikiLinks == ["real note", "other"])
+        }
+
         print("")
         if failures.isEmpty {
             print("All checks passed.")

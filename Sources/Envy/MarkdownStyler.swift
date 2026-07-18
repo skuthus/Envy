@@ -168,7 +168,9 @@ enum MarkdownStyler {
         let nsText = text as NSString
         let full = NSRange(location: 0, length: nsText.length)
         let candidates = embedRegex.matches(in: text, range: full).map { match in
-            (range: match.range, title: nsText.substring(with: match.range(at: 1)))
+            // Target, not raw body: ![[Note|alias]] and ![[Note#Heading]]
+            // both embed Note, matching how the plain link forms resolve.
+            (range: match.range, title: WikiLink.parse(nsText.substring(with: match.range(at: 1))).target)
         }
         guard !candidates.isEmpty else { return [] }
         let existingTitles = Set(noteTitles.map { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() })
@@ -208,7 +210,7 @@ enum MarkdownStyler {
         let full = NSRange(location: 0, length: nsText.length)
         let existingTitles = Set(noteTitles.map { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() })
         for match in embedRegex.matches(in: text, range: full) {
-            let title = nsText.substring(with: match.range(at: 1)).trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            let title = WikiLink.parse(nsText.substring(with: match.range(at: 1))).target.lowercased()
             guard existingTitles.contains(title) else { continue }
             let markerLineRange = nsText.lineRange(for: match.range)
             let markerLineEnd = markerLineRange.location + markerLineRange.length
@@ -932,26 +934,68 @@ enum MarkdownStyler {
             guard !isClaimed(match.range) else { continue }
             let bracketOpen = NSRange(location: match.range.location, length: 2)
             let bracketClose = NSRange(location: match.range.location + match.range.length - 2, length: 2)
-            let titleRange = match.range(at: 1)
-            let title = (text as NSString).substring(with: titleRange)
-            let encoded = title.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? title
+            let bodyRange = match.range(at: 1)
+            let body = (text as NSString).substring(with: bodyRange)
+            let parsed = WikiLink.parse(body)
+            // The link resolves to the target, so [[Note|alias]] and
+            // [[Note#Heading]] both open Note. The click handler needs no
+            // knowledge of either form.
+            let encoded = parsed.target.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? parsed.target
+            // With an alias, only the display half is shown; the target and
+            // the pipe collapse like the brackets do.
+            let titleRange: NSRange
+            let aliasTargetRange: NSRange?
+            if let pipe = parsed.aliasPipeOffset {
+                let pipeEnd = bodyRange.location + pipe + 1
+                aliasTargetRange = NSRange(location: bodyRange.location, length: pipe + 1)
+                titleRange = NSRange(location: pipeEnd, length: bodyRange.location + bodyRange.length - pipeEnd)
+            } else {
+                aliasTargetRange = nil
+                titleRange = bodyRange
+            }
 
             // Revealed on mouse hover (revealedLinkRange) same as before, and
             // now also while the cursor is actually inside the link — a
             // wiki-link being actively typed has no mouse anywhere near it,
             // so without this the brackets would collapse the instant a
             // keystroke restyles the text.
-            if match.range == revealedLinkRange || touches(match.range, cursorSelection) {
+            let isRevealed = match.range == revealedLinkRange || touches(match.range, cursorSelection)
+            if isRevealed {
+                // collapse() hides characters with negative .kern, and a
+                // restyle that only covers part of this link — the windowed
+                // per-keystroke path — can leave that kern behind on the rest
+                // of it. Restoring the colour alone then yields visible text
+                // still stacked on itself. Latent for years while the only
+                // collapsed spans were two-character brackets; an alias
+                // target is long enough to make it obvious.
+                textStorage.removeAttribute(.kern, range: match.range)
                 textStorage.addAttribute(.foregroundColor, value: markerColor, range: bracketOpen)
                 textStorage.addAttribute(.foregroundColor, value: markerColor, range: bracketClose)
+                if let aliasTargetRange {
+                    textStorage.addAttribute(.foregroundColor, value: markerColor, range: aliasTargetRange)
+                }
             } else {
                 collapse(range: bracketOpen, in: textStorage, text: text, font: baseFont)
                 collapse(range: bracketClose, in: textStorage, text: text, font: baseFont)
+                if let aliasTargetRange {
+                    collapse(range: aliasTargetRange, in: textStorage, text: text, font: baseFont)
+                }
             }
             textStorage.addAttribute(.foregroundColor, value: linkColor, range: titleRange)
             textStorage.addAttribute(.underlineStyle, value: NSUnderlineStyle.single.rawValue, range: titleRange)
+            // Revealed, the whole span is one hit target: brackets, the
+            // aliased target, and the display text. Otherwise the clickable
+            // region shrinks to the alias at the exact moment the link
+            // expands under the pointer, and clicking it becomes a race
+            // against your own cursor.
+            //
+            // Only when revealed, though. NSTextView's linkTextAttributes
+            // override per-range colors, so linking a collapsed bracket would
+            // repaint the clear glyph collapse() hid and underline it back
+            // into view.
+            let clickableRange = isRevealed ? match.range : titleRange
             if let url = URL(string: "envy:///\(encoded)") {
-                textStorage.addAttribute(.link, value: url, range: titleRange)
+                textStorage.addAttribute(.link, value: url, range: clickableRange)
             }
         }
 

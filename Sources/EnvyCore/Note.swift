@@ -106,7 +106,10 @@ private final class NoteDerivedCache: @unchecked Sendable {
             let matches = Note.wikiLinkRegex.matches(in: content, range: NSRange(content.startIndex..., in: content))
             return Set(matches.compactMap { match -> String? in
                 guard let range = Range(match.range(at: 1), in: content) else { return nil }
-                let title = content[range].trimmingCharacters(in: .whitespaces).lowercased()
+                // The *target*, not the raw body — otherwise [[Note|alias]]
+                // registers a link to a note called "Note|alias", which can't
+                // exist, and the real note loses the backlink.
+                let title = WikiLink.parse(String(content[range])).target.lowercased()
                 return title.isEmpty ? nil : title
             })
         }
@@ -353,5 +356,59 @@ extension Note: Equatable {
     // the fields that already fully determine equality.
     public static func == (lhs: Note, rhs: Note) -> Bool {
         lhs.id == rhs.id && lhs.url == rhs.url && lhs.content == rhs.content && lhs.modifiedDate == rhs.modifiedDate
+    }
+}
+
+/// Splits the inside of a `[[…]]` into the note it points at and the text a
+/// reader sees.
+///
+/// Envy understands two pieces of Obsidian's link syntax:
+///
+///   `[[Note|Anything]]`   an alias — the target is `Note`, the reader sees
+///                          `Anything`. Written this way so a link can sit
+///                          inside a sentence without the filename
+///                          interrupting it.
+///   `[[Note#Heading]]`    a heading reference. Envy does not jump to the
+///                          heading, but it does resolve the link to `Note`
+///                          rather than treating the whole string as a title.
+///
+/// The second is deliberately partial. Handling it this far means notes
+/// pasted in from Obsidian resolve, back-link and survive a rename instead of
+/// breaking silently, and real heading support can be added later without a
+/// migration — the stored text is already correct.
+public enum WikiLink {
+    public struct Parsed: Equatable {
+        /// The note title to resolve. Never contains an alias or heading.
+        public let target: String
+        /// What the reader sees. Equals the raw body unless an alias is given.
+        public let display: String
+        /// Offset of the `|` within the body, when there is one — the styler
+        /// needs it to collapse the target half out of view.
+        public let aliasPipeOffset: Int?
+    }
+
+    public static func parse(_ body: String) -> Parsed {
+        let pipeIndex = body.firstIndex(of: "|")
+        let targetPart = pipeIndex.map { String(body[body.startIndex..<$0]) } ?? body
+        // Everything from the first # is a heading reference, not part of the
+        // note's name.
+        let withoutHeading = targetPart.split(separator: "#", maxSplits: 1, omittingEmptySubsequences: false).first ?? ""
+        let target = String(withoutHeading).trimmingCharacters(in: .whitespaces)
+
+        let display: String
+        if let pipeIndex {
+            display = String(body[body.index(after: pipeIndex)...]).trimmingCharacters(in: .whitespaces)
+        } else {
+            // No alias: show it as written. For a heading reference that
+            // includes the heading, which is honest — the link goes to the
+            // note, and the reader can see which part was meant.
+            display = body.trimmingCharacters(in: .whitespaces)
+        }
+
+        return Parsed(
+            target: target,
+            display: display.isEmpty ? target : display,
+            aliasPipeOffset: pipeIndex.map { body.distance(from: body.startIndex, to: $0) }
+        )
     }
 }

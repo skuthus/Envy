@@ -1651,12 +1651,26 @@ struct MarkdownTextView: NSViewRepresentable {
 
             if parent.requireModifierForLinkClick {
                 guard let event = NSApp.currentEvent, event.modifierFlags.contains(.command) else {
-                    // Handled (as a no-op) rather than declined — declining makes
-                    // NSTextView fall back to opening the URL itself via NSWorkspace,
-                    // which for "envy://" fails loudly (no registered handler)
-                    // and for http(s) would bypass this modifier requirement entirely.
+                    // Handled rather than declined — declining makes NSTextView
+                    // fall back to opening the URL itself via NSWorkspace, which
+                    // for "envy://" fails loudly (no registered handler) and for
+                    // http(s) would bypass this modifier requirement entirely.
+                    //
+                    // Handled by placing the caret, not by doing nothing: a link
+                    // is still text you need to edit, and swallowing the click
+                    // left no way to put the cursor inside one.
+                    placeCaret(at: charIndex, in: textView)
                     return true
                 }
+            }
+
+            // A click inside a link the caret is already sitting in means the
+            // user is working on the text, not trying to follow it — otherwise
+            // there's no way to reposition within a link you've entered, and
+            // every click bounces you to the target instead.
+            if url.scheme == "envy", caretIsInsideWikiLink(containing: charIndex, in: textView) {
+                placeCaret(at: charIndex, in: textView)
+                return true
             }
 
             if url.scheme == "envy" {
@@ -1667,6 +1681,30 @@ struct MarkdownTextView: NSViewRepresentable {
                 NSWorkspace.shared.open(url)
             }
             return true
+        }
+
+        /// True when the selection is already within the wiki-link span that
+        /// contains the clicked character — i.e. the link is revealed because
+        /// the user is inside it.
+        @MainActor
+        private func caretIsInsideWikiLink(containing charIndex: Int, in textView: NSTextView) -> Bool {
+            guard let span = MarkdownStyler.wikiLinkFullRanges(in: textView.string)
+                .first(where: { NSLocationInRange(charIndex, $0) }) else { return false }
+            let selection = textView.selectedRange()
+            // Inclusive of both edges: a caret resting immediately after the
+            // closing bracket still has the link revealed, so a click inside
+            // it should behave the same way.
+            return selection.location >= span.location
+                && selection.location <= span.location + span.length
+        }
+
+        /// Drops the insertion point exactly where the click landed and
+        /// restyles, so the link expands around the caret the same way it does
+        /// when arrowing into it.
+        @MainActor
+        private func placeCaret(at charIndex: Int, in textView: NSTextView) {
+            textView.setSelectedRange(NSRange(location: charIndex, length: 0))
+            restyle(textView)
         }
 
         /// Scrolls to a footnote's definition and briefly flashes it (the
@@ -2078,6 +2116,23 @@ struct MarkdownTextView: NSViewRepresentable {
             }
             let query = nsText.substring(with: NSRange(location: afterOpen, length: cursor - afterOpen))
             guard !query.isEmpty, !query.contains("["), !query.contains("]") else {
+                hideWikiLinkGhost()
+                return
+            }
+            // The ghost is drawn as a label floating at the caret, not
+            // inserted into the text, so it has nothing to push aside: any
+            // characters between the caret and the link's end are still on
+            // screen and the suggestion lands on top of them. Fine while the
+            // caret is at the end of a link being typed — which is all this
+            // ever handled — but editing inside a finished link renders the
+            // remainder stacked over the text that's already there.
+            let lineEnd = lineRange.location + lineRange.length
+            let ahead = NSRange(location: cursor, length: lineEnd - cursor)
+            let closeAhead = nsText.range(of: "]]", options: [], range: ahead)
+            let trailing = closeAhead.location == NSNotFound
+                ? ""  // unterminated link: the caret is at the end of what exists
+                : nsText.substring(with: NSRange(location: cursor, length: closeAhead.location - cursor))
+            guard trailing.isEmpty else {
                 hideWikiLinkGhost()
                 return
             }

@@ -700,11 +700,15 @@ public final class NoteStore: ObservableObject {
         guard oldTitle.caseInsensitiveCompare(newTitle) != .orderedSame else { return }
         let oldLower = oldTitle.lowercased()
         let escaped = NSRegularExpression.escapedPattern(for: oldTitle)
+        // Group 2 captures any alias or heading suffix so it survives the
+        // rewrite: [[Old|yesterday's notes]] becomes [[New|yesterday's
+        // notes]], not [[New]]. Without it a rename would silently discard
+        // the words the author actually wrote into their sentence.
         guard let regex = try? NSRegularExpression(
-            pattern: "(!?)\\[\\[[ \\t]*\(escaped)[ \\t]*\\]\\]",
+            pattern: "(!?)\\[\\[[ \\t]*\(escaped)[ \\t]*((?:#|\\|)[^\\[\\]]*)?\\]\\]",
             options: [.caseInsensitive]
         ) else { return }
-        let template = "$1[[" + NSRegularExpression.escapedTemplate(for: newTitle) + "]]"
+        let template = "$1[[" + NSRegularExpression.escapedTemplate(for: newTitle) + "$2]]"
 
         let candidateIDs = notes.filter { $0.wikiLinks.contains(oldLower) }.map(\.id)
         for id in candidateIDs {
