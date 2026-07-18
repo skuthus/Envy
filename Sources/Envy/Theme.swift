@@ -269,6 +269,11 @@ struct NamedTheme: Identifiable, Equatable {
     var id: UUID = UUID()
     var name: String
     var theme: Theme
+    /// Non-nil makes this an *adaptive* theme: `theme` is its light face and
+    /// this is its dark one, and which applies follows the current
+    /// appearance. nil is the ordinary case — one fixed set of colors that
+    /// looks the same whatever the system is doing.
+    var darkTheme: Theme?
 }
 
 extension NamedTheme: Codable {
@@ -276,7 +281,7 @@ extension NamedTheme: Codable {
     // conformance above for why) — it round-trips through its own rawValue
     // string instead, same mechanism @AppStorage already relies on.
     private enum CodingKeys: String, CodingKey {
-        case id, name, theme
+        case id, name, theme, darkTheme
     }
 
     init(from decoder: Decoder) throws {
@@ -285,6 +290,10 @@ extension NamedTheme: Codable {
         name = try container.decode(String.self, forKey: .name)
         let rawTheme = try container.decode(String.self, forKey: .theme)
         theme = Theme(rawValue: rawTheme) ?? Theme()
+        // Absent in every theme exported before adaptive pairs existed, so
+        // decoding must tolerate it rather than fail the whole import.
+        darkTheme = (try container.decodeIfPresent(String.self, forKey: .darkTheme))
+            .flatMap(Theme.init(rawValue:))
     }
 
     func encode(to encoder: Encoder) throws {
@@ -292,6 +301,39 @@ extension NamedTheme: Codable {
         try container.encode(id, forKey: .id)
         try container.encode(name, forKey: .name)
         try container.encode(theme.rawValue, forKey: .theme)
+        try container.encodeIfPresent(darkTheme?.rawValue, forKey: .darkTheme)
+    }
+}
+
+/// The two faces of an adaptive theme, stored as one value so the choice
+/// survives a relaunch. Deliberately *not* a property of Theme: a struct
+/// can't contain itself, and more importantly every consumer already reads
+/// a plain resolved Theme — pairing is a question of which Theme is live,
+/// not of what a Theme is.
+struct ThemePair: Equatable {
+    var light: Theme
+    var dark: Theme
+
+    func face(dark isDark: Bool) -> Theme { isDark ? dark : light }
+}
+
+extension ThemePair: RawRepresentable {
+    private struct Payload: Codable { var light: String; var dark: String }
+
+    init?(rawValue: String) {
+        guard !rawValue.isEmpty,
+              let data = rawValue.data(using: .utf8),
+              let payload = try? JSONDecoder().decode(Payload.self, from: data),
+              let light = Theme(rawValue: payload.light),
+              let dark = Theme(rawValue: payload.dark) else { return nil }
+        self.init(light: light, dark: dark)
+    }
+
+    var rawValue: String {
+        let payload = Payload(light: light.rawValue, dark: dark.rawValue)
+        guard let data = try? JSONEncoder().encode(payload),
+              let string = String(data: data, encoding: .utf8) else { return "" }
+        return string
     }
 }
 
@@ -306,6 +348,11 @@ extension Theme {
     /// Built-in, non-editable starter themes — pick one in Settings → Theme
     /// to copy its colors into the live theme, same as applying a saved one.
     static let presets: [NamedTheme] = [
+        // Adaptive: light and dark faces of one theme, resolved from the
+        // current appearance rather than fixed when you pick it. This is what
+        // a new install should land on — the house look that still follows
+        // the system, instead of a dark app on a light Mac.
+        NamedTheme(name: "Envious", theme: enviousLight, darkTheme: enviousDark),
         NamedTheme(name: "Dracula", theme: Theme(
             textColor: rgb(248, 248, 242),
             backgroundColor: rgb(40, 42, 54),
@@ -471,4 +518,81 @@ struct SavedThemesList: RawRepresentable, Equatable {
               let string = String(data: data, encoding: .utf8) else { return "[]" }
         return string
     }
+}
+
+extension Theme {
+    /// The house palette, decoded from Skyler's own "Envious" export. Held as
+    /// named values because they're each referenced twice — once as a fixed
+    /// gallery entry, once as a face of the adaptive "Envious" pair — and two
+    /// transcriptions of the same palette would eventually disagree.
+    ///
+    /// Roles, consistent across both faces:
+    ///
+    ///   blue    wiki-links, and the note list's selected row
+    ///   red     the editor's text selection, and overdue
+    ///   green   tags and ticked checkboxes
+    ///   amber   due-soon, and search matches
+    ///
+    /// The dark greys are white at graded alpha (0.85 body, 0.55 secondary,
+    /// 0.25 markers) rather than fixed RGB. Opaque greys are only correct at
+    /// one blur strength; alpha keeps the hierarchy over whatever the window
+    /// is actually letting through.
+    ///
+    /// Note: window translucency is a separate setting, not part of a theme —
+    /// set Blur Strength to None for a fully flat look.
+    static let enviousDark = Theme(
+        textColor: rgb(255, 255, 255, alpha: 0.847),
+        backgroundColor: rgb(29, 30, 31),
+        markerColor: rgb(255, 255, 255, alpha: 0.247),
+        linkColor: rgb(90, 128, 255),
+        dueColor: rgb(255, 255, 255),            // not yet urgent — full-strength neutral
+        dueSoonColor: rgb(255, 188, 0),
+        dueOverdueColor: rgb(255, 75, 57),
+        codeBackgroundColor: rgb(55, 55, 55),
+        tagColor: rgb(52, 199, 89),
+        tagBackgroundColor: rgb(48, 209, 88, alpha: 0.153),
+        highlightColor: rgb(255, 188, 0),
+        selectionColor: rgb(90, 128, 255),       // note list row
+        selectedTextColor: rgb(255, 75, 57),     // editor text selection
+        focusHighlightColor: rgb(152, 168, 217, alpha: 0.25),
+        focusHighlightThickness: 3,
+        fileListBackgroundColor: rgb(29, 30, 31),
+        blockquoteColor: rgb(255, 255, 255, alpha: 0.549),
+        completedTaskColor: rgb(255, 255, 255, alpha: 0.549),
+        footnoteColor: rgb(255, 255, 255, alpha: 0.549),
+        checkedCheckboxColor: rgb(52, 199, 89),
+        noteTitleBarBackgroundColor: rgb(38, 38, 38)
+    )
+
+    /// Same roles, different hues. Every accent above was mixed for a
+    /// near-black ground and three fail on paper — the blue and green lose
+    /// contrast, the amber vanishes — so each is darkened until it clears.
+    ///
+    /// The two selections are the real departure. In dark they're opaque and
+    /// the light body text reads against them; on paper, dark text on solid
+    /// blue or red is unreadable, so both become tints. Same colour, same
+    /// meaning, different weight.
+    static let enviousLight = Theme(
+        textColor: rgb(0, 0, 0, alpha: 0.85),
+        backgroundColor: rgb(250, 250, 248),
+        markerColor: rgb(0, 0, 0, alpha: 0.30),  // 0.247 disappears on paper
+        linkColor: rgb(27, 79, 216),
+        dueColor: rgb(0, 0, 0, alpha: 0.85),
+        dueSoonColor: rgb(176, 124, 0),          // amber is illegible on paper at full brightness
+        dueOverdueColor: rgb(212, 42, 28),
+        codeBackgroundColor: rgb(240, 239, 234),
+        tagColor: rgb(23, 132, 58),
+        tagBackgroundColor: rgb(23, 132, 58, alpha: 0.13),
+        highlightColor: rgb(255, 188, 0, alpha: 0.55),
+        selectionColor: rgb(27, 79, 216, alpha: 0.18),
+        selectedTextColor: rgb(212, 42, 28, alpha: 0.22),
+        focusHighlightColor: rgb(96, 122, 176, alpha: 0.30),
+        focusHighlightThickness: 3,
+        fileListBackgroundColor: rgb(250, 250, 248),
+        blockquoteColor: rgb(0, 0, 0, alpha: 0.55),
+        completedTaskColor: rgb(0, 0, 0, alpha: 0.55),
+        footnoteColor: rgb(0, 0, 0, alpha: 0.55),
+        checkedCheckboxColor: rgb(23, 132, 58),
+        noteTitleBarBackgroundColor: rgb(240, 239, 234)
+    )
 }

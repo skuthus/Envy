@@ -20,6 +20,10 @@ struct GeneralSettingsView: View {
     @AppStorage("footerClockDateFormat") private var footerClockDateFormatRaw = ClockDateFormat.short.rawValue
     @AppStorage("showFooterClockOnlyWhenFullScreen") private var showFooterClockOnlyWhenFullScreen = false
     @AppStorage("plainTextMode") private var plainTextMode = false
+    // AI provenance is hidden until the feature is designed — the control is
+    // gone from Settings, so this stays false and the editor's signature pill
+    // and delete-protection never engage. Kept declared so restoring the
+    // feature is one Toggle again, not a re-wiring.
     @AppStorage("protectAISignature") private var protectAISignature = false
     @AppStorage("showBacklinks") private var showBacklinks = true
     @AppStorage("hideOnFocusLoss") private var hideOnFocusLoss = false
@@ -202,10 +206,6 @@ struct GeneralSettingsView: View {
                 }
                 Toggle("Plain-text mode (ignore markdown formatting)", isOn: $plainTextMode)
                 Toggle("Show interlinks in footer", isOn: $showBacklinks)
-                Toggle("Protect AI signatures from deletion", isOn: $protectAISignature)
-                Text("When on, deleting a note's ⎈ AI-provenance line here puts it right back. Editing the file in any other app still removes it.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
             }
 
             Section("Footer Clock") {

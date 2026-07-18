@@ -4,6 +4,8 @@ import UniformTypeIdentifiers
 
 struct ThemeSettingsView: View {
     @AppStorage("theme") private var theme = Theme()
+    @AppStorage("themePair") private var themePairRaw = ""
+    @Environment(\.colorScheme) private var colorScheme
     @AppStorage("backgroundBlurStrength") private var backgroundBlurStrengthRaw = BlurStrength.strong.rawValue
     @AppStorage("appearanceMode") private var appearanceModeRaw = AppearanceMode.system.rawValue
     @AppStorage("listDensity") private var listDensityRaw = ListDensity.compact.rawValue
@@ -87,8 +89,32 @@ struct ThemeSettingsView: View {
         savedThemesStorage.themes.append(NamedTheme(name: "My Theme", theme: theme))
     }
 
-    private func applyTheme(_ candidate: Theme) {
-        theme = candidate
+    private func applyTheme(_ entry: GalleryEntry) {
+        if let dark = entry.darkTheme {
+            let pair = ThemePair(light: entry.theme, dark: dark)
+            themePairRaw = pair.rawValue
+            theme = pair.face(dark: colorScheme == .dark)
+        } else {
+            themePairRaw = ""
+            theme = entry.theme
+        }
+    }
+
+    /// Font and size aren't light/dark concerns, so changing one shouldn't
+    /// cost you adaptivity the way editing a color does. Applied to both
+    /// faces instead, or the next appearance flip would revert it.
+    private func propagateToBothFaces(_ mutate: (inout Theme) -> Void) {
+        guard var pair = ThemePair(rawValue: themePairRaw) else { return }
+        mutate(&pair.light)
+        mutate(&pair.dark)
+        themePairRaw = pair.rawValue
+    }
+
+    /// Editing any single color means the user is authoring their own theme,
+    /// so the adaptive pair is dropped — otherwise the next appearance flip
+    /// would silently discard the edit.
+    private func stopAdapting() {
+        themePairRaw = ""
     }
 
     private func saveCurrentAsNewTheme(named name: String) {
@@ -347,6 +373,8 @@ struct ThemeSettingsView: View {
         let id: String
         let name: String
         let theme: Theme
+        /// Non-nil for an adaptive entry — `theme` is its light face.
+        let darkTheme: Theme?
         // Only set for a user-saved theme — gates the full rename/duplicate/
         // delete context menu, which built-in presets and System Default
         // don't get (presets are read-only; System Default is just "off").
@@ -354,9 +382,9 @@ struct ThemeSettingsView: View {
     }
 
     private var galleryEntries: [GalleryEntry] {
-        var entries = [GalleryEntry(id: "system-default", name: "System Default", theme: Theme(), namedTheme: nil)]
-        entries += Theme.presets.map { GalleryEntry(id: $0.id.uuidString, name: $0.name, theme: $0.theme, namedTheme: nil) }
-        entries += savedThemesStorage.themes.map { GalleryEntry(id: $0.id.uuidString, name: $0.name, theme: $0.theme, namedTheme: $0) }
+        var entries = [GalleryEntry(id: "system-default", name: "System Default", theme: Theme(), darkTheme: nil, namedTheme: nil)]
+        entries += Theme.presets.map { GalleryEntry(id: $0.id.uuidString, name: $0.name, theme: $0.theme, darkTheme: $0.darkTheme, namedTheme: nil) }
+        entries += savedThemesStorage.themes.map { GalleryEntry(id: $0.id.uuidString, name: $0.name, theme: $0.theme, darkTheme: $0.darkTheme, namedTheme: $0) }
         return entries
     }
 
@@ -373,25 +401,34 @@ struct ThemeSettingsView: View {
     private func themeSwatch(_ entry: GalleryEntry) -> some View {
         // Uniform now that System Default is just Theme() — a theme with
         // every color nil — rather than a special isCustom-flag state.
-        let isSelected = theme == entry.theme
+        // An adaptive entry is "selected" when its pair is the stored one —
+        // comparing against `theme` would fail, since only one of its two
+        // faces is ever live.
+        let preview = entry.darkTheme.map { colorScheme == .dark ? $0 : entry.theme } ?? entry.theme
+        let isSelected: Bool = {
+            if let dark = entry.darkTheme {
+                return themePairRaw == ThemePair(light: entry.theme, dark: dark).rawValue
+            }
+            return themePairRaw.isEmpty && theme == entry.theme
+        }()
         VStack(spacing: 4) {
             ZStack(alignment: .topTrailing) {
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(Color(nsColor: entry.theme.resolvedBackgroundColor))
+                    .fill(Color(nsColor: preview.resolvedBackgroundColor))
                     .frame(width: 64, height: 44)
                     .overlay(
                         Text("Aa")
                             .font(.system(size: 15, weight: .semibold))
-                            .foregroundStyle(Color(nsColor: entry.theme.resolvedTextColor))
+                            .foregroundStyle(Color(nsColor: preview.resolvedTextColor))
                     )
                     .overlay(
                         RoundedRectangle(cornerRadius: 8, style: .continuous)
                             .strokeBorder(isSelected ? Color.accentColor : Color.secondary.opacity(0.25), lineWidth: isSelected ? 2 : 1)
                     )
                 HStack(spacing: 3) {
-                    Circle().fill(Color(nsColor: entry.theme.resolvedLinkColor)).frame(width: 6, height: 6)
-                    Circle().fill(Color(nsColor: entry.theme.resolvedTagColor)).frame(width: 6, height: 6)
-                    Circle().fill(Color(nsColor: entry.theme.resolvedDueColor)).frame(width: 6, height: 6)
+                    Circle().fill(Color(nsColor: preview.resolvedLinkColor)).frame(width: 6, height: 6)
+                    Circle().fill(Color(nsColor: preview.resolvedTagColor)).frame(width: 6, height: 6)
+                    Circle().fill(Color(nsColor: preview.resolvedDueColor)).frame(width: 6, height: 6)
                 }
                 .padding(4)
             }
@@ -402,7 +439,7 @@ struct ThemeSettingsView: View {
                 .frame(width: 68)
         }
         .contentShape(Rectangle())
-        .onTapGesture { applyTheme(entry.theme) }
+        .onTapGesture { applyTheme(entry) }
         .contextMenu {
             if let named = entry.namedTheme {
                 Button("Export…") { export(named) }
@@ -497,14 +534,20 @@ struct ThemeSettingsView: View {
     private var fontNameBinding: Binding<String> {
         Binding(
             get: { theme.fontName },
-            set: { theme.fontName = $0 }
+            set: { name in
+                theme.fontName = name
+                propagateToBothFaces { $0.fontName = name }
+            }
         )
     }
 
     private var fontSizeBinding: Binding<Double> {
         Binding(
             get: { theme.fontSize },
-            set: { theme.fontSize = $0 }
+            set: { size in
+                theme.fontSize = size
+                propagateToBothFaces { $0.fontSize = size }
+            }
         )
     }
 
@@ -523,9 +566,15 @@ struct ThemeSettingsView: View {
             label,
             selection: Binding(
                 get: { theme[keyPath: keyPath]?.color ?? Color(nsColor: defaultColor()) },
-                set: { theme[keyPath: keyPath] = CodableColor(nsColor: NSColor($0)) }
+                set: {
+                    stopAdapting()
+                    theme[keyPath: keyPath] = CodableColor(nsColor: NSColor($0))
+                }
             ),
-            onReset: { theme[keyPath: keyPath] = nil },
+            onReset: {
+                stopAdapting()
+                theme[keyPath: keyPath] = nil
+            },
             isDefault: theme[keyPath: keyPath] == nil
         )
     }

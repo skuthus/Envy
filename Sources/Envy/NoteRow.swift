@@ -26,15 +26,9 @@ struct NoteRow: View {
                     .font(.system(size: 10 * interfaceFontScale))
                     .foregroundStyle(textColor ?? Color.secondary)
             }
-            // The ⎈ mark surfaces a note an AI connector signed — "marked
-            // as," a self-attested claim Envy only reads, never verifies
-            // (see AIProvenance). Same helm glyph the signature line uses.
-            if note.aiProvenance != .none {
-                Text("⎈")
-                    .font(.system(size: 11 * interfaceFontScale))
-                    .foregroundStyle(textColor ?? Color.secondary)
-                    .help(note.aiProvenance == .created ? "Marked as AI-created" : "Marked as AI-edited")
-            }
+            // The ⎈ AI-provenance mark is hidden until the feature is
+            // designed. Note.aiProvenance still parses it, so restoring the
+            // badge is re-adding this block — nothing downstream was removed.
             // layoutPriority(1) so the title always keeps its full width —
             // the preview (default priority) is what gives way and
             // truncates when the row is too narrow for both, never the

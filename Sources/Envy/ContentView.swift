@@ -78,6 +78,12 @@ struct ContentView: View {
     @FocusState var focusedField: FocusField?
     @AppStorage("layoutMode") var layoutModeRaw = LayoutMode.vertical.rawValue
     @AppStorage("theme") var theme = Theme()
+    /// Non-empty while an adaptive theme is selected. The pair is the source
+    /// of truth; `theme` above is the face currently in force, rewritten
+    /// whenever the appearance flips so every existing consumer keeps
+    /// reading one plain resolved Theme and needs no changes at all.
+    @AppStorage("themePair") var themePairRaw = ""
+    @Environment(\.colorScheme) private var colorScheme
     @AppStorage("backgroundBlurStrength") var backgroundBlurStrengthRaw = BlurStrength.strong.rawValue
     @AppStorage("showNotePreview") var showNotePreview = false
     @AppStorage("showDateModified") var showDateModified = true
@@ -531,9 +537,24 @@ struct ContentView: View {
         ))
     }
 
+    /// Rewrites the live theme to the face matching the current appearance.
+    /// No-op unless an adaptive theme is selected, so a user who picked a
+    /// fixed theme (or customised one by hand) is never overridden.
+    private func syncAdaptiveTheme() {
+        guard let pair = ThemePair(rawValue: themePairRaw) else { return }
+        let face = pair.face(dark: colorScheme == .dark)
+        if theme != face { theme = face }
+    }
+
     var body: some View {
         notificationHandledLayout
+        // An adaptive theme has to be resolved on every appearance change,
+        // not only when it's picked. Doing it here rather than inside each
+        // resolved* accessor keeps a Theme a plain snapshot of colors — the
+        // pairing lives one level up, where the appearance is known.
+        .onChange(of: colorScheme) { _, _ in syncAdaptiveTheme() }
         .onAppear {
+            syncAdaptiveTheme()
             Task { await recomputeFilteredNotes() }
             recomputeInterlinks()
             recomputeNoteTitles()
