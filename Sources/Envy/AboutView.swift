@@ -72,7 +72,7 @@ struct AboutView: View {
     private var titleText: AttributedString {
         var attributed = AttributedString("Envy")
         if let range = attributed.range(of: "nv") {
-            attributed[range].foregroundColor = EnvyLogoView.markColor
+            attributed[range].foregroundColor = EnvyBrand.mark
         }
         return attributed
     }

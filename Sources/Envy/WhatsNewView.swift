@@ -30,7 +30,7 @@ struct WhatsNewView: View {
             VStack(spacing: 10) {
                 Image(systemName: "point.3.connected.trianglepath.dotted")
                     .font(.system(size: 44))
-                    .foregroundStyle(EnvyLogoView.irisColor)
+                    .foregroundStyle(EnvyBrand.iris)
                 Text("See How Your Notes Connect")
                     .font(.title3.bold())
                 Text("The footer's backlinks panel is now Interlinks — side by side it shows the notes this one links out to, the notes that link back to it, and \u{201C}Suggested\u{201D} links: other notes you've mentioned by name but haven't linked yet, each a click away from wiring up. Renaming a note now updates every link to it across your vault too, so nothing breaks. Plus a new interface text-size slider, and early support for recognizing AI-authored notes.")
@@ -48,7 +48,7 @@ struct WhatsNewView: View {
             }
             .padding(18)
             .frame(maxWidth: .infinity)
-            .background(EnvyLogoView.irisColor.opacity(0.1))
+            .background(EnvyBrand.iris.opacity(0.1))
             .clipShape(RoundedRectangle(cornerRadius: 12))
 
             Button("Continue") {

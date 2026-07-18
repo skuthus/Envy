@@ -13,11 +13,6 @@ struct EnvyApp: App {
     // Reading this makes `body` re-evaluate (and thus re-register every
     // menu shortcut below) whenever the user changes one in Settings.
     @AppStorage(ShortcutPreferences.storageKey) private var customShortcutsRaw = ""
-    // startingUpdater: true begins Sparkle's own scheduled background check
-    // immediately — harmless for EnvyTest too, since its Info.plist has no
-    // SUFeedURL/SUPublicEDKey, so Sparkle has nothing to check against and
-    // stays quiet rather than erroring.
-    private let updaterController = SPUStandardUpdaterController(startingUpdater: true, updaterDelegate: nil, userDriverDelegate: nil)
 
     private func binding(for action: ShortcutAction) -> ShortcutBinding {
         ShortcutPreferences.binding(for: action, raw: customShortcutsRaw)
@@ -37,7 +32,7 @@ struct EnvyApp: App {
                     openWindow(id: "about")
                 }
                 Button("Check for Updates…") {
-                    updaterController.checkForUpdates(nil)
+                    Updater.shared.checkForUpdates()
                 }
             }
             CommandGroup(replacing: .newItem) {

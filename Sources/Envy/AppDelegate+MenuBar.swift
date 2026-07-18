@@ -29,103 +29,161 @@ private let eyeCornerRight = NSPoint(x: 15.5, y: 9.0)
 private let lowerRimControlLeft = NSPoint(x: 6, y: 4.3)
 private let lowerRimControlRight = NSPoint(x: 12, y: 4.3)
 private let pupilRect = NSRect(x: 6.5, y: 6.3, width: 5, height: 5)
-private let pupilColor = NSColor(red: 0.194, green: 0.534, blue: 0.222, alpha: 1)
+// Read from the mark rather than transcribed — see EnvyLogoView.
+private let pupilColor = EnvyBrand.irisNSColor
+// The dark centre, at the mark's own pupil-to-iris ratio (28/70). Two jobs:
+// it matches the logo, and it stops the green disc reading as a flat blob at
+// 18pt — the eye needs something to look *with*.
+private let irisDotRect = pupilRect.insetBy(dx: pupilRect.width * 0.3, dy: pupilRect.height * 0.3)
+private let irisDotColor = EnvyBrand.fieldNSColor
 
-// Just the eyelid crease, traced along the exact same line and
-// curvature as openEyeImage's lower rim below — an eyelid closes down
-// to meet the lower lid, not the vertical center of the glyph's
-// bounding box. Reads as a shut eyelid rather than a "disabled" slashed
-// eye. A `let`, not a function recomputed on every call —
-// NSImage(size:flipped:drawingHandler:) re-invokes its drawing block on
-// every actual draw regardless of when the NSImage itself was built, so
-// caching the instance loses nothing: menuBarOutlineColor's
-// light/dark-adaptive resolution still happens at real draw time.
-private let closedEyeImage: NSImage = {
-    let image = NSImage(size: NSSize(width: 18, height: 18), flipped: false) { rect in
+/// The three lid positions the status item can show.
+private enum EyeState {
+    /// Just the eyelid crease, traced along the exact same line and curvature
+    /// as the open eye's lower rim — an eyelid closes down to meet the lower
+    /// lid, not the vertical center of the glyph's bounding box. Reads as a
+    /// shut eye rather than a "disabled" slashed one.
+    case closed
+    /// The upper rim mirrored above the same corner line the lower rim sits
+    /// on, plus the iris and its dark centre.
+    case open
+    /// A drooping upper lid, much closer to the lower rim, for a sleepy
+    /// squint while the pinned-note popup is open instead of the main window.
+    /// The iris is the exact same circle as the open eye, just clipped to
+    /// this shallower lens, so it reads as the same eye partway through
+    /// closing rather than a differently-sized one.
+    case squint
+}
+
+/// An arc above the eye in the mark's own red, shown when an update is
+/// waiting. The brow is the most recognizable part of the app icon, so it
+/// reads as this app having something to say — where a generic dot would
+/// just be one more badge in a menu bar full of them.
+///
+/// Sits clear of the lens rather than touching it: red against the green
+/// iris is a complementary pair, and they shimmer where they meet.
+private func drawUpdateBrow() {
+    // Proportioned from the app icon rather than judged by eye. Mapping the
+    // icon's 512-unit space onto this 18pt canvas by eye width (13/432 =
+    // 0.0301) gives a brow 10.35pt wide, an arc rise of 2.59, and a 1.75
+    // stroke — matching the icon's 0.25 rise-to-width ratio exactly, so the
+    // curve reads at the same angle.
+    //
+    // The one deliberate departure is vertical. In the icon the brow clears
+    // the eye by 8 units, which is 0.24pt here — and this eye is a stroked
+    // outline glyph rather than a filled shape, so its own 2pt rim would
+    // swallow a brow set that close. It sits higher instead, keeping the
+    // silhouette legible at menu bar size.
+    let width: CGFloat = 10.35
+    let rise: CGFloat = 2.59
+    let centreX: CGFloat = 9.0
+    let baseY: CGFloat = 13.9
+
+    let leftX = centreX - width / 2
+    let rightX = centreX + width / 2
+    // NSBezierPath has no quadratic method, so the icon's single quadratic
+    // control is raised to the equivalent cubic pair.
+    let controlY = baseY + rise * 2 / 3
+
+    let brow = NSBezierPath()
+    brow.lineWidth = 1.75
+    brow.lineCapStyle = .round
+    brow.move(to: NSPoint(x: leftX, y: baseY))
+    brow.curve(
+        to: NSPoint(x: rightX, y: baseY),
+        controlPoint1: NSPoint(x: leftX + (centreX - leftX) * 2 / 3, y: controlY),
+        controlPoint2: NSPoint(x: rightX + (centreX - rightX) * 2 / 3, y: controlY)
+    )
+    EnvyBrand.markNSColor.setStroke()
+    brow.stroke()
+}
+
+// One factory rather than three near-identical drawing closures — the brow
+// variants would otherwise have doubled an already-duplicated block.
+//
+// The images are built once and cached, which loses nothing:
+// NSImage(size:flipped:drawingHandler:) re-invokes its drawing block on every
+// actual draw regardless of when the NSImage was built, so
+// menuBarOutlineColor's light/dark-adaptive resolution still happens at real
+// draw time.
+private func makeEyeImage(_ state: EyeState, brow showsBrow: Bool) -> NSImage {
+    let image = NSImage(size: NSSize(width: 18, height: 18), flipped: false) { _ in
         let path = NSBezierPath()
         path.lineCapStyle = .round
         path.lineWidth = eyeLineWidth
         path.move(to: eyeCornerLeft)
         path.curve(to: eyeCornerRight, controlPoint1: lowerRimControlLeft, controlPoint2: lowerRimControlRight)
 
+        switch state {
+        case .closed:
+            break
+        case .open:
+            let upperControlLeft = NSPoint(x: lowerRimControlLeft.x, y: 2 * eyeCornerLeft.y - lowerRimControlLeft.y)
+            let upperControlRight = NSPoint(x: lowerRimControlRight.x, y: 2 * eyeCornerRight.y - lowerRimControlRight.y)
+            path.curve(to: eyeCornerLeft, controlPoint1: upperControlRight, controlPoint2: upperControlLeft)
+        case .squint:
+            path.curve(
+                to: eyeCornerLeft,
+                controlPoint1: NSPoint(x: lowerRimControlRight.x, y: 9.6),
+                controlPoint2: NSPoint(x: lowerRimControlLeft.x, y: 9.6)
+            )
+        }
+
+        if state != .closed {
+            // White "sclera" across the whole lens (the path closes back on
+            // itself via the two curves above), so the iris doesn't float
+            // directly on whatever is behind the menu bar.
+            NSColor.white.setFill()
+            path.fill()
+
+            NSGraphicsContext.saveGraphicsState()
+            path.addClip()
+            pupilColor.setFill()
+            NSBezierPath(ovalIn: pupilRect).fill()
+            irisDotColor.setFill()
+            NSBezierPath(ovalIn: irisDotRect).fill()
+            NSGraphicsContext.restoreGraphicsState()
+        }
+
         menuBarOutlineColor.setStroke()
         path.stroke()
+
+        if showsBrow { drawUpdateBrow() }
         return true
     }
     image.isTemplate = false
     return image
-}()
+}
 
-// A lens (upper rim mirrored above the same corner line the lower rim
-// sits on) plus a solid pupil in the brand's iris green
-// (EnvyLogoView.irisColor) — the one deliberately non-monochrome
-// accent on an otherwise adaptive icon.
-private let openEyeImage: NSImage = {
-    let image = NSImage(size: NSSize(width: 18, height: 18), flipped: false) { rect in
-        let path = NSBezierPath()
-        path.lineCapStyle = .round
-        path.lineWidth = eyeLineWidth
-        path.move(to: eyeCornerLeft)
-        path.curve(to: eyeCornerRight, controlPoint1: lowerRimControlLeft, controlPoint2: lowerRimControlRight)
-        let upperControlLeft = NSPoint(x: lowerRimControlLeft.x, y: 2 * eyeCornerLeft.y - lowerRimControlLeft.y)
-        let upperControlRight = NSPoint(x: lowerRimControlRight.x, y: 2 * eyeCornerRight.y - lowerRimControlRight.y)
-        path.curve(to: eyeCornerLeft, controlPoint1: upperControlRight, controlPoint2: upperControlLeft)
+/// Mirrors Updater.shared.updatePending for this file, whose icon selection
+/// runs nonisolated and so can't read a main-actor singleton. Written only
+/// from the main actor, via setMenuBarUpdatePending below.
+nonisolated(unsafe) private var updateIsPending = false
 
-        // White "sclera" fill across the whole lens (path already
-        // closes back on itself via the two curves above), testing
-        // whether that reads more clearly than the pupil floating
-        // directly on whatever's behind the menu bar (wallpaper
-        // showing through, a busy notch-area background, etc.) — pure
-        // visibility experiment, not a settled design choice yet.
-        NSColor.white.setFill()
-        path.fill()
+/// Called by Updater when Sparkle finds or stops finding an update.
+@MainActor
+func setMenuBarUpdatePending(_ pending: Bool) {
+    updateIsPending = pending
+}
 
-        menuBarOutlineColor.setStroke()
-        path.stroke()
-
-        let pupil = NSBezierPath(ovalIn: pupilRect)
-        pupilColor.setFill()
-        pupil.fill()
-        return true
+/// The only way any code should pick an eye image. Choosing between the
+/// plain and brow variants at each call site is what let the indicator vanish
+/// during a blink, a pinned-note reveal, and a pinned-note close — three of
+/// six assignments simply didn't ask.
+private func eyeImage(_ state: EyeState) -> NSImage {
+    switch state {
+    case .open:   return updateIsPending ? openEyeUpdateImage : openEyeImage
+    case .squint: return updateIsPending ? squintEyeUpdateImage : squintEyeImage
+    case .closed: return updateIsPending ? closedEyeUpdateImage : closedEyeImage
     }
-    image.isTemplate = false
-    return image
-}()
+}
 
-// A drooping upper eyelid — much closer to the lower rim than
-// openEyeImage's fully mirrored one — for a sleepy/suspicious squint,
-// shown while the pinned note popup is open instead of the full app
-// window. The pupil is the exact same circle as the fully open eye,
-// just clipped to this shallower lens, so it reads as the same eye
-// partway through closing rather than a differently-sized iris.
-private let squintEyeImage: NSImage = {
-    let image = NSImage(size: NSSize(width: 18, height: 18), flipped: false) { rect in
-        let path = NSBezierPath()
-        path.lineCapStyle = .round
-        path.lineWidth = eyeLineWidth
-        path.move(to: eyeCornerLeft)
-        path.curve(to: eyeCornerRight, controlPoint1: lowerRimControlLeft, controlPoint2: lowerRimControlRight)
-        let squintUpperControlLeft = NSPoint(x: lowerRimControlLeft.x, y: 9.6)
-        let squintUpperControlRight = NSPoint(x: lowerRimControlRight.x, y: 9.6)
-        path.curve(to: eyeCornerLeft, controlPoint1: squintUpperControlRight, controlPoint2: squintUpperControlLeft)
-
-        NSColor.white.setFill()
-        path.fill()
-
-        NSGraphicsContext.saveGraphicsState()
-        path.addClip()
-        let pupil = NSBezierPath(ovalIn: pupilRect)
-        pupilColor.setFill()
-        pupil.fill()
-        NSGraphicsContext.restoreGraphicsState()
-
-        menuBarOutlineColor.setStroke()
-        path.stroke()
-        return true
-    }
-    image.isTemplate = false
-    return image
-}()
+private let closedEyeImage = makeEyeImage(.closed, brow: false)
+private let openEyeImage = makeEyeImage(.open, brow: false)
+private let squintEyeImage = makeEyeImage(.squint, brow: false)
+private let closedEyeUpdateImage = makeEyeImage(.closed, brow: true)
+private let openEyeUpdateImage = makeEyeImage(.open, brow: true)
+private let squintEyeUpdateImage = makeEyeImage(.squint, brow: true)
 
 extension AppDelegate {
     func setUpStatusItem() {
@@ -136,6 +194,18 @@ extension AppDelegate {
             button.sendAction(on: [.leftMouseUp, .rightMouseUp])
         }
         statusItem = item
+        // QA affordance: the update indicator is otherwise only visible when
+        // a real release is waiting, which makes it impossible to look at
+        // while designing it. Read once here, so unsetting the key and
+        // relaunching clears it.
+        //
+        //   defaults write com.skylerschoos.envy.test debugForceUpdateBadge -bool YES
+        //
+        // Safe in production: nothing sets this key, and Sparkle overwrites
+        // the flag on its next check either way.
+        if UserDefaults.standard.bool(forKey: "debugForceUpdateBadge") {
+            updateIsPending = true
+        }
         updateStatusItemIcon()
         scheduleNextBlink()
     }
@@ -182,11 +252,11 @@ extension AppDelegate {
     // popup is what's actually showing right now.
     @MainActor
     private func closeEyeBriefly() {
-        statusItem?.button?.image = squintEyeImage
+        applyStatusIcon(.squint)
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
-            self?.statusItem?.button?.image = closedEyeImage
+            self?.applyStatusIcon(.closed)
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
-                self?.statusItem?.button?.image = squintEyeImage
+                self?.applyStatusIcon(.squint)
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
                     self?.updateStatusItemIcon()
                 }
@@ -203,12 +273,23 @@ extension AppDelegate {
     // that changes mainWindow's visibility.
     func updateStatusItemIcon() {
         if mainWindow?.isVisible == true {
-            statusItem?.button?.image = openEyeImage
+            applyStatusIcon(.open)
         } else if pinnedNotePanel?.isVisible == true {
-            statusItem?.button?.image = squintEyeImage
+            applyStatusIcon(.squint)
         } else {
-            statusItem?.button?.image = closedEyeImage
+            applyStatusIcon(.closed)
         }
+    }
+
+    /// Sets the image and the tooltip together. Every path that touches the
+    /// status item goes through here, including the blink's intermediate
+    /// frames — otherwise a frame drawn from a plain image drops the update
+    /// indicator for as long as it's on screen.
+    fileprivate func applyStatusIcon(_ state: EyeState) {
+        statusItem?.button?.image = eyeImage(state)
+        // The only affordance explaining the red arc — the icon can't caption
+        // itself, and a coloured mark with no explanation is just noise.
+        statusItem?.button?.toolTip = updateIsPending ? "Envy update available" : nil
     }
 
     /// The pinned-note panel's windowWillClose needs the icon settled
@@ -216,7 +297,7 @@ extension AppDelegate {
     /// that moment) — see the caller in AppDelegate+PinnedNote. Lives here
     /// because the eye images are file-scoped to this file.
     func settleStatusIconAfterPinnedPanelClose() {
-        statusItem?.button?.image = (mainWindow?.isVisible == true) ? openEyeImage : closedEyeImage
+        applyStatusIcon(mainWindow?.isVisible == true ? .open : .closed)
     }
 
     /// Left-click opens the pinned note if one's actually pinned, or

@@ -24,6 +24,7 @@ struct GeneralSettingsView: View {
     // gone from Settings, so this stays false and the editor's signature pill
     // and delete-protection never engage. Kept declared so restoring the
     // feature is one Toggle again, not a re-wiring.
+    @ObservedObject private var updater = Updater.shared
     @AppStorage("protectAISignature") private var protectAISignature = false
     @AppStorage("showBacklinks") private var showBacklinks = true
     @AppStorage("hideOnFocusLoss") private var hideOnFocusLoss = false
@@ -100,6 +101,16 @@ struct GeneralSettingsView: View {
     /// all of them at once is what the `trash:` search operator is for.
     private var trashURL: URL {
         indexURL.appendingPathComponent(".trash", isDirectory: true)
+    }
+
+    /// Sparkle reports nil until the first check completes, and "Never"
+    /// is more useful to someone debugging why they missed a release than a
+    /// placeholder date would be.
+    private var lastCheckedDescription: String {
+        guard let date = updater.lastUpdateCheckDate else { return "Last checked: never" }
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .full
+        return "Last checked \(formatter.localizedString(for: date, relativeTo: Date()))"
     }
 
     var body: some View {
@@ -206,6 +217,20 @@ struct GeneralSettingsView: View {
                 }
                 Toggle("Plain-text mode (ignore markdown formatting)", isOn: $plainTextMode)
                 Toggle("Show interlinks in footer", isOn: $showBacklinks)
+            }
+
+            Section("Updates") {
+                Toggle("Check for updates automatically", isOn: Binding(
+                    get: { updater.automaticallyChecksForUpdates },
+                    set: { updater.automaticallyChecksForUpdates = $0 }
+                ))
+                HStack {
+                    Text(lastCheckedDescription)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Button("Check Now") { updater.checkForUpdates() }
+                }
             }
 
             Section("Footer Clock") {
