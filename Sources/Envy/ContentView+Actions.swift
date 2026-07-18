@@ -300,17 +300,22 @@ extension ContentView {
         focusedField = .search
     }
 
-    /// Blanks the title text rather than toggling titleVisibility — with a
-    /// unified/fullSizeContentView toolbar, .hidden makes AppKit recompute the
-    /// toolbar's space distribution and the trailing items visibly jump toward
-    /// center. Keeping the title slot reserved (just empty) avoids that.
+    /// The window carries no title text. The app's own chrome already names
+    /// it — the icon in the Dock, the note title in the editor header — so a
+    /// literal "Envy" beside the traffic lights is a label for something the
+    /// user is already looking at.
+    ///
+    /// Blanked rather than hidden via titleVisibility: with a unified,
+    /// fullSizeContentView toolbar, .hidden makes AppKit recompute the
+    /// toolbar's space distribution and the trailing items visibly jump
+    /// toward center. Keeping the slot reserved but empty avoids that.
+    ///
+    /// Re-applied rather than set once, because SwiftUI reasserts the title
+    /// declared on WindowGroup after its own deferred window setup.
     func applyWindowTitleVisibility() {
         guard let window = NSApp.windows.first else { return }
-        if cachedWindowTitle == nil {
-            cachedWindowTitle = window.title.isEmpty ? "Envy" : window.title
-        }
         window.titleVisibility = .visible
-        window.title = cachedWindowTitle ?? "Envy"
+        window.title = ""
     }
 
     // MARK: - First launch & updates

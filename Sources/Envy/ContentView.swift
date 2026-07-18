@@ -63,7 +63,6 @@ struct ContentView: View {
     @State var selectionAnchorID: String?
     @State var renamingNote: Note?
     @State var renameText = ""
-    @State var cachedWindowTitle: String?
     @State var editorWordCount = 0
     @State var editorCharacterCount = 0
     @State var backlinksExpanded = false

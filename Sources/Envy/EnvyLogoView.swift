@@ -1,23 +1,28 @@
 import SwiftUI
 
-/// The app mark: a purple, scaly monster's eye — a green iris (the
-/// "green-eyed monster" of envy) with a V-chevron pupil (a nod to
-/// Notational Velocity). Mirrors the AppKit rendering in
-/// Sources/IconGenerator/main.swift, which produces the packaged .icns —
-/// keep the two in sync if either changes.
+/// The app mark: a lowered red brow over a cream almond eye with a green
+/// iris, on warm charcoal — the "green-eyed monster" of envy, drawn as five
+/// flat shapes with no gradient, bevel, shadow or texture.
+///
+/// Mirrors the AppKit rendering in Sources/IconGenerator/main.swift, which
+/// produces the packaged .icns — keep the two in sync if either changes.
+/// Geometry is authored in the same 512-unit space as the design's SVG, and
+/// needs no y-axis conversion here: SwiftUI's Canvas is top-down like SVG,
+/// where AppKit is bottom-up.
 struct EnvyLogoView: View {
     var size: CGFloat = 88
 
-    static let irisColor = Color(red: 0.243, green: 0.667, blue: 0.278)
+    /// The green other views borrow — the tag/checkbox colour, and the only
+    /// hue in the mark that also appears in the app's own chrome. Reserved
+    /// for things that are literally that green somewhere in the UI.
+    static let irisColor = Color(red: 0x30 / 255, green: 0xD1 / 255, blue: 0x58 / 255)
 
-    private let badgeTop = Color(red: 0.408, green: 0.204, blue: 0.545)
-    private let badgeBottom = Color(red: 0.220, green: 0.098, blue: 0.322)
-    private let scaleColorLight = Color(red: 0.482, green: 0.278, blue: 0.643).opacity(0.32)
-    private let scaleColorDark = Color(red: 0.161, green: 0.067, blue: 0.235).opacity(0.28)
-    private let eyeColor = Color(red: 0.9608, green: 0.9608, blue: 0.9608)
-    private let irisMidColor = Color(red: 0.086, green: 0.318, blue: 0.129)
-    private let irisCenterColor = Color(red: 0.02, green: 0.035, blue: 0.02)
-    private let irisRimColor = Color(red: 0.035, green: 0.098, blue: 0.043)
+    /// The brand red. Carries the NV of the wordmark, here and on the site —
+    /// the Notational Velocity lineage the name is built around.
+    static let markColor = Color(red: 0xFF / 255, green: 0x4B / 255, blue: 0x39 / 255)
+
+    private let fieldColor = Color(red: 0x28 / 255, green: 0x25 / 255, blue: 0x20 / 255)
+    private let scleraColor = Color(red: 0xFA / 255, green: 0xFA / 255, blue: 0xF8 / 255)
 
     var body: some View {
         Canvas { context, canvasSize in
@@ -27,128 +32,48 @@ struct EnvyLogoView: View {
     }
 
     private func draw(in context: GraphicsContext, canvasSize: CGSize) {
-        let size = min(canvasSize.width, canvasSize.height)
-        let badgeRect = CGRect(x: 0, y: 0, width: size, height: size)
-        let badgePath = Path(roundedRect: badgeRect, cornerRadius: size * 0.225)
+        let side = min(canvasSize.width, canvasSize.height)
+        // Everything below is written in 512-unit design coordinates.
+        let s = side / 512
+        func p(_ x: CGFloat, _ y: CGFloat) -> CGPoint { CGPoint(x: x * s, y: y * s) }
 
-        context.drawLayer { ctx in
-            ctx.clip(to: badgePath)
-            ctx.fill(
-                Path(badgeRect),
-                with: .linearGradient(
-                    Gradient(colors: [badgeTop, badgeBottom]),
-                    startPoint: CGPoint(x: size / 2, y: 0),
-                    endPoint: CGPoint(x: size / 2, y: size)
-                )
-            )
+        // Field. 22.37% corner radius is the macOS icon proportion — a
+        // circular arc, not Apple's continuous curve, so it reads a touch
+        // tighter than a system-drawn one.
+        let field = Path(roundedRect: CGRect(x: 0, y: 0, width: side, height: side),
+                         cornerRadius: side * 0.2237)
+        context.fill(field, with: .color(fieldColor))
 
-            // Scaly texture: overlapping rows of U-shaped scales, each row
-            // offset by half a scale-width from the one below. See the
-            // AppKit version for the full explanation of the tiling.
-            let cols = 15
-            let rowHeight = size / 17
-            let scaleWidth = size / CGFloat(cols) * 1.15
-            let scaleRadius = scaleWidth / 2
+        // Brow: a stroked arc with round caps, so it holds an even thickness
+        // end to end. An outlined crescent would taper to nothing at its
+        // tips, which is where small sizes lose it first.
+        var brow = Path()
+        brow.move(to: p(84, 182))
+        brow.addQuadCurve(to: p(428, 182), control: p(256, 96))
+        context.stroke(
+            brow,
+            with: .color(Self.markColor),
+            style: StrokeStyle(lineWidth: 58 * s, lineCap: .round)
+        )
 
-            var row = -1
-            while CGFloat(row) * rowHeight < size + rowHeight * 2 {
-                let y = CGFloat(row) * rowHeight
-                let offsetX = (row % 2 == 0) ? 0 : -scaleWidth / 2
-                let color = (row % 2 == 0) ? scaleColorDark : scaleColorLight
-                var col = -2
-                while CGFloat(col) * scaleWidth + offsetX < size + scaleWidth * 2 {
-                    let cx = CGFloat(col) * scaleWidth + offsetX + scaleRadius
-                    var scalePath = Path()
-                    scalePath.move(to: CGPoint(x: cx - scaleRadius, y: y))
-                    scalePath.addQuadCurve(
-                        to: CGPoint(x: cx + scaleRadius, y: y),
-                        control: CGPoint(x: cx, y: y + scaleRadius * 1.33)
-                    )
-                    scalePath.closeSubpath()
-                    ctx.fill(scalePath, with: .color(color))
-                    col += 1
-                }
-                row += 1
-            }
-        }
+        // Almond: two quadratic curves meeting at a point. Structural, not
+        // decorative — it's the only thing keeping the red and the green
+        // from sharing an edge, and complementaries that touch shimmer.
+        var almond = Path()
+        almond.move(to: p(40, 290))
+        almond.addQuadCurve(to: p(472, 290), control: p(256, 110))
+        almond.addQuadCurve(to: p(40, 290), control: p(256, 470))
+        almond.closeSubpath()
+        context.fill(almond, with: .color(scleraColor))
 
-        // Eye (almond) shape — symmetric, with a dark eyelid outline.
-        let eyeWidth = size * 0.725
-        let eyeHeight = size * 0.4
-        let eyeRect = CGRect(x: (size - eyeWidth) / 2, y: (size - eyeHeight) / 2, width: eyeWidth, height: eyeHeight)
-        var eyePath = Path()
-        eyePath.move(to: CGPoint(x: eyeRect.minX, y: eyeRect.midY))
-        eyePath.addQuadCurve(to: CGPoint(x: eyeRect.maxX, y: eyeRect.midY), control: CGPoint(x: eyeRect.midX, y: eyeRect.minY))
-        eyePath.addQuadCurve(to: CGPoint(x: eyeRect.minX, y: eyeRect.midY), control: CGPoint(x: eyeRect.midX, y: eyeRect.maxY))
-        context.fill(eyePath, with: .color(eyeColor))
-        context.stroke(eyePath, with: .color(.black.opacity(0.75)), lineWidth: size * 0.016)
+        // Iris.
+        let irisRect = CGRect(x: (256 - 70) * s, y: (290 - 70) * s, width: 140 * s, height: 140 * s)
+        context.fill(Path(ellipseIn: irisRect), with: .color(Self.irisColor))
 
-        // Iris + pupil are clipped to the eye shape so the iris (larger than
-        // the almond's vertical opening) reads as tucked under the eyelids.
-        context.drawLayer { ctx in
-            ctx.clip(to: eyePath)
-
-            let irisDiameter = eyeHeight * 1.12
-            let irisRect = CGRect(x: (size - irisDiameter) / 2, y: (size - irisDiameter) / 2, width: irisDiameter, height: irisDiameter)
-            let irisPath = Path(ellipseIn: irisRect)
-            let irisCenter = CGPoint(x: irisRect.midX, y: irisRect.midY)
-            let irisRadius = irisDiameter / 2
-
-            ctx.fill(
-                irisPath,
-                with: .radialGradient(
-                    Gradient(stops: [
-                        .init(color: irisCenterColor, location: 0.0),
-                        .init(color: irisMidColor, location: 0.4),
-                        .init(color: Self.irisColor, location: 0.82),
-                        .init(color: irisRimColor, location: 1.0),
-                    ]),
-                    center: irisCenter,
-                    startRadius: 0,
-                    endRadius: irisRadius
-                )
-            )
-
-            // Fine radial fiber striations, clipped to the iris disc.
-            ctx.drawLayer { fiberCtx in
-                fiberCtx.clip(to: irisPath)
-                let fiberCount = 56
-                for i in 0..<fiberCount {
-                    let angle = (CGFloat(i) / CGFloat(fiberCount)) * 2 * .pi
-                    let jitter = sin(angle * 5.3) * 0.06
-                    let innerR = irisRadius * (0.18 + jitter)
-                    let outerR = irisRadius * (0.98 + jitter * 0.4)
-                    let dx = cos(angle)
-                    let dy = sin(angle)
-                    var fiber = Path()
-                    fiber.move(to: CGPoint(x: irisCenter.x + dx * innerR, y: irisCenter.y + dy * innerR))
-                    fiber.addLine(to: CGPoint(x: irisCenter.x + dx * outerR, y: irisCenter.y + dy * outerR))
-                    let isLight = i % 3 == 0
-                    let lineWidth = size * (i % 2 == 0 ? 0.0035 : 0.002)
-                    fiberCtx.stroke(
-                        fiber,
-                        with: .color(isLight ? .white.opacity(0.10) : .black.opacity(0.22)),
-                        lineWidth: lineWidth
-                    )
-                }
-            }
-
-            // Limbal ring: a crisp dark ring at the outer edge of the iris.
-            let ringPath = Path(ellipseIn: irisRect.insetBy(dx: size * 0.006, dy: size * 0.006))
-            ctx.stroke(ringPath, with: .color(.black.opacity(0.6)), lineWidth: size * 0.018)
-
-            // Pupil mark: a plain, symmetric chevron ("V").
-            let chevSize = size * 0.15
-            let chevRect = CGRect(x: (size - chevSize) / 2, y: (size - chevSize) / 2, width: chevSize, height: chevSize)
-            var chevPath = Path()
-            chevPath.move(to: CGPoint(x: chevRect.minX, y: chevRect.minY))
-            chevPath.addLine(to: CGPoint(x: chevRect.midX, y: chevRect.maxY))
-            chevPath.addLine(to: CGPoint(x: chevRect.maxX, y: chevRect.minY))
-            ctx.stroke(
-                chevPath,
-                with: .color(eyeColor),
-                style: StrokeStyle(lineWidth: size * 0.08, lineCap: .round, lineJoin: .round)
-            )
-        }
+        // Pupil is the field colour, not a separate black — it reads as a
+        // hole punched through to the background rather than as a sixth
+        // shape, which is also why changing the field doesn't flatten it.
+        let pupilRect = CGRect(x: (256 - 28) * s, y: (290 - 28) * s, width: 56 * s, height: 56 * s)
+        context.fill(Path(ellipseIn: pupilRect), with: .color(fieldColor))
     }
 }

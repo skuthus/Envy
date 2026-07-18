@@ -67,11 +67,12 @@ struct AboutView: View {
         }
     }
 
-    // "E" + green "NV" (matching the logo's iris) + "y".
+    // "E" + red "NV" + "y" — the Notational Velocity lineage carried inside
+    // the name, in the same brand red the site's wordmark uses.
     private var titleText: AttributedString {
         var attributed = AttributedString("Envy")
         if let range = attributed.range(of: "nv") {
-            attributed[range].foregroundColor = EnvyLogoView.irisColor
+            attributed[range].foregroundColor = EnvyLogoView.markColor
         }
         return attributed
     }
