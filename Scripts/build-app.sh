@@ -22,21 +22,26 @@ BINARY_PATH="$(swift build -c release --product "$APP_NAME" --show-bin-path)/$AP
 echo "==> Regenerating app icon..."
 swift build -c release --product IconGenerator
 ICON_GEN_PATH="$(swift build -c release --product IconGenerator --show-bin-path)/IconGenerator"
-mkdir -p "$ROOT_DIR/build-resources/AppIcon.iconset"
-"$ICON_GEN_PATH" "$ROOT_DIR/build-resources/icon-1024.png"
-
-SRC="$ROOT_DIR/build-resources/icon-1024.png"
 ICONSET="$ROOT_DIR/build-resources/AppIcon.iconset"
-sips -z 16 16 "$SRC" --out "$ICONSET/icon_16x16.png" > /dev/null
-sips -z 32 32 "$SRC" --out "$ICONSET/icon_16x16@2x.png" > /dev/null
-sips -z 32 32 "$SRC" --out "$ICONSET/icon_32x32.png" > /dev/null
-sips -z 64 64 "$SRC" --out "$ICONSET/icon_32x32@2x.png" > /dev/null
-sips -z 128 128 "$SRC" --out "$ICONSET/icon_128x128.png" > /dev/null
-sips -z 256 256 "$SRC" --out "$ICONSET/icon_128x128@2x.png" > /dev/null
-sips -z 256 256 "$SRC" --out "$ICONSET/icon_256x256.png" > /dev/null
-sips -z 512 512 "$SRC" --out "$ICONSET/icon_256x256@2x.png" > /dev/null
-sips -z 512 512 "$SRC" --out "$ICONSET/icon_512x512.png" > /dev/null
-cp "$SRC" "$ICONSET/icon_512x512@2x.png"
+mkdir -p "$ICONSET"
+
+# Each size is rendered natively rather than downscaled from one 1024 master:
+# the brow is a thin arc, and sips' resampling softens it into mush at 16 and
+# 32. IconGenerator compensates the geometry per size instead — see Tuning.
+render_icon() { "$ICON_GEN_PATH" "$ICONSET/$2" "$1" > /dev/null; }
+render_icon 16   icon_16x16.png
+render_icon 32   icon_16x16@2x.png
+render_icon 32   icon_32x32.png
+render_icon 64   icon_32x32@2x.png
+render_icon 128  icon_128x128.png
+render_icon 256  icon_128x128@2x.png
+render_icon 256  icon_256x256.png
+render_icon 512  icon_256x256@2x.png
+render_icon 512  icon_512x512.png
+render_icon 1024 icon_512x512@2x.png
+# Kept for anything that wants a flat master (README, website, press).
+"$ICON_GEN_PATH" "$ROOT_DIR/build-resources/icon-1024.png" 1024 > /dev/null
+
 iconutil -c icns "$ICONSET" -o "$ROOT_DIR/build-resources/AppIcon.icns"
 
 # Assembled and signed under /tmp, not $DIST_DIR — this project folder lives

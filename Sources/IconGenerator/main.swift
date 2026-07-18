@@ -1,186 +1,155 @@
 import AppKit
 import Foundation
 
-// Standalone re-implementation of EnvyLogoView's shapes using AppKit drawing —
-// executable targets can't import each other in SwiftPM, and this is a
-// build-time-only tool, so duplicating the shapes here beats restructuring
-// the app's module graph just for icon generation.
+// Draws the "Low Arc" app icon: a lowered red brow over a cream almond eye
+// with a green iris, on warm charcoal. Five flat shapes — no gradient, bevel,
+// shadow or texture — which is what lets it survive to 16px.
+//
+// Geometry is authored in a 512-unit square (the same coordinates as the
+// design's SVG) and scaled to whatever pixel size is requested, so there's
+// one source of truth for the shapes at every size.
+//
+// Coordinates are converted from the SVG's top-down y-axis to AppKit's
+// bottom-up one on the way in: y_appkit = 512 - y_svg. The almond happens to
+// be vertically symmetric about its centre, so only the brow actually moves.
+//
+// Usage: IconGenerator <output.png> [pixelSize]
 
+// MARK: - Palette
+
+let field = NSColor(srgbRed: 0x28 / 255, green: 0x25 / 255, blue: 0x20 / 255, alpha: 1)
+let brow  = NSColor(srgbRed: 0xFF / 255, green: 0x4B / 255, blue: 0x39 / 255, alpha: 1)
+let sclera = NSColor(srgbRed: 0xFA / 255, green: 0xFA / 255, blue: 0xF8 / 255, alpha: 1)
+let iris  = NSColor(srgbRed: 0x30 / 255, green: 0xD1 / 255, blue: 0x58 / 255, alpha: 1)
+
+// MARK: - Geometry (512-unit design space, AppKit orientation)
+
+let unit: CGFloat = 512
+
+/// AppKit's NSBezierPath has no quadratic-curve method, so the design's
+/// quadratic control points are raised to the equivalent cubic pair.
 func quadToCubic(from p0: NSPoint, to p1: NSPoint, control c: NSPoint) -> (NSPoint, NSPoint) {
     let cp1 = NSPoint(x: p0.x + (c.x - p0.x) * 2 / 3, y: p0.y + (c.y - p0.y) * 2 / 3)
     let cp2 = NSPoint(x: p1.x + (c.x - p1.x) * 2 / 3, y: p1.y + (c.y - p1.y) * 2 / 3)
     return (cp1, cp2)
 }
 
-let size: CGFloat = 1024
-let image = NSImage(size: NSSize(width: size, height: size))
-image.lockFocus()
+func quadPath(from p0: NSPoint, to p1: NSPoint, control c: NSPoint) -> NSBezierPath {
+    let path = NSBezierPath()
+    path.move(to: p0)
+    let (cp1, cp2) = quadToCubic(from: p0, to: p1, control: c)
+    path.curve(to: p1, controlPoint1: cp1, controlPoint2: cp2)
+    return path
+}
 
-let badgeTop = NSColor(red: 0.408, green: 0.204, blue: 0.545, alpha: 1)
-let badgeBottom = NSColor(red: 0.220, green: 0.098, blue: 0.322, alpha: 1)
-let scaleColorLight = NSColor(red: 0.482, green: 0.278, blue: 0.643, alpha: 0.32)
-let scaleColorDark = NSColor(red: 0.161, green: 0.067, blue: 0.235, alpha: 0.28)
-let eyeColor = NSColor(red: 0.9608, green: 0.9608, blue: 0.9608, alpha: 1)
-let irisEdgeColor = NSColor(red: 0.243, green: 0.667, blue: 0.278, alpha: 1)
-let irisMidColor = NSColor(red: 0.086, green: 0.318, blue: 0.129, alpha: 1)
-let irisCenterColor = NSColor(red: 0.02, green: 0.035, blue: 0.02, alpha: 1)
-let irisRimColor = NSColor(red: 0.035, green: 0.098, blue: 0.043, alpha: 1)
-let pupilColor = NSColor(red: 0.965, green: 0.988, blue: 0.949, alpha: 1)
+/// Small sizes aren't a straight downscale. Below ~32px a 58-unit stroke
+/// lands under two pixels and antialiasing eats it, the gap between brow and
+/// eye closes up, and the pupil stops being a hole and becomes grey mush. So
+/// the brow thickens and lifts, the iris grows, and the pupil is dropped
+/// entirely once it can't render as a distinct shape.
+struct Tuning {
+    var browWidth: CGFloat
+    var browLift: CGFloat
+    var irisRadius: CGFloat
+    var drawsPupil: Bool
 
-// Badge background (rounded square, matches modern macOS icon convention),
-// filled with a purple gradient and a tiled scale texture — the "green-eyed
-// monster" is purple and scaly, not just an eye on a plain background.
-let badgeRect = NSRect(x: 0, y: 0, width: size, height: size)
-let badgePath = NSBezierPath(roundedRect: badgeRect, xRadius: size * 0.225, yRadius: size * 0.225)
-
-NSGraphicsContext.saveGraphicsState()
-badgePath.addClip()
-
-let gradient = NSGradient(starting: badgeTop, ending: badgeBottom)
-gradient?.draw(in: badgeRect, angle: -90)
-
-// Scaly texture: overlapping rows of U-shaped scales (flat top edge, round
-// bend at the bottom), each row offset by half a scale-width from the one
-// below so the flat top of every scale is hidden under the scales of the
-// row above it — the classic overlapping fish/reptile scale tiling.
-let cols = 15
-let rowHeight = size / 17
-let scaleWidth = size / CGFloat(cols) * 1.15
-let scaleRadius = scaleWidth / 2
-
-// Rows/columns run well past the canvas in every direction (negative start,
-// generous end) so the tiling always covers the full badge including the
-// rounded corners — clipping to badgePath trims the excess, rather than
-// relying on the loop bounds to land exactly on the edge.
-var row = -1
-while CGFloat(row) * rowHeight < size + rowHeight * 2 {
-    let y = CGFloat(row) * rowHeight
-    let offsetX = (row % 2 == 0) ? 0 : -scaleWidth / 2
-    let color = (row % 2 == 0) ? scaleColorDark : scaleColorLight
-    var col = -2
-    while CGFloat(col) * scaleWidth + offsetX < size + scaleWidth * 2 {
-        let cx = CGFloat(col) * scaleWidth + offsetX + scaleRadius
-        let scalePath = NSBezierPath()
-        scalePath.move(to: NSPoint(x: cx + scaleRadius, y: y))
-        scalePath.appendArc(
-            withCenter: NSPoint(x: cx, y: y),
-            radius: scaleRadius,
-            startAngle: 0,
-            endAngle: 180,
-            clockwise: true
-        )
-        scalePath.close()
-        color.setFill()
-        scalePath.fill()
-        col += 1
+    static func forPixelSize(_ px: Int) -> Tuning {
+        if px <= 16 {
+            return Tuning(browWidth: 70, browLift: 14, irisRadius: 80, drawsPupil: false)
+        } else if px <= 32 {
+            return Tuning(browWidth: 64, browLift: 10, irisRadius: 76, drawsPupil: true)
+        }
+        return Tuning(browWidth: 58, browLift: 0, irisRadius: 70, drawsPupil: true)
     }
-    row += 1
 }
 
-NSGraphicsContext.restoreGraphicsState()
+func renderIcon(pixelSize px: Int) -> Data? {
+    guard let rep = NSBitmapImageRep(
+        bitmapDataPlanes: nil,
+        pixelsWide: px, pixelsHigh: px,
+        bitsPerSample: 8, samplesPerPixel: 4,
+        hasAlpha: true, isPlanar: false,
+        colorSpaceName: .deviceRGB,
+        bytesPerRow: 0, bitsPerPixel: 0
+    ) else { return nil }
 
-// Eye (almond) shape — symmetric, quadratic Bezier control points converted
-// to cubic (AppKit's NSBezierPath has no native quad-curve method).
-let eyeWidth = size * 0.725
-let eyeHeight = size * 0.4
-let eyeRect = NSRect(x: (size - eyeWidth) / 2, y: (size - eyeHeight) / 2, width: eyeWidth, height: eyeHeight)
-let leftPt = NSPoint(x: eyeRect.minX, y: eyeRect.midY)
-let rightPt = NSPoint(x: eyeRect.maxX, y: eyeRect.midY)
-let topCtrl = NSPoint(x: eyeRect.midX, y: eyeRect.maxY)
-let bottomCtrl = NSPoint(x: eyeRect.midX, y: eyeRect.minY)
+    let tuning = Tuning.forPixelSize(px)
 
-let eyePath = NSBezierPath()
-eyePath.move(to: leftPt)
-let (up1, up2) = quadToCubic(from: leftPt, to: rightPt, control: topCtrl)
-eyePath.curve(to: rightPt, controlPoint1: up1, controlPoint2: up2)
-let (down1, down2) = quadToCubic(from: rightPt, to: leftPt, control: bottomCtrl)
-eyePath.curve(to: leftPt, controlPoint1: down1, controlPoint2: down2)
-eyePath.close()
-eyeColor.setFill()
-eyePath.fill()
-eyePath.lineWidth = size * 0.016
-NSColor.black.withAlphaComponent(0.75).setStroke()
-eyePath.stroke()
+    NSGraphicsContext.saveGraphicsState()
+    defer { NSGraphicsContext.restoreGraphicsState() }
+    guard let context = NSGraphicsContext(bitmapImageRep: rep) else { return nil }
+    NSGraphicsContext.current = context
+    context.imageInterpolation = .high
 
-// Iris + pupil are clipped to the eye (almond) shape so the iris is larger
-// than the almond's vertical opening and its top/bottom get cropped by the
-// lid curve — reads as the iris tucked partly under the eyelids, rather
-// than floating as a full uncropped circle inside the white.
-NSGraphicsContext.saveGraphicsState()
-eyePath.addClip()
+    // Everything below is written in 512-unit coordinates.
+    let scale = CGFloat(px) / unit
+    let transform = NSAffineTransform()
+    transform.scale(by: scale)
+    transform.concat()
 
-let irisDiameter = eyeHeight * 1.12
-let irisRect = NSRect(x: (size - irisDiameter) / 2, y: (size - irisDiameter) / 2, width: irisDiameter, height: irisDiameter)
-let irisPath = NSBezierPath(ovalIn: irisRect)
-let irisCenter = NSPoint(x: irisRect.midX, y: irisRect.midY)
-let irisRadius = irisDiameter / 2
+    // Field. Corner radius is 22.37% of the side — the macOS icon proportion.
+    // A circular arc, not Apple's continuous curve, so it reads a touch
+    // tighter than a system-drawn one.
+    let fieldRect = NSRect(x: 0, y: 0, width: unit, height: unit)
+    let fieldPath = NSBezierPath(roundedRect: fieldRect, xRadius: unit * 0.2237, yRadius: unit * 0.2237)
+    field.setFill()
+    fieldPath.fill()
 
-// Natural iris shading: radial gradient fading from near-black at the pupil
-// outward through mid and bright green, darkening again at the outer rim
-// (limbal ring) where the iris meets the sclera — like a real eye rather
-// than a flat color disc.
-let irisGradient = NSGradient(colors: [irisCenterColor, irisMidColor, irisEdgeColor, irisRimColor],
-                               atLocations: [0.0, 0.4, 0.82, 1.0],
-                               colorSpace: .deviceRGB)
-irisGradient?.draw(in: irisPath, relativeCenterPosition: .zero)
+    // Brow: a stroked arc with round caps, so it holds an even thickness the
+    // whole way. An outlined crescent would taper to nothing at its ends —
+    // exactly where the small sizes lose it first.
+    let browPath = quadPath(
+        from: NSPoint(x: 84, y: 330 + tuning.browLift),
+        to: NSPoint(x: 428, y: 330 + tuning.browLift),
+        control: NSPoint(x: 256, y: 416 + tuning.browLift)
+    )
+    browPath.lineWidth = tuning.browWidth
+    browPath.lineCapStyle = .round
+    brow.setStroke()
+    browPath.stroke()
 
-// Fine radial fiber striations, like real iris texture: thin lines from
-// near the pupil out toward the rim, alternating light/dark for subtle
-// contrast, clipped to the iris disc so none of them poke outside it.
-NSGraphicsContext.saveGraphicsState()
-irisPath.addClip()
-let fiberCount = 56
-for i in 0..<fiberCount {
-    let angle = (CGFloat(i) / CGFloat(fiberCount)) * 2 * .pi
-    let jitter = sin(angle * 5.3) * 0.06
-    let innerR = irisRadius * (0.18 + jitter)
-    let outerR = irisRadius * (0.98 + jitter * 0.4)
-    let dx = cos(angle)
-    let dy = sin(angle)
-    let p0 = NSPoint(x: irisCenter.x + dx * innerR, y: irisCenter.y + dy * innerR)
-    let p1 = NSPoint(x: irisCenter.x + dx * outerR, y: irisCenter.y + dy * outerR)
-    let fiber = NSBezierPath()
-    fiber.move(to: p0)
-    fiber.line(to: p1)
-    fiber.lineWidth = size * (i % 2 == 0 ? 0.0035 : 0.002)
-    let isLight = i % 3 == 0
-    (isLight ? NSColor.white.withAlphaComponent(0.10) : NSColor.black.withAlphaComponent(0.22)).setStroke()
-    fiber.stroke()
+    // Almond: two quadratic curves meeting at a point. This shape is
+    // structural, not decoration — it's the only thing keeping the red and
+    // the green from sharing an edge, and complementaries that touch shimmer.
+    let left = NSPoint(x: 40, y: 222)
+    let right = NSPoint(x: 472, y: 222)
+    let almond = NSBezierPath()
+    almond.move(to: left)
+    let (upper1, upper2) = quadToCubic(from: left, to: right, control: NSPoint(x: 256, y: 402))
+    almond.curve(to: right, controlPoint1: upper1, controlPoint2: upper2)
+    let (lower1, lower2) = quadToCubic(from: right, to: left, control: NSPoint(x: 256, y: 42))
+    almond.curve(to: left, controlPoint1: lower1, controlPoint2: lower2)
+    almond.close()
+    sclera.setFill()
+    almond.fill()
+
+    // Iris.
+    let centre = NSPoint(x: 256, y: 222)
+    let r = tuning.irisRadius
+    iris.setFill()
+    NSBezierPath(ovalIn: NSRect(x: centre.x - r, y: centre.y - r, width: r * 2, height: r * 2)).fill()
+
+    // Pupil is the field colour, not a separate black — it reads as a hole
+    // punched through to the background rather than as a sixth shape, which
+    // is also why changing the field doesn't flatten the eye.
+    if tuning.drawsPupil {
+        let pr: CGFloat = 28
+        field.setFill()
+        NSBezierPath(ovalIn: NSRect(x: centre.x - pr, y: centre.y - pr, width: pr * 2, height: pr * 2)).fill()
+    }
+
+    return rep.representation(using: .png, properties: [:])
 }
-// Limbal ring: a crisp dark ring right at the outer edge of the iris, where
-// it meets the white — real eyes have this and it's what most reads as
-// "iris" at a glance rather than a plain colored disc.
-let ringPath = NSBezierPath(ovalIn: irisRect.insetBy(dx: size * 0.006, dy: size * 0.006))
-ringPath.lineWidth = size * 0.018
-NSColor.black.withAlphaComponent(0.6).setStroke()
-ringPath.stroke()
 
-NSGraphicsContext.restoreGraphicsState()
+// MARK: - Entry point
 
-// Pupil mark: a plain, symmetric chevron ("V").
-let chevSize = size * 0.15
-let chevRect = NSRect(x: (size - chevSize) / 2, y: (size - chevSize) / 2, width: chevSize, height: chevSize)
-let chevPath = NSBezierPath()
-chevPath.move(to: NSPoint(x: chevRect.minX, y: chevRect.maxY))
-chevPath.line(to: NSPoint(x: chevRect.midX, y: chevRect.minY))
-chevPath.line(to: NSPoint(x: chevRect.maxX, y: chevRect.maxY))
-chevPath.lineWidth = size * 0.08
-chevPath.lineCapStyle = .round
-chevPath.lineJoinStyle = .round
-pupilColor.setStroke()
-chevPath.stroke()
+let outputPath = CommandLine.arguments.count > 1 ? CommandLine.arguments[1] : "icon-1024.png"
+let pixelSize = CommandLine.arguments.count > 2 ? Int(CommandLine.arguments[2]) ?? 1024 : 1024
 
-NSGraphicsContext.restoreGraphicsState()
-
-image.unlockFocus()
-
-guard let tiffData = image.tiffRepresentation,
-      let bitmap = NSBitmapImageRep(data: tiffData),
-      let pngData = bitmap.representation(using: .png, properties: [:]) else {
-    FileHandle.standardError.write("Failed to render icon PNG\n".data(using: .utf8)!)
+guard pixelSize > 0, let pngData = renderIcon(pixelSize: pixelSize) else {
+    FileHandle.standardError.write("Failed to render icon at \(pixelSize)px\n".data(using: .utf8)!)
     exit(1)
 }
 
-let outputPath = CommandLine.arguments.count > 1 ? CommandLine.arguments[1] : "icon-1024.png"
 try pngData.write(to: URL(fileURLWithPath: outputPath))
-print("Wrote \(outputPath)")
+print("Wrote \(outputPath) (\(pixelSize)px)")
