@@ -76,6 +76,7 @@ struct ContentView: View {
     @State var trashSweepTask: Task<Void, Never>?
     @FocusState var focusedField: FocusField?
     @AppStorage("layoutMode") var layoutModeRaw = LayoutMode.vertical.rawValue
+    @AppStorage("newNotesStartInInbox") var newNotesStartInInbox = false
     @AppStorage("showInboxInMainList") var showInboxInMainList = true
     @AppStorage("theme") var theme = Theme()
     /// Non-empty while an adaptive theme is selected. The pair is the source

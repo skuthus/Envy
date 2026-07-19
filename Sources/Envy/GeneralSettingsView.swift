@@ -6,6 +6,7 @@ import EnvyCore
 struct GeneralSettingsView: View {
     @AppStorage("showNotePreview") private var showNotePreview = false
     @AppStorage("showDateModified") private var showDateModified = true
+    @AppStorage("newNotesStartInInbox") private var newNotesStartInInbox = false
     @AppStorage("showInboxInMainList") private var showInboxInMainList = true
     @AppStorage("showDueSort") private var showDueSort = true
     @AppStorage("dateDisplayStyle") private var dateDisplayStyleRaw = DateDisplayStyle.smart.rawValue
@@ -205,6 +206,10 @@ struct GeneralSettingsView: View {
                 }
                 .disabled(!showDateModified)
                 Toggle("Allow sorting by due date", isOn: $showDueSort)
+                Toggle("New notes start in the Inbox", isOn: $newNotesStartInInbox)
+                Text("Everything you write begins as a fleeting note, and filing it into The Index becomes a deliberate act. Notes created by following a [[link]], and notes made from a template, are unaffected \u{2014} both are already placed.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
                 Toggle("Show fleeting notes in the list", isOn: $showInboxInMainList)
                 Text("Notes waiting in Inbox/ appear alongside the rest, marked with a dot. Turn this off to keep them out of the way until you go looking with \u{201C}inbox:\u{201D}.")
                     .font(.caption)

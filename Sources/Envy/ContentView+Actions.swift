@@ -61,16 +61,44 @@ extension ContentView {
             return
         }
 
-        let newNote = store.create(title: trimmed)
+        let newNote = createNoteWhereNewNotesGo(titled: trimmed)
         selectedID = newNote.id
-        query = ""
+        query = queryShowing(newNote)
         if moveFocusToEditorOnEnter { focusedField = .editor }
     }
 
+    /// Creates a note wherever new notes are supposed to go — Inbox/ when
+    /// "New notes start in the Inbox" is on, The Index otherwise.
+    ///
+    /// The setting turns capture into the default and filing into a
+    /// deliberate act, which is the whole slipbox discipline: nothing enters
+    /// the permanent collection without someone deciding it should.
+    ///
+    /// Deliberately not used by two paths. Following a [[link]] to a note
+    /// that doesn't exist yet creates one that is, by definition, already
+    /// placed — something links to it. And a note made from a template is a
+    /// structured, deliberate act, not a capture. Routing either through the
+    /// inbox would add a review step to something already filed.
+    func createNoteWhereNewNotesGo(titled title: String) -> Note {
+        newNotesStartInInbox ? store.createInboxNote(titled: title) : store.create(title: title)
+    }
+
+    /// The query to leave in the search box after creating `note` — normally
+    /// empty, but "inbox:" for a fleeting note while fleeting notes are
+    /// hidden from the list.
+    ///
+    /// Without this, creating into the Inbox with them hidden clears the
+    /// query to nothing, the new note isn't in the list that produces, and
+    /// reconcileSelection() moves the selection to whatever is first —
+    /// so the note you just wrote is neither shown nor focused.
+    func queryShowing(_ note: Note) -> String {
+        NoteStore.isInInboxFolder(note) && !showInboxInMainList ? "inbox:" : ""
+    }
+
     func createBlankNote() {
-        let note = store.create(title: "")
+        let note = createNoteWhereNewNotesGo(titled: "")
         selectedID = note.id
-        query = ""
+        query = queryShowing(note)
         focusedField = .editor
     }
 
