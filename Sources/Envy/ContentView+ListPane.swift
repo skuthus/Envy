@@ -208,6 +208,17 @@ extension ContentView {
             completeSuggestion()
             return .handled
         }
+        // ⌥⌫ empties the omnibar outright. macOS would ordinarily delete the
+        // previous word here, but the omnibar is a command line more than a
+        // text field — you're usually abandoning a whole query, not editing
+        // one — and ⌘⌫ is already Delete Note, which must not be shadowed by
+        // anything that merely clears text.
+        .onKeyPress(keys: [.delete]) { press in
+            guard press.modifiers.contains(.option) else { return .ignored }
+            guard !query.isEmpty else { return .handled }
+            query = ""
+            return .handled
+        }
         .onSubmit { handleEnter() }
         .onChange(of: query) { _, _ in
             // Debounced rather than recomputed inline — with several
@@ -266,6 +277,11 @@ extension ContentView {
     /// count beside it.
     private var searchRow: some View {
         HStack(spacing: 8) {
+            // Strictly "something is waiting". With the inbox empty,
+            // "inbox:" is just an operator that matches nothing — no
+            // different from a tag: search with no hits — so there's nowhere
+            // to go back *from*, and clearing the query is the ordinary way
+            // out of any query.
             if fleetingCount > 0 { fleetingBadge }
             searchField
         }
@@ -297,23 +313,41 @@ extension ContentView {
     /// inbox is the goal state, and a "0" sitting there permanently would
     /// nag about nothing.
     private var fleetingBadge: some View {
+        // The same control in two states rather than two controls: in the
+        // inbox it's the way out, everywhere else it's the way in. One
+        // position, one shape, and the button that got you somewhere is the
+        // button that brings you back.
         Button {
-            query = "inbox:"
+            query = isInboxQuery ? "" : "inbox:"
             focusedField = .search
         } label: {
-            Text("\(fleetingCount)")
-                .font(.system(size: 13 * interfaceFontScale, weight: .semibold))
-                .monospacedDigit()
-                .foregroundStyle(Color(nsColor: theme.resolvedDueSoonColor))
-                .padding(.horizontal, 6)
-                .frame(minWidth: searchControlDiameter, minHeight: searchControlDiameter)
-                .background(Capsule().fill(searchFieldBackground))
-                .glassEffect(.regular, in: Capsule())
-                .overlay(Capsule().strokeBorder(Color(nsColor: searchFieldBorderColor), lineWidth: 1.5))
+            Group {
+                if isInboxQuery {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 12 * interfaceFontScale, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                } else {
+                    Text("\(fleetingCount)")
+                        .font(.system(size: 13 * interfaceFontScale, weight: .semibold))
+                        .monospacedDigit()
+                        .foregroundStyle(Color(nsColor: theme.resolvedDueSoonColor))
+                }
+            }
+            .padding(.horizontal, 6)
+            .frame(minWidth: searchControlDiameter, minHeight: searchControlDiameter)
+            .background(Capsule().fill(searchFieldBackground))
+            .glassEffect(.regular, in: Capsule())
+            .overlay(Capsule().strokeBorder(Color(nsColor: searchFieldBorderColor), lineWidth: 1.5))
         }
         .buttonStyle(.plain)
-        .help(fleetingCount == 1 ? "1 fleeting note waiting — click to review"
-                                 : "\(fleetingCount) fleeting notes waiting — click to review")
+        .help(badgeHelp)
+    }
+
+    private var badgeHelp: String {
+        if isInboxQuery { return "Back to all notes" }
+        return fleetingCount == 1
+            ? "1 fleeting note waiting — click to review"
+            : "\(fleetingCount) fleeting notes waiting — click to review"
     }
 
     /// A fixed step lighter than the header's own opaque background,
