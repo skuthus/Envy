@@ -1649,8 +1649,15 @@ struct MarkdownTextView: NSViewRepresentable {
                 return false
             }
 
+            // Command means "follow this", unconditionally. Every branch
+            // below that swallows a click has to yield to it — the caret is
+            // necessarily inside a link the moment you finish typing one, so
+            // a rule about the caret's position would otherwise eat the very
+            // click that creates the note you just named.
+            let commandHeld = NSApp.currentEvent?.modifierFlags.contains(.command) ?? false
+
             if parent.requireModifierForLinkClick {
-                guard let event = NSApp.currentEvent, event.modifierFlags.contains(.command) else {
+                guard commandHeld else {
                     // Handled rather than declined — declining makes NSTextView
                     // fall back to opening the URL itself via NSWorkspace, which
                     // for "envy://" fails loudly (no registered handler) and for
@@ -1662,13 +1669,12 @@ struct MarkdownTextView: NSViewRepresentable {
                     placeCaret(at: charIndex, in: textView)
                     return true
                 }
-            }
-
-            // A click inside a link the caret is already sitting in means the
-            // user is working on the text, not trying to follow it — otherwise
-            // there's no way to reposition within a link you've entered, and
-            // every click bounces you to the target instead.
-            if url.scheme == "envy", caretIsInsideWikiLink(containing: charIndex, in: textView) {
+            } else if url.scheme == "envy", !commandHeld,
+                      caretIsInsideWikiLink(containing: charIndex, in: textView) {
+                // Plain click inside a link the caret already occupies: the
+                // user is working on the text, not trying to follow it.
+                // Without this there's no way to reposition within a link
+                // you've entered, since every click bounces to the target.
                 placeCaret(at: charIndex, in: textView)
                 return true
             }
