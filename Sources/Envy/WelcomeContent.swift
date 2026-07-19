@@ -120,6 +120,20 @@ enum WelcomeContent {
 
     Combine it with regular search words, like `tag:work meeting`, to narrow further to tagged notes that also mention "meeting".
 
+    ## 💡 Fleeting Notes
+
+    A thought you want out of your head right now isn't knowledge yet. Envy keeps those apart from your finished notes so capturing costs nothing and filing stays a decision.
+
+    Type `inbox:` followed by whatever you're thinking and press Return. The note is captured, the box resets to a bare `inbox:` ready for the next thought, and you never leave where you were.
+
+    - Fleeting notes live in an `Inbox` folder inside The Index. That's the whole mechanism — an ordinary `.md` file that happens to sit there. Drag one out in Finder and it's filed, exactly as if you'd pressed Submit.
+    - They carry an amber dot in the note list, and the count beside the search box says how many are waiting. Click it to review; click it again to come back.
+    - Opening one shows **Submit Note** (files it into The Index) and **Delete Note** in its title bar. Both move you to the next one waiting, so working through a backlog is a run of decisions rather than a series of round trips.
+    - Titling is usually the real work — a capture arrives called "fix the thing", and deciding what it's actually about is most of what reviewing means. Click the title to rename it before you file it.
+    - Settings → General → "New notes start in the Inbox" sends everything you write there first, so nothing joins your permanent collection without you deciding it should.
+
+    `inbox: bauhaus` searches within your fleeting notes; `-inbox:` hides them from an ordinary search.
+
     ## 📅 Searching by Date
 
     Search `date:today` or `date:yesterday` for notes modified that day, or `date:week` / `date:month` for the last 7 or 30 days.

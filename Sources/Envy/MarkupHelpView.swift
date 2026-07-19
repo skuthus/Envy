@@ -46,6 +46,11 @@ struct MarkupHelpView: View {
             Entry(syntax: "[text](#heading)", description: "Jump to a heading in this note — click, no modifier needed. Matches the heading's text lowercased with spaces turned into hyphens."),
             Entry(syntax: "![[Note Title]]", description: "Embed another note's live content inline — on its own line, followed by a blank line. The link itself stays visible above the embed; edit or delete it directly to change or remove the embed. Click the ⌄ to collapse it down to just that link. Click into the embed to edit that note directly; edits save to it, not this note. Starts read-only so scrolling past it can't accidentally start typing into a different note."),
         ]),
+        Group(title: "Fleeting Notes", entries: [
+            Entry(syntax: "inbox:", description: "Show the fleeting notes waiting in your Inbox — captures you haven't filed yet. They're ordinary notes living in an Inbox folder inside The Index, marked in the list with an amber dot, and the count beside the search box says how many are waiting (click it to review, click again to come back)."),
+            Entry(syntax: "inbox: any words", description: "Captures a fleeting note with that title, without leaving where you are. If a fleeting note by that name already exists it opens instead, the same rule the search box follows."),
+            Entry(syntax: "-inbox:", description: "Hide fleeting notes from a search."),
+        ]),
         Group(title: "Footnotes", entries: [
             Entry(syntax: "text[^1]", description: "Footnote reference — click it to jump straight to its definition"),
             Entry(syntax: "[^1]: explanation", description: "The footnote's definition. Can live anywhere in the note, though the bottom is the usual spot."),

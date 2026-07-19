@@ -49,6 +49,7 @@ struct KeyboardShortcutsView: View {
                 Entry(keys: "↑ / ↓", description: "Move the highlighted note while searching"),
                 Entry(keys: "⇧↑ / ⇧↓", description: "Extend the selection to the next/previous note, same as Finder"),
                 Entry(keys: "↩", description: "Open the highlighted note, or create one from your search text"),
+                Entry(keys: "⌥⌫", description: "Clear the OmniBar completely"),
                 Entry(action: .focusNextArea, description: "Move focus to the next area (search → list → editor)"),
                 Entry(action: .focusPreviousArea, description: "Move focus to the previous area"),
             ]),
