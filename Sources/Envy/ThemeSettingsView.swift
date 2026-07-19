@@ -382,8 +382,11 @@ struct ThemeSettingsView: View {
     }
 
     private var galleryEntries: [GalleryEntry] {
-        var entries = [GalleryEntry(id: "system-default", name: "System Default", theme: Theme(), darkTheme: nil, namedTheme: nil)]
-        entries += Theme.presets.map { GalleryEntry(id: $0.id.uuidString, name: $0.name, theme: $0.theme, darkTheme: $0.darkTheme, namedTheme: nil) }
+        // No "System Default" entry: Envious is the default now, and it
+        // already follows the system's appearance — which is the only thing
+        // System Default was really offering. Keeping both would present two
+        // ways to say "match my Mac", one of which had no colours of its own.
+        var entries = Theme.presets.map { GalleryEntry(id: $0.id.uuidString, name: $0.name, theme: $0.theme, darkTheme: $0.darkTheme, namedTheme: nil) }
         entries += savedThemesStorage.themes.map { GalleryEntry(id: $0.id.uuidString, name: $0.name, theme: $0.theme, darkTheme: $0.darkTheme, namedTheme: $0) }
         return entries
     }

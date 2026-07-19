@@ -539,6 +539,22 @@ struct ContentView: View {
     /// Rewrites the live theme to the face matching the current appearance.
     /// No-op unless an adaptive theme is selected, so a user who picked a
     /// fixed theme (or customised one by hand) is never overridden.
+    /// Puts a first-time launch on Envious rather than on bare system colors.
+    ///
+    /// Gated on the absence of the stored "theme" key, so it only ever fires
+    /// for someone who has never picked one — anybody with a theme, custom or
+    /// preset, keeps it untouched. It does move a long-time user who never
+    /// visited Settings → Theme, which is deliberate: System Default is gone
+    /// from the gallery, so leaving them on it would strand them in a state
+    /// they can no longer see or re-select.
+    private func seedDefaultThemeIfNeeded() {
+        guard themePairRaw.isEmpty,
+              UserDefaults.standard.object(forKey: "theme") == nil else { return }
+        let pair = ThemePair(light: Theme.enviousLight, dark: Theme.enviousDark)
+        themePairRaw = pair.rawValue
+        theme = pair.face(dark: colorScheme == .dark)
+    }
+
     private func syncAdaptiveTheme() {
         guard let pair = ThemePair(rawValue: themePairRaw) else { return }
         let face = pair.face(dark: colorScheme == .dark)
@@ -553,6 +569,7 @@ struct ContentView: View {
         // pairing lives one level up, where the appearance is known.
         .onChange(of: colorScheme) { _, _ in syncAdaptiveTheme() }
         .onAppear {
+            seedDefaultThemeIfNeeded()
             syncAdaptiveTheme()
             Task { await recomputeFilteredNotes() }
             recomputeInterlinks()

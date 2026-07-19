@@ -353,7 +353,30 @@ extension Theme {
         // a new install should land on — the house look that still follows
         // the system, instead of a dark app on a light Mac.
         NamedTheme(name: "Envious", theme: enviousLight, darkTheme: enviousDark),
+        // Dracula's own light counterpart is Alucard, published by the same
+        // project — so this pairing uses their palette rather than a lightened
+        // guess at one. Slot-for-slot with the dark face above: the same role
+        // takes the same hue from the other half of the scheme.
         NamedTheme(name: "Dracula", theme: Theme(
+            textColor: rgb(31, 31, 31),              // Alucard foreground
+            backgroundColor: rgb(255, 251, 235),     // the warm cream ground
+            markerColor: rgb(108, 102, 75),          // comment
+            linkColor: rgb(3, 106, 150),             // cyan
+            dueColor: rgb(163, 77, 20),              // orange
+            dueSoonColor: rgb(132, 110, 21),         // yellow
+            dueOverdueColor: rgb(203, 58, 42),       // red
+            codeBackgroundColor: rgb(207, 207, 222), // current line
+            tagColor: rgb(20, 113, 10),              // green
+            tagBackgroundColor: rgb(20, 113, 10, alpha: 0.13),
+            highlightColor: rgb(132, 110, 21, alpha: 0.32),
+            selectionColor: rgb(100, 74, 201, alpha: 0.22),   // purple
+            focusHighlightColor: rgb(100, 74, 201, alpha: 0.22),
+            blockquoteColor: rgb(108, 102, 75),
+            completedTaskColor: rgb(108, 102, 75),
+            footnoteColor: rgb(108, 102, 75),
+            checkedCheckboxColor: rgb(20, 113, 10)
+        ),
+                   darkTheme: Theme(
             textColor: rgb(248, 248, 242),
             backgroundColor: rgb(40, 42, 54),
             markerColor: rgb(98, 114, 164),
@@ -391,7 +414,28 @@ extension Theme {
             footnoteColor: rgb(117, 113, 94),
             checkedCheckboxColor: rgb(166, 226, 46)
         )),
+        // Tokyo Night ships an official light variant, Tokyo Night Day — same
+        // reasoning as Alucard above.
         NamedTheme(name: "Tokyo Night", theme: Theme(
+            textColor: rgb(55, 96, 191),             // Day foreground
+            backgroundColor: rgb(225, 226, 231),
+            markerColor: rgb(132, 140, 181),         // comment
+            linkColor: rgb(46, 125, 233),            // blue
+            dueColor: rgb(177, 92, 0),               // orange
+            dueSoonColor: rgb(140, 108, 62),         // yellow
+            dueOverdueColor: rgb(245, 42, 101),      // red
+            codeBackgroundColor: rgb(210, 212, 220),
+            tagColor: rgb(88, 117, 57),              // green
+            tagBackgroundColor: rgb(88, 117, 57, alpha: 0.13),
+            highlightColor: rgb(140, 108, 62, alpha: 0.32),
+            selectionColor: rgb(153, 167, 223, alpha: 0.45),
+            focusHighlightColor: rgb(152, 84, 241, alpha: 0.22),  // magenta
+            blockquoteColor: rgb(132, 140, 181),
+            completedTaskColor: rgb(132, 140, 181),
+            footnoteColor: rgb(132, 140, 181),
+            checkedCheckboxColor: rgb(88, 117, 57)
+        ),
+                   darkTheme: Theme(
             textColor: rgb(192, 202, 245),
             backgroundColor: rgb(26, 27, 38),
             markerColor: rgb(86, 95, 137),
@@ -410,7 +454,29 @@ extension Theme {
             footnoteColor: rgb(86, 95, 137),
             checkedCheckboxColor: rgb(158, 206, 106)
         )),
-        NamedTheme(name: "Solarized Dark", theme: Theme(
+        // Solarized is a paired scheme by design — Ethan Schoonover built both
+        // faces from one sixteen-colour palette, so this is the pairing the
+        // theme always intended rather than one invented for Envy.
+        NamedTheme(name: "Solarized", theme: Theme(
+            textColor: rgb(101, 123, 131),
+            backgroundColor: rgb(253, 246, 227),
+            markerColor: rgb(147, 161, 161),
+            linkColor: rgb(38, 139, 210),
+            dueColor: rgb(203, 75, 22),
+            dueSoonColor: rgb(181, 137, 0),
+            dueOverdueColor: rgb(220, 50, 47),
+            codeBackgroundColor: rgb(238, 232, 213),
+            tagColor: rgb(133, 153, 0),
+            tagBackgroundColor: rgb(133, 153, 0, alpha: 0.15),
+            highlightColor: rgb(181, 137, 0, alpha: 0.4),
+            selectionColor: rgb(108, 113, 196, alpha: 0.25),
+            focusHighlightColor: rgb(108, 113, 196, alpha: 0.25),
+            blockquoteColor: rgb(147, 161, 161),
+            completedTaskColor: rgb(147, 161, 161),
+            footnoteColor: rgb(147, 161, 161),
+            checkedCheckboxColor: rgb(133, 153, 0)
+        ),
+                   darkTheme: Theme(
             textColor: rgb(131, 148, 150),
             backgroundColor: rgb(0, 43, 54),
             markerColor: rgb(88, 110, 117),
@@ -429,25 +495,7 @@ extension Theme {
             footnoteColor: rgb(88, 110, 117),
             checkedCheckboxColor: rgb(133, 153, 0)
         )),
-        NamedTheme(name: "Solarized Light", theme: Theme(
-            textColor: rgb(101, 123, 131),
-            backgroundColor: rgb(253, 246, 227),
-            markerColor: rgb(147, 161, 161),
-            linkColor: rgb(38, 139, 210),
-            dueColor: rgb(203, 75, 22),
-            dueSoonColor: rgb(181, 137, 0),
-            dueOverdueColor: rgb(220, 50, 47),
-            codeBackgroundColor: rgb(238, 232, 213),
-            tagColor: rgb(133, 153, 0),
-            tagBackgroundColor: rgb(133, 153, 0, alpha: 0.15),
-            highlightColor: rgb(181, 137, 0, alpha: 0.4),
-            selectionColor: rgb(108, 113, 196, alpha: 0.25),
-            focusHighlightColor: rgb(108, 113, 196, alpha: 0.25),
-            blockquoteColor: rgb(147, 161, 161),
-            completedTaskColor: rgb(147, 161, 161),
-            footnoteColor: rgb(147, 161, 161),
-            checkedCheckboxColor: rgb(133, 153, 0)
-        )),
+
         // Notational Velocity (2009, Zachary Schneirov) was deliberately
         // unstyled — plain black-on-white text, the system font, no syntax
         // highlighting or colored tags, just the classic Aqua selection
@@ -455,7 +503,9 @@ extension Theme {
         // desaturated accents, nothing bright or decorative. "Dark" is a
         // modern extrapolation — NV predates macOS-wide dark mode — done
         // in the same restrained spirit rather than a real historical mode.
-        NamedTheme(name: "Velocity Light", theme: Theme(
+        // Both faces were authored here from the same palette, modeled on the
+        // original Notational Velocity.
+        NamedTheme(name: "Velocity", theme: Theme(
             textColor: rgb(26, 26, 26),
             backgroundColor: rgb(255, 255, 255),
             markerColor: rgb(153, 153, 153),
@@ -473,8 +523,8 @@ extension Theme {
             completedTaskColor: rgb(130, 130, 130),
             footnoteColor: rgb(130, 130, 130),
             checkedCheckboxColor: rgb(90, 140, 90)
-        )),
-        NamedTheme(name: "Velocity Dark", theme: Theme(
+        ),
+                   darkTheme: Theme(
             textColor: rgb(224, 224, 224),
             backgroundColor: rgb(30, 30, 30),
             markerColor: rgb(120, 120, 120),
@@ -493,6 +543,7 @@ extension Theme {
             footnoteColor: rgb(150, 150, 150),
             checkedCheckboxColor: rgb(110, 160, 110)
         )),
+
     ]
 }
 
