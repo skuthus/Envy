@@ -23,7 +23,7 @@ extension ContentView {
     var listPane: some View {
         VStack(spacing: 0) {
             VStack(spacing: 0) {
-                searchField
+                searchRow
                 listSortHeader
             }
             // Opaque, not blurred — an exception to the rest of the window's
@@ -260,8 +260,60 @@ extension ContentView {
             lineWidth: CGFloat(theme.focusHighlightThickness),
             shape: Capsule()
         )
+    }
+
+    /// The search field and, when anything is waiting, the fleeting-note
+    /// count beside it.
+    private var searchRow: some View {
+        HStack(spacing: 8) {
+            if fleetingCount > 0 { fleetingBadge }
+            searchField
+        }
         .padding(.horizontal, 10)
         .padding(.top, 10)
+    }
+
+    /// How many notes are sitting in Inbox/ — read from every note rather
+    /// than from the filtered list, so the count is the size of the backlog
+    /// and not of whatever happens to be on screen.
+    var fleetingCount: Int {
+        store.notes.reduce(into: 0) { total, note in
+            if NoteStore.isInInboxFolder(note) { total += 1 }
+        }
+    }
+
+    /// The search field's own height, expressed the way the field builds it:
+    /// one line of its font plus its vertical padding. Derived rather than
+    /// a fixed number so the badge stays a circle at every Interface Text
+    /// Size, instead of drifting into an oval at the extremes.
+    private var searchControlDiameter: CGFloat { 15.6 * interfaceFontScale + 12 }
+
+    /// The count of fleeting notes, as a circle matching the search field —
+    /// same fill, same glass, same border, same height.
+    ///
+    /// This is the whole reason the inbox can be a filter rather than a mode:
+    /// the notes stay out of the way, but the number doesn't, so a backlog
+    /// can't quietly accumulate unseen. Hidden entirely at zero — an empty
+    /// inbox is the goal state, and a "0" sitting there permanently would
+    /// nag about nothing.
+    private var fleetingBadge: some View {
+        Button {
+            query = "inbox:"
+            focusedField = .search
+        } label: {
+            Text("\(fleetingCount)")
+                .font(.system(size: 13 * interfaceFontScale, weight: .semibold))
+                .monospacedDigit()
+                .foregroundStyle(Color(nsColor: theme.resolvedDueSoonColor))
+                .padding(.horizontal, 6)
+                .frame(minWidth: searchControlDiameter, minHeight: searchControlDiameter)
+                .background(Capsule().fill(searchFieldBackground))
+                .glassEffect(.regular, in: Capsule())
+                .overlay(Capsule().strokeBorder(Color(nsColor: searchFieldBorderColor), lineWidth: 1.5))
+        }
+        .buttonStyle(.plain)
+        .help(fleetingCount == 1 ? "1 fleeting note waiting — click to review"
+                                 : "\(fleetingCount) fleeting notes waiting — click to review")
     }
 
     /// A fixed step lighter than the header's own opaque background,
