@@ -210,7 +210,16 @@ public final class NoteStore: ObservableObject {
                 includingPropertiesForKeys: [.contentModificationDateKey],
                 options: [.skipsHiddenFiles]
             ) else { return [] }
-            urls = entries.filter { $0.pathExtension.lowercased() == "md" }
+            // Inbox/ is read whether or not subfolder scanning is on — it
+            // isn't a folder the user made to organise things, it's where
+            // captures land, and a fleeting note that only appears if an
+            // unrelated setting happens to be enabled is a lost note.
+            let inbox = (try? fm.contentsOfDirectory(
+                at: directory.appendingPathComponent(Self.inboxFolderName, isDirectory: true),
+                includingPropertiesForKeys: [.contentModificationDateKey],
+                options: [.skipsHiddenFiles]
+            )) ?? []
+            urls = (entries + inbox).filter { $0.pathExtension.lowercased() == "md" }
         }
 
         // Reading each file is its own independent syscall (open/read/close),
@@ -528,6 +537,114 @@ public final class NoteStore: ObservableObject {
         return results.sorted { $0.modifiedDate > $1.modifiedDate }
     }
 
+    // MARK: - Inbox
+
+    /// Fleeting notes live in `Inbox/` inside The Index. They are ordinary
+    /// notes in every respect — same `notes` array, same editor, same
+    /// rename, same delete — and the folder is the *only* difference: it's
+    /// what the list marks with a dot, what `inbox:` filters on, and what
+    /// Submit moves them out of.
+    ///
+    /// Visible rather than dot-hidden, on the `Templates/` model: these are
+    /// the user's own words, they should be findable in Finder, and a mobile
+    /// capture app writing here shouldn't depend on sync clients handling
+    /// dot-directories correctly.
+    nonisolated public static let inboxFolderName = "Inbox"
+
+    public var inboxDirectory: URL {
+        noteDirectory.appendingPathComponent(Self.inboxFolderName, isDirectory: true)
+    }
+
+    public func isInboxNote(_ note: Note) -> Bool {
+        note.url.deletingLastPathComponent().standardizedFileURL == inboxDirectory.standardizedFileURL
+    }
+
+    /// Captures a fleeting note. Creates `Inbox/` on demand, so the feature
+    /// works without anyone making the folder by hand first.
+    @discardableResult
+    public func createInboxNote(titled title: String) -> Note {
+        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let base = trimmed.isEmpty ? "Untitled" : trimmed
+        markInternalWrite()
+        try? FileManager.default.createDirectory(at: inboxDirectory, withIntermediateDirectories: true)
+        let url = inboxDirectory.appendingPathComponent(Self.uniqueFilename(for: base, in: inboxDirectory))
+        try? "".write(to: url, atomically: true, encoding: .utf8)
+        let note = Note(id: url.path, url: url, content: "", modifiedDate: Date())
+        notes.insert(note, at: 0)
+        return note
+    }
+
+    /// Files a fleeting note into The Index proper — a plain move out of
+    /// `Inbox/`. The note's text is untouched, so nothing about having been
+    /// fleeting survives in the file.
+    @discardableResult
+    public func submitFromInbox(_ note: Note) -> Note? {
+        guard isInboxNote(note) else { return nil }
+        markInternalWrite()
+        let destination = Self.availableURL(for: note.title, in: noteDirectory)
+        guard (try? FileManager.default.moveItem(at: note.url, to: destination)) != nil else { return nil }
+        let moved = Note(id: destination.path, url: destination, content: note.content, modifiedDate: note.modifiedDate)
+        if let index = notes.firstIndex(where: { $0.id == note.id }) {
+            notes[index] = moved
+        }
+        return moved
+    }
+
+    /// Renames a loose `.md` file in place. Used by the template and inbox
+    /// editors, which own their files directly rather than through `notes`,
+    /// so `rename(_:to:)` — which also rewrites every wiki-link pointing at
+    /// the note — doesn't apply: nothing links to a template or to a note
+    /// that hasn't been filed yet.
+    ///
+    /// Returns the file's new location, or nil if the rename failed.
+    @discardableResult
+    public func renameFile(at url: URL, to newTitle: String) -> URL? {
+        let trimmed = newTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: "/", with: "-")
+        guard !trimmed.isEmpty else { return nil }
+
+        let directory = url.deletingLastPathComponent()
+        let current = url.deletingPathExtension().lastPathComponent
+        guard trimmed != current else { return url }
+
+        markInternalWrite()
+        let destination: URL
+        if trimmed.lowercased() == current.lowercased() {
+            // A case-only change ("test" → "Test") collides with the file
+            // itself on a case-insensitive volume, so asking availableURL
+            // for a free name would hand back "Test (2)". Move straight to
+            // the new spelling instead.
+            destination = directory.appendingPathComponent("\(trimmed).md")
+        } else {
+            destination = Self.availableURL(for: trimmed, in: directory)
+        }
+        guard (try? FileManager.default.moveItem(at: url, to: destination)) != nil else { return nil }
+        return destination
+    }
+
+    /// A free filename in `directory` for `title`, disambiguating with
+    /// " (2)", " (3)" and so on.
+    ///
+    /// Parenthesised rather than Finder's bare " 2", which reads as part of
+    /// a title — a note actually called "Ideas 2" is entirely plausible.
+    /// Compared case-insensitively because APFS is: "ideas" and "Ideas"
+    /// already collide at the filesystem level, so matching only exact case
+    /// would happily generate a name the OS then refuses.
+    nonisolated static func availableURL(for title: String, in directory: URL) -> URL {
+        let fm = FileManager.default
+        let existing = Set(
+            ((try? fm.contentsOfDirectory(atPath: directory.path)) ?? [])
+                .map { ($0 as NSString).deletingPathExtension.lowercased() }
+        )
+        let base = title.replacingOccurrences(of: "/", with: "-")
+        guard existing.contains(base.lowercased()) else {
+            return directory.appendingPathComponent("\(base).md")
+        }
+        var counter = 2
+        while existing.contains("\(base) (\(counter))".lowercased()) { counter += 1 }
+        return directory.appendingPathComponent("\(base) (\(counter)).md")
+    }
+
     private func refreshTrashedNotes() {
         trashedNotes = Self.scanTrashedNotes(under: noteDirectory)
     }
@@ -801,6 +918,14 @@ public final class NoteStore: ObservableObject {
             .map(\.0)
     }
 
+    /// Whether a note's file sits directly in an `Inbox/` folder. Compares
+    /// the parent folder's name rather than a full path, so this stays
+    /// nonisolated — the search runs off the main actor and can't reach the
+    /// store's own noteDirectory.
+    nonisolated public static func isInInboxFolder(_ note: Note) -> Bool {
+        note.url.deletingLastPathComponent().lastPathComponent == inboxFolderName
+    }
+
     nonisolated private static func rankedHigherFirst(_ lhs: (Note, Int), _ rhs: (Note, Int)) -> Bool {
         if lhs.1 != rhs.1 { return lhs.1 > rhs.1 }
         return lhs.0.modifiedDate > rhs.0.modifiedDate
@@ -827,6 +952,8 @@ public final class NoteStore: ObservableObject {
         var isTodoExcluded = false
         var aiCondition: AIFilter?
         var excludeAiCondition: AIFilter?
+        var isInboxOnly = false
+        var isInboxExcluded = false
         var excludeTerms: [String] = []
         var freeTerms: [String] = []
 
@@ -837,7 +964,17 @@ public final class NoteStore: ObservableObject {
         // exclusion is honored, though — there's no such ambiguity in
         // excluding more than one thing.
         for token in tokens {
-            if token == "-todo:" {
+            if token == "-inbox:" {
+                isInboxExcluded = true
+            } else if token.hasPrefix("inbox:") {
+                // A bare "inbox:" scopes to fleeting notes; anything after
+                // the colon is ordinary search text within them, so it falls
+                // through to freeTerms below like any other operator's
+                // trailing words.
+                isInboxOnly = true
+                let rest = String(token.dropFirst("inbox:".count))
+                if !rest.isEmpty { freeTerms.append(rest) }
+            } else if token == "-todo:" {
                 isTodoExcluded = true
             } else if token == "todo:" {
                 isTodoOnly = true
@@ -901,7 +1038,8 @@ public final class NoteStore: ObservableObject {
             }
         }
 
-        let hasOperator = isTodoOnly || isTodoExcluded || tagFilter != nil || !excludeTags.isEmpty
+        let hasOperator = isInboxOnly || isInboxExcluded
+            || isTodoOnly || isTodoExcluded || tagFilter != nil || !excludeTags.isEmpty
             || dateFilter != nil
             || dueCondition != nil || excludeDueCondition != nil || isDueInvalid
             || aiCondition != nil || excludeAiCondition != nil
@@ -912,6 +1050,12 @@ public final class NoteStore: ObservableObject {
         let overdueThreshold = Calendar.current.startOfDay(for: Date())
 
         return notes.compactMap { note -> (Note, Int)? in
+            // Membership is the folder the file sits in — there's no flag on
+            // a note saying it's fleeting, and there shouldn't be: moving it
+            // out of Inbox/ in Finder should file it just as surely as
+            // pressing Submit does.
+            if isInboxOnly, !Self.isInInboxFolder(note) { return nil }
+            if isInboxExcluded, Self.isInInboxFolder(note) { return nil }
             if isTodoOnly, !note.hasUncheckedTask { return nil }
             if isTodoExcluded, note.hasUncheckedTask { return nil }
             if let tagFilter, !note.tags.contains(where: { Self.fastContains($0, tagFilter) }) { return nil }

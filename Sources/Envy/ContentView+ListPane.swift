@@ -42,6 +42,7 @@ extension ContentView {
                             matchingTemplateRows
                         } else if isTrashQuery {
                             matchingTrashRows
+
                         } else {
                             ForEach(filteredNotes) { note in
                                 noteRow(for: note)
@@ -79,7 +80,9 @@ extension ContentView {
                     // are always an explicit button or right-click away, so
                     // Return here is intentionally a no-op rather than
                     // mirroring actOnHighlightedTemplate()'s create-on-Return.
-                    if isTemplateQuery { actOnHighlightedTemplate() } else if !isTrashQuery { focusedField = .editor }
+                    if isTemplateQuery { actOnHighlightedTemplate() }
+                    else if isInboxQuery { focusedField = .editor }
+                    else if !isTrashQuery { focusedField = .editor }
                     return .handled
                 }
                 .focusHighlight(
@@ -115,7 +118,7 @@ extension ContentView {
     /// for EditorViewNotifications.
     @ViewBuilder
     private func noteRow(for note: Note) -> some View {
-        NoteRow(note: note, showPreview: showNotePreview, showDateModified: showDateModified, dateDisplayStyle: dateDisplayStyle, sortField: sortField, theme: theme, textColor: theme.fileListTextColor?.color, bold: boldFileListText, isPinned: isPinned(note))
+        NoteRow(note: note, showPreview: showNotePreview, showDateModified: showDateModified, dateDisplayStyle: dateDisplayStyle, sortField: sortField, theme: theme, textColor: theme.fileListTextColor?.color, bold: boldFileListText, isPinned: isPinned(note), isFleeting: store.isInboxNote(note))
             .padding(.vertical, listDensity.rowVerticalPadding)
             .padding(.horizontal, 8)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -541,7 +544,7 @@ extension ContentView {
     /// shouldn't offer (or fall back to) creating a note literally named
     /// after the whole query when one's present.
     var isSearchOperatorQuery: Bool {
-        containsSearchOperator || isTemplateQuery || isTrashQuery
+        containsSearchOperator || isTemplateQuery || isTrashQuery || isInboxQuery
     }
 
     /// "template:xyz" — like tag:/date:, but a create action rather than a
@@ -578,6 +581,26 @@ extension ContentView {
 
     var isTrashQuery: Bool { trashNameFragment != nil }
 
+    /// "inbox:xyz" — browses fleeting notes waiting in `Inbox/`, same
+    /// query-prefix shape as template: and trash:. Unlike those two,
+    /// pressing Return on an unmatched fragment *captures* it: the operator
+    /// that scopes the box is the one that routes writing into it, so
+    /// there's no separate create syntax to learn.
+    var inboxNameFragment: String? {
+        let trimmed = query.trimmingCharacters(in: .whitespaces)
+        guard trimmed.lowercased().hasPrefix("inbox:") else { return nil }
+        return String(trimmed.dropFirst("inbox:".count))
+    }
+
+    var isInboxQuery: Bool { inboxNameFragment != nil }
+
+    /// The fleeting notes currently listed — just the filtered list, since
+    /// `inbox:` is a real search operator handled in NoteStore.filtered.
+    /// Used for picking what to land on after a submit or delete.
+    var matchingInboxForQuery: [Note] {
+        filteredNotes.filter { store.isInboxNote($0) }
+    }
+
     /// Trashed notes whose title contains the typed fragment — an empty
     /// fragment (just "trash:" typed so far) matches everything, same as
     /// template:'s own fragment filtering.
@@ -610,7 +633,7 @@ extension ContentView {
                 let word = query[index..<end]
                 let lowered = word.lowercased()
                 let isOperator = lowered.hasPrefix("tag:") || lowered.hasPrefix("date:") || lowered.hasPrefix("template:")
-                    || lowered.hasPrefix("due:") || lowered.hasPrefix("trash:")
+                    || lowered.hasPrefix("due:") || lowered.hasPrefix("trash:") || lowered.hasPrefix("inbox:")
                     || lowered.hasPrefix("-tag:")
                     || lowered == "todo:" || (lowered.hasPrefix("-") && lowered.count > 1)
                 result = result + Text(word).foregroundColor(isOperator ? Color.primary.opacity(0.8) : .primary)

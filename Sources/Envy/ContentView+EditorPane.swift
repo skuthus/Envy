@@ -7,6 +7,14 @@ import EnvyCore
 // loading indicator, and word count. Split out of ContentView.swift purely
 // for file size/navigability — same type, zero behavior change.
 extension ContentView {
+    /// The selected note, when it's a fleeting one — drives the two review
+    /// buttons in the title bar and nothing else.
+    private var fleetingNote: Note? {
+        guard let selectedID, let note = store.notes.first(where: { $0.id == selectedID }),
+              store.isInboxNote(note) else { return nil }
+        return note
+    }
+
     var editorPane: some View {
         VStack(spacing: 0) {
             Group {
@@ -28,7 +36,11 @@ extension ContentView {
                             noteTitles: noteTitlesByRecencyCache,
                             focusedField: $focusedField,
                             onDone: { highlightedTemplateID = nil },
-                            onCreateNote: { createFromTemplate(template, title: template.name) }
+                            onCreateNote: { createFromTemplate(template, title: template.name) },
+                            // A template's id is its path, so renaming it
+                            // means re-pointing the highlight at the moved
+                            // file or the pane goes blank underneath you.
+                            onRenamed: { movedURL in highlightedTemplateID = movedURL.path }
                         )
                         .id(template.id)
                     } else {
@@ -36,6 +48,7 @@ extension ContentView {
                     }
                 } else if isTrashQuery {
                     trashPreviewPane
+
                 } else if let selectedID, store.notes.contains(where: { $0.id == selectedID }) {
                     NoteEditorView(
                         store: store,
@@ -43,6 +56,8 @@ extension ContentView {
                         focusedField: $focusedField,
                         onNavigate: navigateToNote,
                         onRename: { newTitle in renameSelectedNote(to: newTitle) },
+                        onSubmitFleeting: fleetingNote.map { note in { submitFromInbox(note) } },
+                        onDeleteFleeting: fleetingNote.map { note in { deleteFromInbox(note) } },
                         onTagSearch: searchByTag,
                         theme: theme,
                         requireModifierForLinkClick: requireModifierForLinkClick,

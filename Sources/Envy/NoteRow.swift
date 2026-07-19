@@ -18,6 +18,9 @@ struct NoteRow: View {
     var textColor: Color?
     var bold: Bool = false
     var isPinned: Bool = false
+    /// Set for a note sitting in `Inbox/` — the one visible difference
+    /// between a fleeting note and any other.
+    var isFleeting: Bool = false
 
     var body: some View {
         HStack(spacing: 6) {
@@ -25,6 +28,9 @@ struct NoteRow: View {
                 Image(systemName: "pin.fill")
                     .font(.system(size: 10 * interfaceFontScale))
                     .foregroundStyle(textColor ?? Color.secondary)
+            }
+            if isFleeting {
+                FleetingDot(theme: theme)
             }
             // The ⎈ AI-provenance mark is hidden until the feature is
             // designed. Note.aiProvenance still parses it, so restoring the

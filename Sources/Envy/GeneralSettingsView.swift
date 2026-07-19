@@ -6,6 +6,7 @@ import EnvyCore
 struct GeneralSettingsView: View {
     @AppStorage("showNotePreview") private var showNotePreview = false
     @AppStorage("showDateModified") private var showDateModified = true
+    @AppStorage("showInboxInMainList") private var showInboxInMainList = true
     @AppStorage("showDueSort") private var showDueSort = true
     @AppStorage("dateDisplayStyle") private var dateDisplayStyleRaw = DateDisplayStyle.smart.rawValue
     @AppStorage("requireModifierForLinkClick") private var requireModifierForLinkClick = true
@@ -204,6 +205,10 @@ struct GeneralSettingsView: View {
                 }
                 .disabled(!showDateModified)
                 Toggle("Allow sorting by due date", isOn: $showDueSort)
+                Toggle("Show fleeting notes in the list", isOn: $showInboxInMainList)
+                Text("Notes waiting in Inbox/ appear alongside the rest, marked with a dot. Turn this off to keep them out of the way until you go looking with \u{201C}inbox:\u{201D}.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
 
             Section("Editor") {

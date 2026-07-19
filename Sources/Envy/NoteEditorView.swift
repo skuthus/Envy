@@ -8,6 +8,12 @@ struct NoteEditorView: View {
     var focusedField: FocusState<FocusField?>.Binding
     var onNavigate: (String) -> Void
     var onRename: (String) -> Void
+    /// Non-nil only for a note sitting in `Inbox/`. The two review actions
+    /// live in the ordinary title bar rather than a separate pane — a
+    /// fleeting note is a normal note in a subfolder, and the buttons are
+    /// the one thing that differs.
+    var onSubmitFleeting: (() -> Void)?
+    var onDeleteFleeting: (() -> Void)?
     var onTagSearch: (String) -> Void
     var theme: Theme
     var requireModifierForLinkClick: Bool
@@ -68,6 +74,8 @@ struct NoteEditorView: View {
         focusedField: FocusState<FocusField?>.Binding,
         onNavigate: @escaping (String) -> Void,
         onRename: @escaping (String) -> Void,
+        onSubmitFleeting: (() -> Void)? = nil,
+        onDeleteFleeting: (() -> Void)? = nil,
         onTagSearch: @escaping (String) -> Void,
         theme: Theme,
         requireModifierForLinkClick: Bool,
@@ -86,6 +94,8 @@ struct NoteEditorView: View {
         self.focusedField = focusedField
         self.onNavigate = onNavigate
         self.onRename = onRename
+        self.onSubmitFleeting = onSubmitFleeting
+        self.onDeleteFleeting = onDeleteFleeting
         self.onTagSearch = onTagSearch
         self.theme = theme
         self.requireModifierForLinkClick = requireModifierForLinkClick
@@ -236,6 +246,12 @@ struct NoteEditorView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .foregroundStyle(theme.noteTitleBarTextColor?.color ?? Color.primary)
             HStack(spacing: 6) {
+                if let onSubmitFleeting, let onDeleteFleeting {
+                    FleetingDot(theme: theme)
+                    Button("Submit Note", action: onSubmitFleeting)
+                        .help("File this note into The Index")
+                    Button("Delete Note", role: .destructive, action: onDeleteFleeting)
+                }
                 if showDuePill, let note, let due = note.due {
                     // "+N" once there's more than one active due date —
                     // same shape as WikilinkPreviewPopover's own multi-tag

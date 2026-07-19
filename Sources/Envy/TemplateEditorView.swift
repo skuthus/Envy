@@ -19,9 +19,17 @@ struct TemplateEditorView: View {
     var focusedField: FocusState<FocusField?>.Binding
     var onDone: () -> Void
     var onCreateNote: () -> Void
+    /// Renaming moves the file, so the caller has to re-point at it — a
+    /// template's id is its path.
+    var onRenamed: (URL) -> Void
 
     @State private var content: String
     @State private var saveTask: Task<Void, Never>?
+    /// The title is a filename, so editing it renames the file — same
+    /// click-to-edit interaction as a note's own title bar.
+    @State private var titleText: String
+    @State private var isEditingTitle = false
+    @FocusState private var isTitleFocused: Bool
 
     init(
         store: NoteStore,
@@ -33,7 +41,8 @@ struct TemplateEditorView: View {
         noteTitles: [String],
         focusedField: FocusState<FocusField?>.Binding,
         onDone: @escaping () -> Void,
-        onCreateNote: @escaping () -> Void
+        onCreateNote: @escaping () -> Void,
+        onRenamed: @escaping (URL) -> Void
     ) {
         self.store = store
         self.template = template
@@ -45,7 +54,9 @@ struct TemplateEditorView: View {
         self.focusedField = focusedField
         self.onDone = onDone
         self.onCreateNote = onCreateNote
+        self.onRenamed = onRenamed
         _content = State(initialValue: (try? String(contentsOf: template.url, encoding: .utf8)) ?? "")
+        _titleText = State(initialValue: template.name)
     }
 
     var body: some View {
@@ -71,8 +82,29 @@ struct TemplateEditorView: View {
 
     private var header: some View {
         HStack(spacing: 8) {
-            Text(template.name)
-                .font(.system(size: 13 * interfaceFontScale, weight: .semibold))
+            Group {
+                if isEditingTitle {
+                    TextField("Template name", text: $titleText)
+                        .font(.system(size: 13 * interfaceFontScale, weight: .semibold))
+                        .textFieldStyle(.plain)
+                        .lineLimit(1)
+                        .focused($isTitleFocused)
+                        .onSubmit { commitRename() }
+                        .onChange(of: isTitleFocused) { _, focused in
+                            guard !focused else { return }
+                            commitRename()
+                        }
+                        .onAppear { isTitleFocused = true }
+                } else {
+                    Text(titleText)
+                        .font(.system(size: 13 * interfaceFontScale, weight: .semibold))
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                        .contentShape(Rectangle())
+                        .onTapGesture { isEditingTitle = true }
+                }
+            }
+            .frame(maxWidth: 320, alignment: .leading)
             Text("Template")
                 .font(.system(size: 11 * interfaceFontScale))
                 .foregroundStyle(.secondary)
@@ -97,6 +129,25 @@ struct TemplateEditorView: View {
         .padding(.horizontal)
         .padding(.vertical, 8)
         .background(.bar)
+    }
+
+    /// Writes pending edits first: the rename moves the file, and a
+    /// debounced save landing afterwards would recreate the old path.
+    private func commitRename() {
+        isEditingTitle = false
+        let trimmed = titleText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            titleText = template.name
+            return
+        }
+        guard trimmed != template.name else { return }
+        flushSave()
+        guard let moved = store.renameFile(at: template.url, to: trimmed) else {
+            titleText = template.name
+            return
+        }
+        titleText = moved.deletingPathExtension().lastPathComponent
+        onRenamed(moved)
     }
 
     private func scheduleSave(_ newValue: String) {

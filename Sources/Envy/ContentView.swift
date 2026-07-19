@@ -76,6 +76,7 @@ struct ContentView: View {
     @State var trashSweepTask: Task<Void, Never>?
     @FocusState var focusedField: FocusField?
     @AppStorage("layoutMode") var layoutModeRaw = LayoutMode.vertical.rawValue
+    @AppStorage("showInboxInMainList") var showInboxInMainList = true
     @AppStorage("theme") var theme = Theme()
     /// Non-empty while an adaptive theme is selected. The pair is the source
     /// of truth; `theme` above is the face currently in force, rewritten
@@ -249,9 +250,16 @@ struct ContentView: View {
         query: String,
         pinnedIDs: Set<String>,
         sortField: NoteSortField,
-        sortAscending: Bool
+        sortAscending: Bool,
+        showInbox: Bool
     ) -> SearchComputation {
-        let filtered = NoteStore.filtered(notes, query: query)
+        var filtered = NoteStore.filtered(notes, query: query)
+        // Hidden only when the query isn't already about the inbox — asking
+        // for "inbox:" and being shown nothing because of a setting
+        // elsewhere would be its own bug.
+        if !showInbox, !query.lowercased().contains("inbox:") {
+            filtered = filtered.filter { !NoteStore.isInInboxFolder($0) }
+        }
         let sorted = sortNotes(filtered, field: sortField, ascending: sortAscending)
         let pinned = NoteStore.applyPinning(sorted, pinnedIDs: pinnedIDs)
 
@@ -279,8 +287,9 @@ struct ContentView: View {
         let pinnedSnapshot = pinnedNoteIDs
         let field = sortField
         let ascending = sortAscending
+        let showInbox = showInboxInMainList
         let result = await Task.detached(priority: .userInitiated) {
-            Self.computeSearch(notes: notesSnapshot, query: querySnapshot, pinnedIDs: pinnedSnapshot, sortField: field, sortAscending: ascending)
+            Self.computeSearch(notes: notesSnapshot, query: querySnapshot, pinnedIDs: pinnedSnapshot, sortField: field, sortAscending: ascending, showInbox: showInbox)
         }.value
         guard generation == searchComputeGeneration else { return }
         filteredNotesCache = result.notes
@@ -639,14 +648,7 @@ struct ContentView: View {
             recomputeAllTags()
         }
         .onChange(of: showBacklinks) { _, _ in recomputeInterlinks() }
-        .onChange(of: sortFieldRaw) { _, _ in Task { await recomputeFilteredNotes() } }
-        // Toggling this off in Settings changes what sortField *resolves
-        // to* (falls back to .date) without touching sortFieldRaw itself —
-        // needs its own trigger since the .onChange above only fires when
-        // the raw stored value changes, which this doesn't.
-        .onChange(of: showDueSort) { _, _ in Task { await recomputeFilteredNotes() } }
-        .onChange(of: sortAscending) { _, _ in Task { await recomputeFilteredNotes() } }
-        .onChange(of: pinnedNotePathsRaw) { _, _ in Task { await recomputeFilteredNotes() } }
+        .rebuildingListOnChange(self)
         .onChange(of: store.isLoading) { _, isLoading in
             // A fade transition alone didn't stop the flash — a reload that
             // finishes in well under the fade's own duration still visibly
@@ -701,5 +703,37 @@ struct ContentView: View {
         } else {
             Color(nsColor: .windowBackgroundColor)
         }
+    }
+}
+
+/// The filtered list is a cache, rebuilt only when something asks it to.
+/// Every preference that changes *what the list contains* has to ask, and
+/// they're gathered here rather than chained onto the body: six more
+/// `.onChange` modifiers inline is enough to push ContentView past the
+/// type-checker's expression limit.
+private struct RebuildListOnChange: ViewModifier {
+    let view: ContentView
+
+    func body(content: Content) -> some View {
+        content
+            .onChange(of: view.sortFieldRaw) { _, _ in rebuild() }
+            // Toggling this off in Settings changes what sortField *resolves
+            // to* (falls back to .date) without touching sortFieldRaw itself
+            // — needs its own trigger, since the one above only fires when
+            // the raw stored value changes, which this doesn't.
+            .onChange(of: view.showDueSort) { _, _ in rebuild() }
+            .onChange(of: view.sortAscending) { _, _ in rebuild() }
+            .onChange(of: view.pinnedNotePathsRaw) { _, _ in rebuild() }
+            .onChange(of: view.showInboxInMainList) { _, _ in rebuild() }
+    }
+
+    private func rebuild() {
+        Task { await view.recomputeFilteredNotes() }
+    }
+}
+
+extension View {
+    func rebuildingListOnChange(_ view: ContentView) -> some View {
+        modifier(RebuildListOnChange(view: view))
     }
 }

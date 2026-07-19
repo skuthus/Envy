@@ -1071,6 +1071,61 @@ struct SelfCheck {
                   note.wikiLinks == ["real note", "other"])
         }
 
+        do {
+            print("Inbox filtering")
+
+            func note(_ title: String, in folder: String?, content: String = "") -> Note {
+                var url = URL(fileURLWithPath: "/tmp/TheIndex")
+                if let folder { url.appendPathComponent(folder) }
+                url.appendPathComponent("\(title).md")
+                return Note(id: url.path, url: url, content: content, modifiedDate: Date())
+            }
+
+            let filed = note("Filed thought", in: nil, content: "about bauhaus")
+            let fleetingA = note("Fleeting one", in: "Inbox", content: "about bauhaus")
+            let fleetingB = note("Fleeting two", in: "Inbox", content: "about lunch")
+            let all = [filed, fleetingA, fleetingB]
+
+            let inboxOnly = NoteStore.filtered(all, query: "inbox:")
+            check("inbox: returns only notes in the Inbox folder",
+                  Set(inboxOnly.map(\.title)) == ["Fleeting one", "Fleeting two"])
+
+            // The words after the operator are ordinary search text, scoped
+            // to the box — the same shape tag:/due: already have.
+            let narrowed = NoteStore.filtered(all, query: "inbox: bauhaus")
+            check("inbox: narrows by trailing search text",
+                  narrowed.map(\.title) == ["Fleeting one"])
+
+            let excluded = NoteStore.filtered(all, query: "-inbox:")
+            check("-inbox: hides fleeting notes",
+                  excluded.map(\.title) == ["Filed thought"])
+
+            // Membership is the folder, not a flag in the file — so moving a
+            // note out in Finder files it exactly as Submit does.
+            check("membership follows the folder, not the note's text",
+                  NoteStore.isInInboxFolder(fleetingA) && !NoteStore.isInInboxFolder(filed))
+
+            // The "hide from the main list" preference is applied on top of
+            // the search, and must never win over an explicit inbox: query.
+            func visible(_ query: String, showInbox: Bool) -> [String] {
+                var out = NoteStore.filtered(all, query: query)
+                if !showInbox, !query.lowercased().contains("inbox:") {
+                    out = out.filter { !NoteStore.isInInboxFolder($0) }
+                }
+                return out.map(\.title)
+            }
+            check("hiding fleeting notes keeps them out of an ordinary search",
+                  visible("bauhaus", showInbox: false) == ["Filed thought"])
+            check("hiding them never overrides an explicit inbox: query",
+                  Set(visible("inbox:", showInbox: false)) == ["Fleeting one", "Fleeting two"])
+            check("showing them leaves ordinary searches untouched",
+                  Set(visible("bauhaus", showInbox: true)) == ["Filed thought", "Fleeting one"])
+
+            let plain = NoteStore.filtered(all, query: "bauhaus")
+            check("an ordinary search still reaches fleeting notes",
+                  Set(plain.map(\.title)) == ["Filed thought", "Fleeting one"])
+        }
+
         print("")
         if failures.isEmpty {
             print("All checks passed.")

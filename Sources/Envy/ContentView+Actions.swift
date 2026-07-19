@@ -21,6 +21,24 @@ extension ContentView {
         if isTrashQuery {
             return
         }
+        // inbox: is the one browse operator where Return *writes*. Typing
+        // "inbox: call mom" and pressing Return captures it, because the
+        // operator that scopes the box is the one that routes writing into
+        // it — no second syntax to learn, and the same shape as the ordinary
+        // "type a title, press Return" the search box already has. A bare
+        // "inbox:" with nothing typed just moves into whatever's waiting.
+        if isInboxQuery {
+            let fragment = inboxNameFragment?.trimmingCharacters(in: .whitespaces) ?? ""
+            if fragment.isEmpty || matchingInboxForQuery.contains(where: { $0.lowercasedTitle == fragment.lowercased() }) {
+                // Nothing typed, or an exact match — a note you're looking
+                // for, not one you're making. Same rule the main search box
+                // follows; selection is the ordinary selectedID.
+                if selectedID != nil, moveFocusToEditorOnEnter { focusedField = .editor }
+            } else {
+                captureToInbox()
+            }
+            return
+        }
         // A search operator's "highlighted note" is whatever
         // reconcileSelection() already settled selectedID on as the list
         // narrowed — Enter just moves into it, same as the empty-query case
@@ -144,6 +162,48 @@ extension ContentView {
     }
 
     // MARK: - Trash
+
+    /// Files a fleeting note into The Index — a plain move out of `Inbox/`.
+    /// Stays in inbox: browsing afterwards rather than following the note:
+    /// review is a run of decisions, and being thrown elsewhere after each
+    /// one would break it every time.
+    func submitFromInbox(_ note: Note) {
+        let next = matchingInboxForQuery.first { $0.id != note.id }?.id
+        store.submitFromInbox(note)
+        if selectedID == note.id { selectedID = next }
+    }
+
+    /// Discards a fleeting note through the ordinary soft delete, so it
+    /// lands in `.trash` and ⌘⇧⌫ still brings it back — a fleeting note is
+    /// the easiest kind to throw away by accident.
+    func deleteFromInbox(_ note: Note) {
+        let next = matchingInboxForQuery.first { $0.id != note.id }?.id
+        store.delete(note)
+        if selectedID == note.id { selectedID = next }
+    }
+
+    /// Captures whatever is typed after `inbox:` as a new fleeting note —
+    /// the operator that scopes the box also routes the writing, so there's
+    /// no second syntax for capture.
+    func captureToInbox() {
+        guard let fragment = inboxNameFragment else { return }
+        let title = fragment.trimmingCharacters(in: .whitespaces)
+        guard !title.isEmpty else { return }
+        let note = store.createInboxNote(titled: title)
+        // Deliberately the same order as the ordinary create above —
+        // selection, then query, then focus, all in one synchronous pass.
+        // Setting the query first (or deferring the selection into a task)
+        // both leave SwiftUI applying focus around a selection change it
+        // hasn't rendered yet, and the focus is dropped. The debounced
+        // reconcileSelection that follows keeps this selection, since a
+        // freshly captured note matches "inbox:" by definition.
+        selectedID = note.id
+        // Back to a bare "inbox:" — you're still in the box, ready for the
+        // next thought, rather than leaving the last capture sitting there
+        // looking like a filter.
+        query = "inbox:"
+        if moveFocusToEditorOnEnter { focusedField = .editor }
+    }
 
     /// Restores a trashed note without leaving trash: browsing — the
     /// OmniBar's query is what decides which section is showing, not
