@@ -2,6 +2,16 @@
 
 Also published at [envynote.app/changelog.html](https://envynote.app/changelog.html).
 
+## 1.4.0 — July 18, 2026
+
+- **Fleeting notes.** A thought you want out of your head right now isn't knowledge yet. Type `inbox:` followed by whatever you're thinking and press Return to capture it without leaving where you are. Fleeting notes wait in an `Inbox` folder inside The Index, marked in the list with an amber dot, with a count beside the search box saying how many are waiting — click it to review, click it again to come back. Opening one shows **Submit Note** (files it into The Index) and **Delete Note** in its title bar, and either moves you to the next one waiting, so working through a backlog is a run of decisions rather than a series of round trips. `inbox: bauhaus` searches within them; `-inbox:` hides them.
+- **New notes can start in the Inbox.** Settings → General → "New notes start in the Inbox" sends everything you write there first, so nothing joins your permanent collection without you deciding it should. Notes created by following a `[[link]]`, and notes made from a template, are unaffected — both are already placed. There's also "Show fleeting notes in the list" for whether they appear alongside everything else or stay tucked away until you go looking.
+- **Membership is the folder, not a mark in the file.** A fleeting note is an ordinary `.md` file that happens to sit in `Inbox/`. Drag one out in Finder and it's filed, exactly as if you'd pressed Submit; drop one in and Envy treats it as a capture. Nothing about the arrangement depends on Envy being what made it.
+- **Every built-in theme now follows your Mac.** Solarized and Velocity shipped as separate Light and Dark entries; they're one adaptive theme each now. Dracula and Tokyo Night were dark-only, and take the light faces their own projects publish — Alucard and Tokyo Night Day. Monokai stays fixed, having no canonical light variant. System Default is gone: it and Envious were two ways of saying "match my Mac," except System Default had no colors of its own, and Envious is now what a fresh install starts on.
+- Titles are editable while reviewing a fleeting note, and for templates. A capture arrives without a real name, and deciding what it's about is most of what reviewing means.
+- **Fixed ⌘-clicking a new `[[link]]` not creating the note.** 1.3.0 made a link stay editable once your cursor was inside it, which swallowed the very click that creates the note you just named — the most common way a note gets made.
+- `⌥⌫` clears the search box completely.
+
 ## 1.3.0 — July 18, 2026
 
 - **A new look.** Envy has a new app icon — a lowered red brow over a cream eye with a green iris — and a house theme to match, called **Envious**. It's the first entry in Settings → Theme.
