@@ -273,6 +273,9 @@ struct MarkdownTextView: NSViewRepresentable {
     /// NestedAwareScrollView's own doc comment for why that's the one
     /// context that needs scroll-passthrough instead of a plain NSScrollView.
     var allowsScrollPassthrough: Bool = false
+    /// Set only when this view *is* an embed's content, so it can tell the
+    /// host note how much room to reserve. See EmbeddedNoteView.
+    var onContentHeightChange: ((CGFloat) -> Void)?
     /// When true, an edit in *this* editor that removes the note's "⎈"
     /// provenance line puts it right back — the opt-in signature-protection
     /// setting. Soft and Envy-only by nature: the file stays plain text and
@@ -350,7 +353,7 @@ struct MarkdownTextView: NSViewRepresentable {
             if plainTextMode {
                 MarkdownStyler.clearFormatting(textStorage: textStorage, text: text, theme: theme, fontSizeAdjustment: fontZoom)
             } else {
-                MarkdownStyler.style(textStorage: textStorage, text: text, theme: theme, searchQuery: searchQuery, fontSizeAdjustment: fontZoom, allowsEmbeds: allowsEmbeds, noteTitles: noteTitles, collapsedEmbedTitles: context.coordinator.collapsedEmbedTitles)
+                MarkdownStyler.style(textStorage: textStorage, text: text, theme: theme, searchQuery: searchQuery, fontSizeAdjustment: fontZoom, allowsEmbeds: allowsEmbeds, embedHeights: context.coordinator.embedHeights, noteTitles: noteTitles)
             }
         }
         context.coordinator.updateCheckboxOverlays(in: textView)
@@ -426,6 +429,7 @@ struct MarkdownTextView: NSViewRepresentable {
     func updateNSView(_ scrollView: NSScrollView, context: Context) {
         context.coordinator.parent = self
         guard let textView = context.coordinator.textView else { return }
+        defer { context.coordinator.reportContentHeightIfNeeded(in: textView) }
 
         if textView.isEditable != isEditable {
             textView.isEditable = isEditable
@@ -467,8 +471,8 @@ struct MarkdownTextView: NSViewRepresentable {
                         cursorSelection: Self.currentSelection(of: textView),
                         fontSizeAdjustment: fontZoom,
                         allowsEmbeds: allowsEmbeds,
-                        noteTitles: noteTitles,
-                        collapsedEmbedTitles: context.coordinator.collapsedEmbedTitles
+                        embedHeights: context.coordinator.embedHeights,
+                        noteTitles: noteTitles
                     )
                 }
             }
@@ -617,7 +621,6 @@ struct MarkdownTextView: NSViewRepresentable {
         /// than as @State inside EmbeddedNoteView itself since it also has
         /// to reach MarkdownStyler.style()'s reservation height, which
         /// runs before any SwiftUI view for the embed even exists yet.
-        var collapsedEmbedTitles: Set<String> = []
         /// The suggested remainder text currently on screen, and the cursor
         /// location it was computed for. Accepting only applies if the
         /// cursor still matches — Tab/Right-arrow otherwise fall through to
@@ -632,6 +635,33 @@ struct MarkdownTextView: NSViewRepresentable {
         nonisolated(unsafe) private var italicObserver: NSObjectProtocol?
         // Registered once the text view exists, in makeNSView below.
         nonisolated(unsafe) var frameObserver: NSObjectProtocol?
+
+        /// Measured height per embed title (lowercased), feeding the space
+        /// the styler reserves. Keyed by title rather than by index so it
+        /// survives embeds being added, removed or reordered.
+        var embedHeights: [String: CGFloat] = [:]
+
+        /// Last height handed to onContentHeightChange, so an unchanged
+        /// layout doesn't re-trigger the host's restyle.
+        private var lastReportedContentHeight: CGFloat = 0
+
+        /// Measures the laid-out text and reports it, if it moved enough to
+        /// matter. The 1pt threshold isn't cosmetic: the host reacts by
+        /// restyling, which lays this out again, so reporting every
+        /// sub-pixel wobble would be a loop that never settles.
+        @MainActor
+        func reportContentHeightIfNeeded(in textView: NSTextView) {
+            guard let report = parent.onContentHeightChange,
+                  let layoutManager = textView.layoutManager,
+                  let textContainer = textView.textContainer else { return }
+            layoutManager.ensureLayout(for: textContainer)
+            let used = layoutManager.usedRect(for: textContainer).height
+            let inset = textView.textContainerInset.height * 2
+            let height = used + inset
+            guard abs(height - lastReportedContentHeight) > 1 else { return }
+            lastReportedContentHeight = height
+            report(height)
+        }
 
         init(_ parent: MarkdownTextView) {
             self.parent = parent
@@ -1283,8 +1313,8 @@ struct MarkdownTextView: NSViewRepresentable {
                 fontSizeAdjustment: parent.fontZoom,
                 restyleRange: window,
                 allowsEmbeds: parent.allowsEmbeds,
-                noteTitles: parent.noteTitles,
-                collapsedEmbedTitles: collapsedEmbedTitles
+                embedHeights: embedHeights,
+                noteTitles: parent.noteTitles
             )
             lastRestyleCursorLocation = textView.selectedRange().location
             pendingRestyleInvalidationRange = nil
@@ -1510,9 +1540,7 @@ struct MarkdownTextView: NSViewRepresentable {
                     requireModifierForLinkClick: parent.requireModifierForLinkClick,
                     noteTitles: parent.noteTitles,
                     isCurrentlyOpenElsewhere: false,
-                    isCollapsed: false,
-                    onNavigate: parent.onNavigate,
-                    onToggleCollapse: {}
+                    onNavigate: parent.onNavigate
                 ).id("")))
                 textView.addSubview(hostingView)
                 embedOverlayViews.append(hostingView)
@@ -1550,13 +1578,31 @@ struct MarkdownTextView: NSViewRepresentable {
                     requireModifierForLinkClick: parent.requireModifierForLinkClick,
                     noteTitles: parent.noteTitles,
                     isCurrentlyOpenElsewhere: isCurrentlyOpenElsewhere,
-                    isCollapsed: collapsedEmbedTitles.contains(embed.title),
                     onNavigate: parent.onNavigate,
-                    onToggleCollapse: { [weak self] in
-                        self?.toggleEmbedCollapse(title: embedTitle)
+                    onContentHeightChange: { [weak self] height in
+                        self?.updateEmbedHeight(for: embedTitle, to: height, in: textView)
                     }
                 ).id(embed.title))
                 hostingView.isHidden = false
+            }
+        }
+
+        /// Records an embed's measured height and, if it changed, restyles
+        /// so the reserved space matches. Clamped: too short and the embed
+        /// stops reading as one, too tall and a long note pushes the host's
+        /// own text off screen.
+        @MainActor
+        func updateEmbedHeight(for title: String, to height: CGFloat, in textView: NSTextView) {
+            let key = title.lowercased()
+            let clamped = min(max(height, MarkdownStyler.minimumEmbedHeight), MarkdownStyler.maximumEmbedHeight)
+            guard abs((embedHeights[key] ?? 0) - clamped) > 1 else { return }
+            embedHeights[key] = clamped
+            // Deferred: this arrives from inside the embed's own layout pass,
+            // and restyling the host synchronously would mutate text storage
+            // while AppKit is still laying out a view that reads from it.
+            DispatchQueue.main.async { [weak self] in
+                guard let self, let textView = self.textView else { return }
+                self.restyle(textView)
             }
         }
 
@@ -1638,21 +1684,12 @@ struct MarkdownTextView: NSViewRepresentable {
         }
 
         /// EmbeddedNoteView's own collapse chevron calls this — flips
-        /// whether MarkdownStyler.style() reserves collapsedEmbedHeight or
+        /// whether MarkdownStyler.style() reserves the measured height or
         /// the full embedHeight for this specific embed's spacer line, then
         /// restyles and repositions immediately so the visible reserved
         /// block resizes right away instead of waiting for some other,
         /// unrelated edit to trigger the next restyle pass.
         @MainActor
-        private func toggleEmbedCollapse(title: String) {
-            if collapsedEmbedTitles.contains(title) {
-                collapsedEmbedTitles.remove(title)
-            } else {
-                collapsedEmbedTitles.insert(title)
-            }
-            guard let textView else { return }
-            restyle(textView)
-        }
 
         /// Briefly flags an externally-changed range so the user notices it
         /// without having to spot the diff themselves. Same highlight color

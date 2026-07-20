@@ -137,16 +137,20 @@ enum MarkdownStyler {
     /// the reservation on a wholly separate, genuinely empty line sidesteps
     /// both problems at once: nothing else is competing for space within
     /// it, so its rect unambiguously *is* the reserved block.
+    /// The space reserved for an embed before its content has ever been
+    /// measured — a first-frame placeholder, replaced by the real height as
+    /// soon as the embed reports one (see MarkdownTextView's embedHeights).
+    /// Everything after that is content-sized, so a two-line note doesn't
+    /// sit in a 220pt hole.
     static let embedHeight: CGFloat = 220
 
-    /// The reserved height for a *collapsed* embed — just enough for
-    /// EmbeddedNoteView's own header row (its collapse chevron lives
-    /// there), not the full embedHeight. Kept in exact agreement with that
-    /// header's own explicit frame height (see MarkdownTextView.Coordinator.
-    /// updateEmbedOverlays) rather than letting either side guess at the
-    /// other's size — the same shared-constant discipline embedHeight
-    /// itself already relies on.
-    static let collapsedEmbedHeight: CGFloat = 32
+    /// Below this an embed is too short to read as one; above it, a long
+    /// note would push the host's own text off screen. Clamped rather than
+    /// trusted outright, since the height arrives from a layout pass that
+    /// this one then feeds back into.
+    static let minimumEmbedHeight: CGFloat = 44
+    static let maximumEmbedHeight: CGFloat = 520
+
 
     /// Only "![[...]]" markers whose title exactly matches an existing
     /// note (same case-insensitive comparison as NoteStore.exactTitleMatch,
@@ -521,17 +525,18 @@ enum MarkdownStyler {
         // B embeds A...) and one level is already what "click to peek,
         // click to edit" needs.
         allowsEmbeds: Bool = true,
+        /// Measured content height per embed title. Missing means "not laid
+        /// out yet" and falls back to embedHeight.
+        embedHeights: [String: CGFloat] = [:],
         // Which "![[...]]" markers are real embeds vs. still-being-typed
         // text — see embedRanges(in:noteTitles:) above for why this can't
         // just be "any syntactically valid span."
         noteTitles: [String] = [],
         // Embed titles the user has collapsed via EmbeddedNoteView's own
-        // chevron — reserves collapsedEmbedHeight instead of embedHeight
         // for that specific embed's spacer line. Owned by
         // MarkdownTextView.Coordinator, not this caller-agnostic function;
         // just a plain title match here, same as embedRanges' own title
         // resolution.
-        collapsedEmbedTitles: Set<String> = []
     ) {
         let wholeDocument = NSRange(location: 0, length: (text as NSString).length)
         let full = restyleRange.map { NSIntersectionRange($0, wholeDocument) } ?? wholeDocument
@@ -620,8 +625,42 @@ enum MarkdownStyler {
         if allowsEmbeds {
             for embed in embedRanges(in: text, noteTitles: noteTitles) {
                 guard !isClaimed(embed.markerRange) else { continue }
-                textStorage.addAttribute(.foregroundColor, value: markerColor, range: embed.markerRange)
-                let reservedHeight = collapsedEmbedTitles.contains(embed.title) ? Self.collapsedEmbedHeight : Self.embedHeight
+
+                // Styled as the wiki-link it is, rather than dimmed whole.
+                // "![[" and "]]" collapse away like a plain link's brackets,
+                // leaving the title you typed in link colour — this is the
+                // text in your file, the thing you edit to change or remove
+                // the embed, so it should read like every other reference to
+                // a note. Painting the lot in markerColor made the most
+                // load-bearing text on the line the dimmest on screen.
+                let embedOpen = NSRange(location: embed.markerRange.location, length: 3)
+                let embedClose = NSRange(location: embed.markerRange.location + embed.markerRange.length - 2, length: 2)
+                let embedTitleRange = NSRange(
+                    location: embedOpen.location + embedOpen.length,
+                    length: embed.markerRange.length - embedOpen.length - embedClose.length
+                )
+                let embedRevealed = embed.markerRange == revealedLinkRange
+                    || touches(embed.markerRange, cursorSelection)
+                if embedRevealed {
+                    textStorage.removeAttribute(.kern, range: embed.markerRange)
+                    textStorage.addAttribute(.foregroundColor, value: markerColor, range: embedOpen)
+                    textStorage.addAttribute(.foregroundColor, value: markerColor, range: embedClose)
+                } else {
+                    collapse(range: embedOpen, in: textStorage, text: text, font: baseFont)
+                    collapse(range: embedClose, in: textStorage, text: text, font: baseFont)
+                }
+                if embedTitleRange.length > 0 {
+                    textStorage.addAttribute(.foregroundColor, value: linkColor, range: embedTitleRange)
+                    textStorage.addAttribute(.underlineStyle, value: NSUnderlineStyle.single.rawValue, range: embedTitleRange)
+                    let encoded = embed.title.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? embed.title
+                    if let url = URL(string: "envy:///\(encoded)") {
+                        // Revealed, the whole marker is one hit target — same
+                        // rule as a plain wiki-link, so following it isn't a
+                        // race against the brackets expanding.
+                        textStorage.addAttribute(.link, value: url, range: embedRevealed ? embed.markerRange : embedTitleRange)
+                    }
+                }
+                let reservedHeight = embedHeights[embed.title.lowercased()] ?? Self.embedHeight
                 let paragraphStyle = NSMutableParagraphStyle()
                 paragraphStyle.minimumLineHeight = reservedHeight
                 paragraphStyle.maximumLineHeight = reservedHeight

@@ -39,12 +39,12 @@ struct EmbeddedNoteView: View {
     /// "not found" message in its place) is hidden, leaving just this
     /// header row — plain ephemeral UI state, not saved anywhere. Owned by
     /// MarkdownTextView.Coordinator rather than as @State here, since the
-    /// reserved space in the *host* note's own text (collapsedEmbedHeight
-    /// vs. embedHeight) also depends on it, and that's decided in
-    /// MarkdownStyler.style(), which runs before this view even exists.
-    var isCollapsed: Bool
     var onNavigate: (String) -> Void
-    var onToggleCollapse: () -> Void
+    /// Reports how tall this embed's content actually is, so the host note
+    /// can reserve exactly that much instead of a fixed block. Called only
+    /// when the value meaningfully changes — the host restyles in response,
+    /// which lays this out again, so an unconditional report would loop.
+    var onContentHeightChange: (CGFloat) -> Void = { _ in }
 
     @State private var isEditable = false
     @State private var content: String
@@ -62,9 +62,8 @@ struct EmbeddedNoteView: View {
         requireModifierForLinkClick: Bool,
         noteTitles: [String],
         isCurrentlyOpenElsewhere: Bool,
-        isCollapsed: Bool,
         onNavigate: @escaping (String) -> Void,
-        onToggleCollapse: @escaping () -> Void
+        onContentHeightChange: @escaping (CGFloat) -> Void = { _ in },
     ) {
         self.store = store
         self.title = title
@@ -72,9 +71,8 @@ struct EmbeddedNoteView: View {
         self.requireModifierForLinkClick = requireModifierForLinkClick
         self.noteTitles = noteTitles
         self.isCurrentlyOpenElsewhere = isCurrentlyOpenElsewhere
-        self.isCollapsed = isCollapsed
         self.onNavigate = onNavigate
-        self.onToggleCollapse = onToggleCollapse
+        self.onContentHeightChange = onContentHeightChange
         let initial = store.exactTitleMatch(for: title)
         _content = State(initialValue: initial?.content ?? "")
         _lastSyncedContent = State(initialValue: initial?.content ?? "")
@@ -82,32 +80,7 @@ struct EmbeddedNoteView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 6) {
-                Button {
-                    onToggleCollapse()
-                } label: {
-                    Image(systemName: isCollapsed ? "chevron.right" : "chevron.down")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                        .frame(width: 20, height: 20)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .help(isCollapsed ? "Expand" : "Collapse")
-                Text(note?.title ?? title)
-                    .font(.caption.bold())
-                    .lineLimit(1)
-                    .contentShape(Rectangle())
-                    .onTapGesture {
-                        guard let note else { return }
-                        onNavigate(note.title)
-                    }
-                Spacer(minLength: 8)
-            }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
-            if !isCollapsed {
-                Divider()
+            do {
                 if isCurrentlyOpenElsewhere {
                     Spacer(minLength: 0)
                     Text("Already open above")
@@ -126,7 +99,12 @@ struct EmbeddedNoteView: View {
                         onRequestEditable: { isEditable = true },
                         noteTitles: noteTitles,
                         allowsEmbeds: false,
-                        allowsScrollPassthrough: true
+                        allowsScrollPassthrough: true,
+                        // Plus this view's own chrome — the bottom overhang
+                        // that marks the end of the embed. The host reserves
+                        // what it's told, so what it's told has to be the
+                        // whole thing, not just the text.
+                        onContentHeightChange: { onContentHeightChange($0 + 10) }
                     )
                 } else {
                     Spacer(minLength: 0)
@@ -138,9 +116,21 @@ struct EmbeddedNoteView: View {
                 }
             }
         }
-        .background(Color(nsColor: theme.resolvedBackgroundColor))
-        .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous).strokeBorder(Color.secondary.opacity(0.25), lineWidth: 1))
-        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+        // A left rule rather than a box. The border framed the embed as a
+        // component sitting in the note; a rule marks where the other note's
+        // text starts and stops without pretending it's a different kind of
+        // thing — which is the point of transclusion. Same device markdown
+        // already uses for blockquotes, and what Obsidian does here.
+        // A little room below the last line, so the rule runs just past the
+        // text and stops — that overhang is what marks the end of the
+        // embedded note, now that there's no box around it.
+        .padding(.leading, 14)
+        .padding(.bottom, 10)
+        .overlay(alignment: .leading) {
+            Rectangle()
+                .fill(Color(nsColor: theme.resolvedMarkerColor))
+                .frame(width: 2)
+        }
         .onChange(of: content) { _, newValue in
             guard isEditable, newValue != lastSyncedContent else { return }
             scheduleSave(newValue)
