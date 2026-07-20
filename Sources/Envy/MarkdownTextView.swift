@@ -3,6 +3,40 @@ import AppKit
 import EnvyCore
 
 final class HoverAwareTextView: NSTextView {
+    /// Blockquote spans to draw a left rule beside, and the colour to draw
+    /// it in. Set from the coordinator on every restyle.
+    ///
+    /// Drawn here rather than expressed as a text attribute because there
+    /// is no attribute for "a line down the side of these paragraphs" —
+    /// NSTextBlock can do borders but drags a whole table layout in with
+    /// it. Drawing in the background pass keeps the rule pinned to the real
+    /// line rects, so it follows wrapping, zoom and window width for free.
+    var blockquoteRanges: [NSRange] = [] {
+        didSet { if blockquoteRanges != oldValue { needsDisplay = true } }
+    }
+    var blockquoteRuleColor: NSColor = .tertiaryLabelColor
+
+    override func drawBackground(in rect: NSRect) {
+        super.drawBackground(in: rect)
+        guard !blockquoteRanges.isEmpty,
+              let layoutManager, let textContainer else { return }
+
+        blockquoteRuleColor.setFill()
+        for range in blockquoteRanges {
+            let glyphRange = layoutManager.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
+            var bounds = layoutManager.boundingRect(forGlyphRange: glyphRange, in: textContainer)
+            bounds.origin.x += textContainerInset.width
+            bounds.origin.y += textContainerInset.height
+            guard bounds.intersects(rect) else { continue }
+            // Sits in the gap the 16pt headIndent already opens up, at the
+            // same 2pt weight an embed's rule uses — a quote and a
+            // transclusion are the same idea, one static and one live, so
+            // they get the same mark.
+            let rule = NSRect(x: bounds.minX + 4, y: bounds.minY, width: 2, height: bounds.height)
+            rule.fill()
+        }
+    }
+
     var onHoverPoint: ((NSPoint) -> Void)?
     var onHoverExit: (() -> Void)?
     /// Returns true if the click was handled (e.g. toggled a checkbox) — in
@@ -356,6 +390,7 @@ struct MarkdownTextView: NSViewRepresentable {
                 MarkdownStyler.style(textStorage: textStorage, text: text, theme: theme, searchQuery: searchQuery, fontSizeAdjustment: fontZoom, allowsEmbeds: allowsEmbeds, embedHeights: context.coordinator.embedHeights, noteTitles: noteTitles)
             }
         }
+        context.coordinator.updateBlockquoteRules(in: textView)
         context.coordinator.updateCheckboxOverlays(in: textView)
         context.coordinator.updateEmbedOverlays(in: textView)
         context.coordinator.updateSignaturePill(in: textView)
@@ -377,6 +412,7 @@ struct MarkdownTextView: NSViewRepresentable {
             forName: NSView.frameDidChangeNotification, object: textView, queue: .main
         ) { [weak coordinator = context.coordinator, weak textView] _ in
             guard let coordinator, let textView else { return }
+            coordinator.updateBlockquoteRules(in: textView)
             coordinator.updateCheckboxOverlays(in: textView)
             coordinator.updateEmbedOverlays(in: textView)
             coordinator.updateSignaturePill(in: textView)
@@ -391,6 +427,7 @@ struct MarkdownTextView: NSViewRepresentable {
         // moment this function ran.
         DispatchQueue.main.async { [weak coordinator = context.coordinator, weak textView] in
             guard let coordinator, let textView else { return }
+            coordinator.updateBlockquoteRules(in: textView)
             coordinator.updateCheckboxOverlays(in: textView)
             coordinator.updateEmbedOverlays(in: textView)
             coordinator.updateSignaturePill(in: textView)
@@ -476,6 +513,7 @@ struct MarkdownTextView: NSViewRepresentable {
                     )
                 }
             }
+            context.coordinator.updateBlockquoteRules(in: textView)
             context.coordinator.updateCheckboxOverlays(in: textView)
             context.coordinator.updateEmbedOverlays(in: textView)
             context.coordinator.updateSignaturePill(in: textView)
@@ -1297,6 +1335,7 @@ struct MarkdownTextView: NSViewRepresentable {
             guard let textStorage = textView.textStorage else { return }
             if parent.plainTextMode {
                 MarkdownStyler.clearFormatting(textStorage: textStorage, text: textView.string, theme: parent.theme, fontSizeAdjustment: parent.fontZoom)
+                updateBlockquoteRules(in: textView)
                 updateCheckboxOverlays(in: textView)
                 updateEmbedOverlays(in: textView)
                 updateSignaturePill(in: textView)
@@ -1318,6 +1357,7 @@ struct MarkdownTextView: NSViewRepresentable {
             )
             lastRestyleCursorLocation = textView.selectedRange().location
             pendingRestyleInvalidationRange = nil
+            updateBlockquoteRules(in: textView)
             updateCheckboxOverlays(in: textView)
             updateEmbedOverlays(in: textView)
             updateSignaturePill(in: textView)
@@ -1585,6 +1625,17 @@ struct MarkdownTextView: NSViewRepresentable {
                 ).id(embed.title))
                 hostingView.isHidden = false
             }
+        }
+
+        /// Hands the text view the blockquote spans to draw rules beside.
+        /// Plain-text mode has no blockquotes, so it clears them.
+        @MainActor
+        func updateBlockquoteRules(in textView: NSTextView) {
+            guard let hoverView = textView as? HoverAwareTextView else { return }
+            hoverView.blockquoteRuleColor = parent.theme.resolvedMarkerColor
+            hoverView.blockquoteRanges = parent.plainTextMode
+                ? []
+                : MarkdownStyler.blockquoteBlockRanges(in: textView.string)
         }
 
         /// Records an embed's measured height and, if it changed, restyles

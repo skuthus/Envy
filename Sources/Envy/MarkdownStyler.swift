@@ -11,7 +11,7 @@ enum MarkdownStyler {
     private nonisolated(unsafe) static let codeRegex = try! NSRegularExpression(pattern: #"`([^`\n]+)`"#)
     private nonisolated(unsafe) static let fencedCodeBlockRegex = try! NSRegularExpression(pattern: #"^```[^\n]*\n([\s\S]*?)\n```[ \t]*$"#, options: [.anchorsMatchLines])
     private static let headerRegex = try! NSRegularExpression(pattern: #"^(#{1,6})[ \t]+(.*)$"#, options: [.anchorsMatchLines])
-    private static let blockquoteRegex = try! NSRegularExpression(pattern: #"^(>[ \t]?)(.*)$"#, options: [.anchorsMatchLines])
+    nonisolated(unsafe) private static let blockquoteRegex = try! NSRegularExpression(pattern: #"^(>[ \t]?)(.*)$"#, options: [.anchorsMatchLines])
     private static let horizontalRuleRegex = try! NSRegularExpression(pattern: #"^ {0,3}([-*_])[ \t]*(?:\1[ \t]*){2,}$"#, options: [.anchorsMatchLines])
     // The "-"/"*"/"+" list marker is optional (group 1 still captures it,
     // and any leading whitespace, when present) — "[ ] Buy milk" on its own
@@ -53,6 +53,28 @@ enum MarkdownStyler {
     // always the next, separately-required blank line, so nothing about
     // the marker's own surrounding text has to change to make room for it.
     private static let embedRegex = try! NSRegularExpression(pattern: #"!\[\[([^\[\]]+)\]\]"#)
+
+    /// The character ranges covered by blockquotes, with consecutive
+    /// quoted lines merged into one span.
+    ///
+    /// Merged rather than returned per line so a multi-line quote draws one
+    /// unbroken rule instead of a dashed column of per-line stubs — a quote
+    /// is one thing, and the rule should say so. Two quotes separated by an
+    /// ordinary line stay separate.
+    nonisolated static func blockquoteBlockRanges(in text: String) -> [NSRange] {
+        let nsText = text as NSString
+        let full = NSRange(location: 0, length: nsText.length)
+        var blocks: [NSRange] = []
+        for match in blockquoteRegex.matches(in: text, range: full) {
+            let line = nsText.lineRange(for: match.range)
+            if let last = blocks.last, last.location + last.length >= line.location {
+                blocks[blocks.count - 1] = NSUnionRange(last, line)
+            } else {
+                blocks.append(line)
+            }
+        }
+        return blocks
+    }
 
     nonisolated static func wikiLinkFullRanges(in text: String) -> [NSRange] {
         let full = NSRange(location: 0, length: (text as NSString).length)
