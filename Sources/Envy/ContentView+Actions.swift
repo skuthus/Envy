@@ -110,6 +110,22 @@ extension ContentView {
         let target = store.exactTitleMatch(for: title) ?? createNoteWhereNewNotesGo(titled: title)
         selectedID = target.id
         query = queryShowing(target)
+
+        // Deferred, not assigned inline. NoteEditorView carries .id(selectedID),
+        // so changing the selection destroys the editor and builds a new one —
+        // and SwiftUI clears focusedField to nil when the view holding focus
+        // disappears. Setting it before that happens assigns focus to a view
+        // that's already doomed, and the rebuild wipes it.
+        //
+        // This only bites when you're navigating *from* the editor, which is
+        // exactly the wiki-link case: coming from the search box there's no
+        // editor focus to lose, so the newly built view picks up .editor on
+        // its own. That's why following a link appeared to work — AppKit's
+        // first responder lingered on the reused text view even though
+        // SwiftUI's own focus state had gone nil.
+        DispatchQueue.main.async {
+            focusedField = .editor
+        }
     }
 
     /// Clicking a tag chip in the editor's title bar — searches for it like
