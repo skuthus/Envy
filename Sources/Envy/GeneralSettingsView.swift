@@ -207,7 +207,7 @@ struct GeneralSettingsView: View {
                 .disabled(!showDateModified)
                 Toggle("Allow sorting by due date", isOn: $showDueSort)
                 Toggle("New notes start in the Inbox", isOn: $newNotesStartInInbox)
-                Text("Everything you write begins as a fleeting note, and filing it into The Index becomes a deliberate act. Notes created by following a [[link]], and notes made from a template, are unaffected \u{2014} both are already placed.")
+                Text("Everything you write begins as a fleeting note, and filing it into The Index becomes a deliberate act \u{2014} including notes you create by following a [[link]] that doesn't exist yet. Notes made from a template are unaffected, since those arrive with structure you chose deliberately.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 Toggle("Show fleeting notes in the list", isOn: $showInboxInMainList)

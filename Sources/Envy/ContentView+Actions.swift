@@ -74,11 +74,15 @@ extension ContentView {
     /// deliberate act, which is the whole slipbox discipline: nothing enters
     /// the permanent collection without someone deciding it should.
     ///
-    /// Deliberately not used by two paths. Following a [[link]] to a note
-    /// that doesn't exist yet creates one that is, by definition, already
-    /// placed — something links to it. And a note made from a template is a
-    /// structured, deliberate act, not a capture. Routing either through the
-    /// inbox would add a review step to something already filed.
+    /// Used by every path that makes a note from nothing, including
+    /// following a [[link]] to one that doesn't exist yet. Being linked-to
+    /// and being filed are different things: that note is a title with no
+    /// body — a promise to write something, which is the most fleeting thing
+    /// in the app, not the least. Wiki-links resolve by title across every
+    /// note, so one living in Inbox/ is found exactly as before.
+    ///
+    /// Not used for notes made from a template, which arrive with structure
+    /// and content because you chose them deliberately.
     func createNoteWhereNewNotesGo(titled title: String) -> Note {
         newNotesStartInInbox ? store.createInboxNote(titled: title) : store.create(title: title)
     }
@@ -103,9 +107,9 @@ extension ContentView {
     }
 
     func navigateToNote(titled title: String) {
-        let target = store.exactTitleMatch(for: title) ?? store.create(title: title)
+        let target = store.exactTitleMatch(for: title) ?? createNoteWhereNewNotesGo(titled: title)
         selectedID = target.id
-        query = ""
+        query = queryShowing(target)
     }
 
     /// Clicking a tag chip in the editor's title bar — searches for it like
