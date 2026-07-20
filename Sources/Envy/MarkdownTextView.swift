@@ -674,6 +674,31 @@ struct MarkdownTextView: NSViewRepresentable {
             // (affected range) and the incoming replacement's extent.
             let replacementLength = (replacementString as NSString?)?.length ?? 0
             noteRestyleInvalidation(NSRange(location: affectedCharRange.location, length: max(affectedCharRange.length, replacementLength)))
+
+            // Typing an opener over a selection wraps it rather than
+            // replacing it: select "moon", type "[", get "[moon]" with the
+            // word still selected — so a second "[" gives "[[moon]]". Same
+            // convention every code editor uses, and the same thing ⌘B/⌘I
+            // already do here via toggleEmphasis.
+            if !isHandlingTextChange, affectedCharRange.length > 0,
+               let typed = replacementString, let closer = Self.closerForOpener[typed] {
+                let nsText = textView.string as NSString
+                let selected = nsText.substring(with: affectedCharRange)
+                let wrapped = typed + selected + closer
+                if textView.shouldChangeText(in: affectedCharRange, replacementString: wrapped) {
+                    isHandlingTextChange = true
+                    textView.textStorage?.replaceCharacters(in: affectedCharRange, with: wrapped)
+                    // Reselect the original text, now sitting inside the new
+                    // pair, so typing the opener again wraps a second time.
+                    textView.setSelectedRange(NSRange(
+                        location: affectedCharRange.location + (typed as NSString).length,
+                        length: affectedCharRange.length
+                    ))
+                    isHandlingTextChange = false
+                    textView.didChangeText()
+                }
+                return false
+            }
             // Signature protection. Two rejections, no more:
             //   (a) any edit that touches the "⎈" line's own characters, and
             //   (b) an edit ending exactly at the signature that would leave a
@@ -769,6 +794,9 @@ struct MarkdownTextView: NSViewRepresentable {
 
         private static let managedCloserCharacters: Set<String> = ["]", ")", "`", "*", "~"]
 
+        /// The closer each opener wraps a selection with.
+        static let closerForOpener: [String: String] = ["[": "]", "(": ")", "`": "`", "*": "*", "~": "~"]
+
         /// Auto-closes markdown pairs immediately after the character that
         /// opens them: "[[" completes to "[[|]]", a lone backtick or
         /// asterisk gets its mirror right away, "~~" completes once the
@@ -818,6 +846,42 @@ struct MarkdownTextView: NSViewRepresentable {
                 } else {
                     insert(doubled, at: cursor)
                 }
+            }
+
+            func isWordCharacter(_ text: String?) -> Bool {
+                guard let text else { return false }
+                return text.rangeOfCharacter(from: .alphanumerics) != nil
+            }
+
+            // Nothing auto-closes directly before a word. Typing "[[" to the
+            // left of "moon" used to give "[[|]]moon", stranding the word
+            // outside the link you were plainly trying to make — and the same
+            // for every other pair. Suppressing here leaves "[[|moon", so you
+            // can walk to the end of the word and close it, or (better) select
+            // the word first and let the wrap above do it in one keystroke.
+            //
+            // Matches the default in VS Code, Xcode and JetBrains: auto-close
+            // only before whitespace, punctuation, or the end of a line.
+            if isWordCharacter(char(at: cursor)) { return }
+
+            // And nothing symmetric auto-closes directly *after* a word. For
+            // "*", "`" and "~" the same character opens and closes, so one
+            // typed right after a word is finishing emphasis, not starting
+            // it — CommonMark says as much, since a delimiter preceded by a
+            // word and followed by whitespace can only be a closer. Without
+            // this, closing "*word" by hand produced "*word*|*".
+            //
+            // Looks past any run of the same delimiter already sitting there,
+            // so the second "*" of a closing "**" is judged against the "d"
+            // of "bold" rather than against its own first star — otherwise
+            // "**bold**" typed by hand picked up a stray fifth asterisk.
+            //
+            // "[" and "(" are exempt: those are unambiguously openers no
+            // matter what precedes them.
+            if typed == "*" || typed == "`" || typed == "~" {
+                var index = location - 1
+                while char(at: index) == typed { index -= 1 }
+                if isWordCharacter(char(at: index)) { return }
             }
 
             switch typed {
