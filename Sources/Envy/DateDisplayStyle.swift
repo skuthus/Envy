@@ -67,6 +67,15 @@ enum DateDisplayStyle: String, CaseIterable, Identifiable {
         if calendar.isDateInToday(date) { return "Today" }
         if calendar.isDateInTomorrow(date) { return "Tomorrow" }
         if calendar.isDateInYesterday(date) { return "Yesterday" }
+        // Within the coming week, name the day — the friendly label you'd
+        // have typed as "@monday", now that the token itself freezes to an
+        // absolute date. Applied for every style, the same way Today /
+        // Tomorrow / Yesterday already are.
+        let today = calendar.startOfDay(for: Date())
+        let target = calendar.startOfDay(for: date)
+        if let days = calendar.dateComponents([.day], from: today, to: target).day, (2...6).contains(days) {
+            return date.formatted(.dateTime.weekday(.wide))
+        }
         switch self {
         case .relative:
             return date.formatted(.relative(presentation: .named))

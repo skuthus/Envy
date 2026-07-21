@@ -1193,6 +1193,31 @@ struct SelfCheck {
                   titles("linked:", orphanSet) == ["Hub", "Leaf", "Ideas"])
         }
 
+        do {
+            print("Due-token resolution")
+
+            let cal = Calendar.current
+            // The absolute form the editor freezes a token into must parse
+            // back to the same day — otherwise the freeze would quietly
+            // change the date it captured.
+            if let d = NoteStore.resolveDueToken("2026-07-22") {
+                let c = cal.dateComponents([.year, .month, .day], from: d)
+                check("an ISO due token parses to that exact day",
+                      c.year == 2026 && c.month == 7 && c.day == 22)
+            } else {
+                check("an ISO due token parses to that exact day", false)
+            }
+
+            // A weekday always resolves to a future date (never today or the
+            // past), which is what the freeze captures at type-time.
+            if let mon = NoteStore.resolveDueToken("monday") {
+                check("a weekday token resolves to a future date",
+                      mon > cal.startOfDay(for: Date()))
+            } else {
+                check("a weekday token resolves to a future date", false)
+            }
+        }
+
         print("")
         if failures.isEmpty {
             print("All checks passed.")

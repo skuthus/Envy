@@ -1459,6 +1459,12 @@ public final class NoteStore: ObservableObject {
     /// answer tracks the real calendar instead of freezing at whatever day
     /// happened to be current the first time it was read; an absolute
     /// date token, by construction, never depends on "when" at all.
+    ///
+    /// This live resolution is now a fallback: the editor freezes relative
+    /// tokens to absolute dates at type-time, so a token only reaches here
+    /// still-relative if it was never typed in Envy (paste, external edit,
+    /// sync). Such a token tracks the calendar and can't go overdue — the
+    /// freeze is what fixes that for tokens Envy itself creates.
     nonisolated public static func resolveDueToken(_ token: String) -> Date? {
         let lowered = token.lowercased()
         let calendar = Calendar.current

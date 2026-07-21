@@ -257,7 +257,13 @@ struct NoteEditorView: View {
                     // same shape as WikilinkPreviewPopover's own multi-tag
                     // badge — since the pill only ever shows the earliest.
                     let suffix = note.dueDateCount > 1 ? " +\(note.dueDateCount - 1)" : ""
-                    Text("Due \(due.formatted(.dateTime.month(.abbreviated).day()))\(suffix)")
+                    // The friendly label — "Due Today", "Due Monday" —
+                    // rather than a bare date, matching the note list. Uses
+                    // .smart's formatDueDate; the relative labels it returns
+                    // (Today/Tomorrow/Yesterday/weekday) are identical across
+                    // styles, so the pill doesn't need the user's setting
+                    // threaded in just for this.
+                    Text("Due \(DateDisplayStyle.smart.formatDueDate(due))\(suffix)")
                         .font(.caption.bold())
                         .foregroundStyle(Color(nsColor: dueChipColor(for: due, theme: theme)))
                         .padding(.horizontal, 6)

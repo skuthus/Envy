@@ -848,6 +848,7 @@ struct MarkdownTextView: NSViewRepresentable {
                 }
                 expandEmojiShortcodeIfNeeded(in: textView)
                 expandLigatureIfNeeded(in: textView)
+                freezeRelativeDueTokenIfNeeded(in: textView)
                 if parent.allowsEmbeds {
                     ensureEmbedRoomIfNeeded(in: textView)
                 }
@@ -1026,6 +1027,63 @@ struct MarkdownTextView: NSViewRepresentable {
         /// plain emoji, same as if the user had typed/pasted it directly, no
         /// special syntax kept around to render later.
         @MainActor
+        // A relative due token — a day name, "@today"/"@tomorrow"/
+        // "@yesterday" — anchored at the cursor, i.e. just completed. Same
+        // shape as emojiShortcodeRegex: matched against the window ending at
+        // the caret, so only the token being typed is affected.
+        private static let relativeDueTokenRegex = try! NSRegularExpression(
+            pattern: #"(?<!\w)@(today|tomorrow|yesterday|monday|tuesday|wednesday|thursday|friday|saturday|sunday)$"#,
+            options: [.caseInsensitive]
+        )
+
+        /// The unambiguous, sort-friendly form a frozen token is written as.
+        private static let isoDueFormatter: DateFormatter = {
+            let f = DateFormatter()
+            f.locale = Locale(identifier: "en_US_POSIX")
+            f.dateFormat = "yyyy-MM-dd"
+            return f
+        }()
+
+        /// Freezes a relative due token to the absolute date it means right
+        /// now, the instant it's finished being typed: "@wednesday" becomes
+        /// "@2026-07-22" in the text.
+        ///
+        /// Without this, a relative token is re-resolved from scratch every
+        /// time the note is read, so it forever tracks the calendar — once
+        /// its Wednesday passes it silently rolls to the next one and can
+        /// never be overdue. The file has no record of *when* "@wednesday"
+        /// was written, so the only place the true date is knowable is here,
+        /// at the keystroke that created it. Freezing at type-time is also
+        /// what keeps the flat file the whole truth: what's on disk is the
+        /// real date, not a word that means something different tomorrow.
+        ///
+        /// The same type-as-you-go transform emoji shortcodes and arrow
+        /// ligatures already use — resolves the moment the token is complete,
+        /// and can't loop because the replacement (an absolute date) is not
+        /// itself a relative token.
+        @MainActor
+        private func freezeRelativeDueTokenIfNeeded(in textView: NSTextView) {
+            let cursor = textView.selectedRange()
+            guard cursor.length == 0 else { return }
+            let nsText = textView.string as NSString
+            let windowStart = max(0, cursor.location - 24)
+            let window = nsText.substring(with: NSRange(location: windowStart, length: cursor.location - windowStart))
+            let windowRange = NSRange(location: 0, length: (window as NSString).length)
+            guard let match = Self.relativeDueTokenRegex.firstMatch(in: window, range: windowRange) else { return }
+            let word = (window as NSString).substring(with: match.range(at: 1))
+            guard let resolved = NoteStore.resolveDueToken(word) else { return }
+            let absolute = "@" + Self.isoDueFormatter.string(from: resolved)
+
+            let docRange = NSRange(location: windowStart + match.range.location, length: match.range.length)
+            guard textView.shouldChangeText(in: docRange, replacementString: absolute) else { return }
+            textView.textStorage?.replaceCharacters(in: docRange, with: absolute)
+            textView.setSelectedRange(NSRange(location: docRange.location + (absolute as NSString).length, length: 0))
+            // Closes the undo group; re-enters textDidChange once, but the
+            // text left of the caret is now "@2026-07-22", which the
+            // day-name regex can't match, so it stops.
+            textView.didChangeText()
+        }
+
         private func expandEmojiShortcodeIfNeeded(in textView: NSTextView) {
             let cursor = textView.selectedRange()
             guard cursor.length == 0 else { return }
