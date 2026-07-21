@@ -29,7 +29,7 @@
 	<key>NSHumanReadableCopyright</key>
 	<string>© 2026 Skyler Schoos</string>
 	<key>SUEnableAutomaticChecks</key>
-	<true/>
+	<false/>
 	<key>SUFeedURL</key>
 	<string>https://envynote.app/assets/updates/appcast.xml</string>
 	<key>SUPublicEDKey</key>
