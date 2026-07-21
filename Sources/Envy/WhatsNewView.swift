@@ -28,12 +28,12 @@ struct WhatsNewView: View {
             }
 
             VStack(spacing: 10) {
-                Image(systemName: "tray")
+                Image(systemName: "magnifyingglass")
                     .font(.system(size: 44))
                     .foregroundStyle(EnvyBrand.mark)
-                Text("Somewhere to Put a Half-Formed Thought")
+                Text("Search That Follows the Threads")
                     .font(.title3.bold())
-                Text("A thought you want out of your head isn\u{2019}t knowledge yet. Type \u{201C}inbox:\u{201D} and whatever you\u{2019}re thinking to capture it without leaving where you are \u{2014} it waits in an Inbox folder, marked with an amber dot, counted beside the search box, until you file it or throw it away. Turn on \u{201C}New notes start in the Inbox\u{201D} and everything you write begins there, so nothing joins your collection without you deciding it should. Every built-in theme now follows your Mac between light and dark, too.")
+                Text("The search box learned to walk your links. \u{201C}link:Ideas\u{201D} finds every note pointing at Ideas; \u{201C}orphan:\u{201D} surfaces the notes that fell out of the web entirely. Wrap words in quotes for an exact phrase. Embeds and quotes read cleaner too \u{2014} a quiet left rule instead of a boxed-in card \u{2014} and a due date typed as \u{201C}@friday\u{201D} now sticks to that actual Friday and goes overdue when it passes, while still reading as \u{201C}Friday\u{201D} in the list.")
                     .font(.body)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)

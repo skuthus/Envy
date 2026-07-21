@@ -96,6 +96,8 @@ enum WelcomeContent {
 
     **Renaming a note updates its links everywhere.** Rename a note (click its title, or right-click it in the list) and every `[[link]]` and `![[embed]]` pointing to it across your notes is rewritten to the new name, so nothing breaks — and if you gave a link your own wording with `|`, that wording is left alone.
 
+    **Search your links, too.** `link:Note Title` finds every note that points at another; `orphan:` surfaces notes with no links in or out. Wrap words in `"quotes"` for an exact phrase.
+
     ## 📆 Due Dates
 
     Write `@04-16-26` (or `@2026-04-16`) anywhere in a note, like this: Finish the quarterly report @04-16-26

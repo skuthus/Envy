@@ -2,6 +2,17 @@
 
 Also published at [envynote.app/changelog.html](https://envynote.app/changelog.html).
 
+## 1.5.0 — July 19, 2026
+
+- **Search follows your links.** `link:Ideas` finds every note containing `[[Ideas]]` — search as graph traversal, the keyboard twin of the backlinks footer. `link:"Meeting Notes"` for titles with spaces, and `-link:Ideas` to exclude. `orphan:` finds notes with no links in or out — adrift from the web, worth reconnecting — and `linked:` is its complement, everything that's part of the web.
+- **Exact-phrase search.** Wrap words in quotes to force them adjacent: `"dog bone"` matches only where those words sit together, where `dog bone` still matches both anywhere. A phrase you're still typing matches as you go and tightens as you add words; once you close the quote it's exact, so `"nee"` finds the word *nee*, not the *nee* inside *needed*.
+- **Embeds and quotes read cleaner.** A transcluded note (`![[Note]]`) is now marked by a quiet rule down its left edge rather than a boxed-in card, sized to the note's own length, with the `![[…]]` reading as an ordinary link. Blockquotes get the same left rule — a quote and a transclusion are the same idea, text from somewhere else. The collapse control is gone; an embed is just the note, shown.
+- **Relative due dates stay put.** A due date typed as `@friday` (or `@today`, or any weekday) is now converted to that actual date the moment you finish typing it, so it sticks to that Friday and goes overdue when it passes — instead of forever sliding to the next one. It still reads as **Friday** in the note list and title bar, with weekday names for the coming week. *Note: a relative date typed in an older version stays as-is until you re-type it.*
+- **Fixed following a `[[link]]` not moving the cursor into the note** when the target opened a fresh editor.
+- **Fixed typing `[[` beside a word** stranding the word outside the brackets, and closing `*emphasis*` by hand adding a stray extra marker. Typing a marker over a selection now wraps it — select a word, press `[`, get `[word]`.
+- **Fixed a new `[[link]]` note landing in The Index** instead of the Inbox when "New notes start in the Inbox" was on.
+- `⌥⌫` clears the search box.
+
 ## 1.4.0 — July 18, 2026
 
 - **Fleeting notes.** A thought you want out of your head right now isn't knowledge yet. Type `inbox:` followed by whatever you're thinking and press Return to capture it without leaving where you are. Fleeting notes wait in an `Inbox` folder inside The Index, marked in the list with an amber dot, with a count beside the search box saying how many are waiting — click it to review, click it again to come back. Opening one shows **Submit Note** (files it into The Index) and **Delete Note** in its title bar, and either moves you to the next one waiting, so working through a backlog is a run of decisions rather than a series of round trips. `inbox: bauhaus` searches within them; `-inbox:` hides them.
