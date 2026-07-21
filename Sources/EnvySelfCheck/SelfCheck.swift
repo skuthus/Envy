@@ -1126,6 +1126,73 @@ struct SelfCheck {
                   Set(plain.map(\.title)) == ["Filed thought", "Fleeting one"])
         }
 
+        do {
+            print("Search operators")
+
+            func note(_ title: String, _ content: String) -> Note {
+                Note(id: title, url: URL(fileURLWithPath: "/tmp/\(title).md"), content: content, modifiedDate: Date())
+            }
+            func titles(_ query: String, _ notes: [Note]) -> Set<String> {
+                Set(NoteStore.filtered(notes, query: query).map(\.title))
+            }
+
+            // --- quoted phrases ---
+            let a = note("A", "the dog ate the bone")
+            let b = note("B", "the bone was near the dog")
+            let both = [a, b]
+            check("unquoted words match either order",
+                  titles("dog bone", both) == ["A", "B"])
+            check("a quoted phrase forces adjacency",
+                  titles("\"dog ate\"", both) == ["A"])
+            check("a quoted phrase absent everywhere matches nothing",
+                  titles("\"ate near\"", both).isEmpty)
+            // An unterminated quote — a phrase still being typed — searches
+            // as the text so far rather than for a literal quote character,
+            // so results appear as you go.
+            check("an open quote still matches incrementally",
+                  titles("\"do", both) == ["A", "B"])
+            check("an open quote tightens adjacency as you type",
+                  titles("\"dog a", both) == ["A"])
+
+            // Closed = exact word; open = substring. The whole point of the
+            // open/closed distinction.
+            let c = note("C", "this is needed")
+            let words = [a, c]  // A: "the dog ate the bone", C: "this is needed"
+            check("a closed quote matches only the whole word",
+                  titles("\"nee\"", words).isEmpty)
+            check("an open quote still substring-matches mid-word",
+                  titles("\"nee", words) == ["C"])
+            check("a closed quote matches the exact word",
+                  titles("\"needed\"", words) == ["C"])
+            check("-\"word\" excludes on the whole word",
+                  titles("is -\"needed\"", words) == [])  // only C has "is", and it's excluded
+            check("-\"phrase\" excludes the adjacent match",
+                  titles("dog -\"dog ate\"", both) == ["B"])
+
+            // --- link: ---
+            let hub = note("Hub", "see [[Meeting Notes]] and [[Ideas]]")
+            let leaf = note("Leaf", "just [[Ideas]]")
+            let lonely = note("Lonely", "nothing here")
+            let graph = [hub, leaf, lonely]
+            check("link: finds notes containing that wiki-link",
+                  titles("link:Ideas", graph) == ["Hub", "Leaf"])
+            check("link: takes a quoted multi-word title",
+                  titles("link:\"Meeting Notes\"", graph) == ["Hub"])
+            check("-link: excludes notes containing that link",
+                  titles("-link:Ideas", graph) == ["Lonely"])
+
+            // --- orphan: ---
+            // "Meeting Notes" and "Ideas" are linked-to; Hub and Leaf link
+            // out. Lonely does neither — the only orphan here. A note that
+            // is linked-to but links nowhere is not an orphan.
+            let target = note("Ideas", "content")
+            let orphanSet = [hub, leaf, lonely, target]
+            check("orphan: finds notes with no links in or out",
+                  titles("orphan:", orphanSet) == ["Lonely"])
+            check("linked: is everything except the orphans",
+                  titles("linked:", orphanSet) == ["Hub", "Leaf", "Ideas"])
+        }
+
         print("")
         if failures.isEmpty {
             print("All checks passed.")

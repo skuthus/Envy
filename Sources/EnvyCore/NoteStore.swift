@@ -877,6 +877,17 @@ public final class NoteStore: ObservableObject {
         (haystack as NSString).range(of: needle).location != NSNotFound
     }
 
+    /// Whether `phrase` appears in `haystack` bounded by non-word characters
+    /// on both sides — the exact-match half of a closed "quoted phrase", so
+    /// "nee" doesn't match inside "needed". Unicode-aware word classes, so
+    /// accented letters and digits count as part of a word.
+    nonisolated private static func wholeWordContains(_ haystack: String, _ phrase: String) -> Bool {
+        let pattern = "(?<![\\p{L}\\p{N}_])" + NSRegularExpression.escapedPattern(for: phrase) + "(?![\\p{L}\\p{N}_])"
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else { return false }
+        let range = NSRange(haystack.startIndex..., in: haystack)
+        return regex.firstMatch(in: haystack, range: range) != nil
+    }
+
     /// Comma-separated groups are independent searches, OR'd together —
     /// "dog, bone, leash" means anything matching any one of the three;
     /// "dog bone leash" (no comma) is one group, the existing
@@ -936,9 +947,47 @@ public final class NoteStore: ObservableObject {
     /// and free terms all combine with AND semantics *within* a group,
     /// same as the whole query used to before groups existed. Returns
     /// (Note, score) pairs for whatever survives every filter in this group.
+    /// Splits a group into tokens on spaces, except inside double quotes:
+    /// `dog "bone leash"` is two tokens, the second carrying its space. That
+    /// makes a quoted phrase a single free term, and since fastContains does
+    /// substring matching, "bone leash" only matches where those words sit
+    /// adjacent — the phrase search users expect. It also lets an operator
+    /// take a spaced argument, `link:"Meeting Notes"`, without the space
+    /// ending the token.
+    nonisolated public static func tokenize(_ q: String) -> [String] {
+        var tokens: [String] = []
+        var current = ""
+        var inQuotes = false
+        for character in q {
+            if character == "\"" {
+                inQuotes.toggle()
+                current.append(character)
+            } else if character == " " && !inQuotes {
+                if !current.isEmpty { tokens.append(current); current = "" }
+            } else {
+                current.append(character)
+            }
+        }
+        if !current.isEmpty { tokens.append(current) }
+        return tokens
+    }
+
+    /// Drops surrounding double quotes. Tolerant of a missing closing one,
+    /// so a phrase still being typed — `"mater` before the closing quote —
+    /// searches as `mater` and shows results as you go, rather than looking
+    /// for the literal string `"mater` and finding nothing until you finish
+    /// the quote. The interior stays intact, so `"material sci` matches that
+    /// text adjacently, tightening the phrase live as you type it.
+    nonisolated public static func unquote(_ text: String) -> String {
+        var result = text
+        if result.hasPrefix("\"") { result.removeFirst() }
+        if result.hasSuffix("\"") { result.removeLast() }
+        return result
+    }
+
     nonisolated private static func matched(in notes: [Note], forGroup group: String) -> [(Note, Int)] {
         let q = group.lowercased()
-        let tokens = q.split(separator: " ").map(String.init).filter { !$0.isEmpty }
+        let tokens = Self.tokenize(q)
 
         var tagFilter: String?
         var excludeTags: [String] = []
@@ -954,6 +1003,16 @@ public final class NoteStore: ObservableObject {
         var excludeAiCondition: AIFilter?
         var isInboxOnly = false
         var isInboxExcluded = false
+        var linkFilter: String?
+        var excludeLinks: [String] = []
+        var isOrphanOnly = false
+        var isLinkedOnly = false
+        // Closed quotes are exact — matched on word boundaries, so "nee"
+        // finds the word "nee", not the "nee" inside "needed". An *open*
+        // quote (still being typed) stays a substring free term, so results
+        // appear as you type. That's the whole open-vs-closed distinction.
+        var phraseTerms: [String] = []
+        var excludePhrases: [String] = []
         var excludeTerms: [String] = []
         var freeTerms: [String] = []
 
@@ -1031,18 +1090,62 @@ public final class NoteStore: ObservableObject {
                         isDueInvalid = true
                     }
                 }
+            } else if token == "linked:" {
+                // The complement of orphan: — notes with at least one link
+                // in or out, i.e. part of the web rather than adrift.
+                isLinkedOnly = true
+            } else if token == "orphan:" {
+                // Notes adrift from the link graph — nothing points at them
+                // and they point at nothing. Zettelkasten hygiene: the
+                // backlink half is corpus-wide, computed once below.
+                isOrphanOnly = true
+            } else if token.hasPrefix("-link:") {
+                let target = unquote(String(token.dropFirst("-link:".count)))
+                if !target.isEmpty { excludeLinks.append(target) }
+            } else if token.hasPrefix("link:") {
+                // Notes containing [[Target]] — search as graph traversal,
+                // the keyboard-driven twin of the backlinks footer. First
+                // one wins, like tag:.
+                if linkFilter == nil {
+                    let target = unquote(String(token.dropFirst("link:".count)))
+                    linkFilter = target.isEmpty ? nil : target
+                }
+            } else if token.hasPrefix("-\"") {
+                let rest = String(token.dropFirst())
+                let phrase = unquote(rest)
+                if !phrase.isEmpty {
+                    if rest.count >= 2 && rest.hasSuffix("\"") { excludePhrases.append(phrase) }
+                    else { excludeTerms.append(phrase) }
+                }
             } else if token.hasPrefix("-"), token.count > 1 {
                 excludeTerms.append(String(token.dropFirst()))
+            } else if token.hasPrefix("\"") {
+                // Closed "phrase" → exact, word-boundary matched. Open
+                // "phrase (no closing quote yet) → substring free term, for
+                // live incremental results as it's typed.
+                let phrase = unquote(token)
+                if !phrase.isEmpty {
+                    if token.count >= 2 && token.hasSuffix("\"") { phraseTerms.append(phrase) }
+                    else { freeTerms.append(phrase) }
+                }
             } else {
                 freeTerms.append(token)
             }
         }
 
         let hasOperator = isInboxOnly || isInboxExcluded
+            || linkFilter != nil || !excludeLinks.isEmpty || isOrphanOnly || isLinkedOnly
             || isTodoOnly || isTodoExcluded || tagFilter != nil || !excludeTags.isEmpty
             || dateFilter != nil
             || dueCondition != nil || excludeDueCondition != nil || isDueInvalid
             || aiCondition != nil || excludeAiCondition != nil
+
+        // Every note anything links *to*, across the corpus — the backlink
+        // half of orphan:. Computed once, and only when orphan: is actually
+        // in the query, since it's a full pass over every note's links.
+        let linkedToTitles: Set<String> = (isOrphanOnly || isLinkedOnly)
+            ? Set(notes.flatMap { $0.wikiLinks })
+            : []
 
         // Computed once for the whole group rather than per-note — same
         // reasoning as dateRange's own `now`, just needing today's start
@@ -1056,6 +1159,21 @@ public final class NoteStore: ObservableObject {
             // pressing Submit does.
             if isInboxOnly, !Self.isInInboxFolder(note) { return nil }
             if isInboxExcluded, Self.isInInboxFolder(note) { return nil }
+            if let linkFilter, !note.wikiLinks.contains(linkFilter) { return nil }
+            if !excludeLinks.isEmpty, note.wikiLinks.contains(where: { excludeLinks.contains($0) }) { return nil }
+            let noteIsOrphan = note.wikiLinks.isEmpty && !linkedToTitles.contains(note.lowercasedTitle)
+            if isOrphanOnly, !noteIsOrphan { return nil }
+            if isLinkedOnly, noteIsOrphan { return nil }
+            if !phraseTerms.isEmpty {
+                let t = note.lowercasedTitle, c = note.lowercasedContent
+                for phrase in phraseTerms where !(Self.wholeWordContains(t, phrase) || Self.wholeWordContains(c, phrase)) {
+                    return nil
+                }
+            }
+            if !excludePhrases.isEmpty {
+                let t = note.lowercasedTitle, c = note.lowercasedContent
+                if excludePhrases.contains(where: { Self.wholeWordContains(t, $0) || Self.wholeWordContains(c, $0) }) { return nil }
+            }
             if isTodoOnly, !note.hasUncheckedTask { return nil }
             if isTodoExcluded, note.hasUncheckedTask { return nil }
             if let tagFilter, !note.tags.contains(where: { Self.fastContains($0, tagFilter) }) { return nil }

@@ -1199,8 +1199,37 @@ enum MarkdownStyler {
         // free text, not just as the whole query. Each word highlights
         // independently, since a scattered multi-word AND search has no
         // single contiguous phrase to find in the first place.
-        for token in trimmed.split(separator: " ") where !token.isEmpty {
+        // The same quote-aware tokenizer NoteStore.filtered uses, so what
+        // gets highlighted matches what was searched — a naive space split
+        // here would treat a quoted phrase as the literal string '"build"',
+        // quotes and all, and highlight nothing.
+        for token in NoteStore.tokenize(trimmed) where !token.isEmpty {
             let lowered = token.lowercased()
+            // Graph/orphan operators name nothing literal in the note text,
+            // same as date:/due: below — there's nothing to highlight.
+            if lowered.hasPrefix("link:") || lowered.hasPrefix("-link:") || lowered == "orphan:" {
+                continue
+            }
+            if token.hasPrefix("\"") || token.hasPrefix("-\"") {
+                // A phrase highlights as one contiguous span. A *closed*
+                // quote matched on word boundaries, so it highlights on word
+                // boundaries too — otherwise "nee" would light up inside
+                // "needed" in a note that only matched the whole word. An
+                // open (still-typing) quote highlights as a substring, the
+                // way it matched. An exclusion highlights nothing.
+                if !token.hasPrefix("-") {
+                    let phrase = NoteStore.unquote(token)
+                    if !phrase.isEmpty {
+                        if token.count >= 2, token.hasSuffix("\"") {
+                            let escaped = NSRegularExpression.escapedPattern(for: phrase)
+                            highlightMatches(ofPattern: "(?<![\\p{L}\\p{N}_])" + escaped + "(?![\\p{L}\\p{N}_])")
+                        } else {
+                            highlightLiteral(phrase)
+                        }
+                    }
+                }
+                continue
+            }
             if lowered.hasPrefix("tag:") {
                 // "tag:xxx" is a search operator, not literal text to look
                 // for, and (matching NoteStore.filtered's substring tag

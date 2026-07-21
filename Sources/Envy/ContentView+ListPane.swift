@@ -620,6 +620,8 @@ extension ContentView {
             let lowered = word.lowercased()
             return lowered.hasPrefix("tag:") || lowered.hasPrefix("date:")
                 || lowered.hasPrefix("due:")
+                || lowered.hasPrefix("link:") || lowered.hasPrefix("-link:")
+                || lowered == "orphan:" || lowered == "linked:"
                 || lowered.hasPrefix("-tag:")
                 || lowered == "todo:"
                 || (lowered.hasPrefix("-") && lowered.count > 1)
@@ -720,6 +722,8 @@ extension ContentView {
                 let lowered = word.lowercased()
                 let isOperator = lowered.hasPrefix("tag:") || lowered.hasPrefix("date:") || lowered.hasPrefix("template:")
                     || lowered.hasPrefix("due:") || lowered.hasPrefix("trash:") || lowered.hasPrefix("inbox:")
+                    || lowered.hasPrefix("link:") || lowered.hasPrefix("-link:")
+                    || lowered == "orphan:" || lowered == "linked:"
                     || lowered.hasPrefix("-tag:")
                     || lowered == "todo:" || (lowered.hasPrefix("-") && lowered.count > 1)
                 result = result + Text(word).foregroundColor(isOperator ? Color.primary.opacity(0.8) : .primary)
