@@ -28,12 +28,12 @@ struct WhatsNewView: View {
             }
 
             VStack(spacing: 10) {
-                Image(systemName: "magnifyingglass")
+                Image(systemName: "square.and.arrow.down")
                     .font(.system(size: 44))
                     .foregroundStyle(EnvyBrand.mark)
-                Text("Search That Follows the Threads")
+                Text("Capture Anywhere, Keep It Here")
                     .font(.title3.bold())
-                Text("The search box learned to walk your links. \u{201C}link:Ideas\u{201D} finds every note pointing at Ideas; \u{201C}orphan:\u{201D} surfaces the notes that fell out of the web entirely. Wrap words in quotes for an exact phrase. Embeds and quotes read cleaner too \u{2014} a quiet left rule instead of a boxed-in card \u{2014} and a due date typed as \u{201C}@friday\u{201D} now sticks to that actual Friday and goes overdue when it passes, while still reading as \u{201C}Friday\u{201D} in the list.")
+                Text("Jot on your phone in Apple Notes, then pull it into Envy when you sit down. Envy reads one folder you choose and files each note into your Inbox \u{2014} or straight into The Index, your call \u{2014} then moves the original aside so nothing arrives twice.\n\nIt is import only: notes come in, nothing is ever sent back, and there is no syncing. It is also off until you turn it on \u{2014} until then Envy never touches Apple Notes at all \u{2014} and it only ever runs when you ask, from Settings \u{203A} Import or \u{2318}\u{2325}I.")
                     .font(.body)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)

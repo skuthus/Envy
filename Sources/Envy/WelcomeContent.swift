@@ -136,6 +136,22 @@ enum WelcomeContent {
 
     `inbox: bauhaus` searches within your fleeting notes; `-inbox:` hides them from an ordinary search.
 
+    ## 📥 Importing from Apple Notes
+
+    Envy runs on your Mac, so it can't be the thing you reach for in a queue or on a walk. Apple Notes can — it's on your phone, your watch, your lock screen. Use it as the net, and bring the catch home.
+
+    Turn it on in Settings → Import, pick which Apple Notes folder is your outbox, and press **Import Now** (or ⌥⌘I from anywhere in Envy). Everything in that folder arrives as Markdown, and each original is moved to a folder of your choosing in Apple Notes so it never arrives twice.
+
+    Three things worth being plain about:
+
+    - **It only imports.** Notes come in; nothing is ever sent back, and nothing is kept in sync. Envy doesn't change a single word of any note in Apple Notes — the only thing it does over there is move an already-imported note into your archive folder.
+    - **It's off until you turn it on.** Until you flip that switch, Envy never touches Apple Notes at all — it won't read your folders and macOS won't ask you for permission.
+    - **It only runs when you ask.** There's no syncing in the background and nothing on a timer. It happens when you press the button or the shortcut, and never otherwise.
+
+    Choose where imports land with "Import to": the **Inbox**, so they queue up as fleeting notes to review and file, or **The Index** directly, if they're already keepers.
+
+    Two limits, so nothing surprises you: images and attachments don't come across (you'll see an `[image omitted]` marker), and Apple Notes checklists arrive as ordinary bullet lists — Apple doesn't hand over the checkbox ticks, so there's nothing to import.
+
     ## 📅 Searching by Date
 
     Search `date:today` or `date:yesterday` for notes modified that day, or `date:week` / `date:month` for the last 7 or 30 days.

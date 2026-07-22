@@ -2,6 +2,16 @@
 
 Also published at [envynote.app/changelog.html](https://envynote.app/changelog.html).
 
+## 1.6.0 — July 22, 2026
+
+- **Import from Apple Notes.** Envy runs on your Mac, so it can't be what you reach for in a queue or on a walk — Apple Notes can. Use it as the net and bring the catch home: Settings → Import, choose which Apple Notes folder is your outbox, and press **Import Now** (or ⌥⌘I from anywhere). Everything in that folder arrives as Markdown, and each original is moved to a folder you name so it never arrives twice — the folder itself is the queue, so Envy stores nothing about what it has already seen.
+- **It only imports, and only when you ask.** Notes come in; nothing is ever sent back and nothing is kept in sync. Envy doesn't alter a word of any note in Apple Notes — the only thing it does over there is move an already-imported note into your archive folder. There's no background syncing and nothing on a timer: it runs when you press the button or the shortcut, and never otherwise.
+- **Off until you turn it on.** The whole feature ships disabled. Until you enable it, Envy never touches Apple Notes at all — it won't read your folder list, and macOS won't even ask you for permission.
+- **Choose where imports land.** "Import to" sends them either to the **Inbox**, where they queue as fleeting notes to review and file, or straight into **The Index** if they're already keepers.
+- **Automatic update checks are now off by default** for new installs. Out of the box Envy makes no network calls at all; update checking is one switch away in Settings → General, and even then it's a plain fetch of a public file that carries nothing about you.
+- Two honest limits on importing: images and attachments don't transfer (you'll see an `[image omitted]` marker where one was), and Apple Notes checklists arrive as ordinary bullet lists — Apple doesn't expose the checkbox ticks to any app, so there's nothing to bring across.
+- Imported notes keep their original dates, so they sort by when you actually wrote them rather than when you imported them, and the title line Apple Notes repeats inside the body is stripped so a note isn't opened by its own name.
+
 ## 1.5.0 — July 19, 2026
 
 - **Search follows your links.** `link:Ideas` finds every note containing `[[Ideas]]` — search as graph traversal, the keyboard twin of the backlinks footer. `link:"Meeting Notes"` for titles with spaces, and `-link:Ideas` to exclude. `orphan:` finds notes with no links in or out — adrift from the web, worth reconnecting — and `linked:` is its complement, everything that's part of the web.
