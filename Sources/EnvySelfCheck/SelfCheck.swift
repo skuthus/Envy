@@ -1237,6 +1237,21 @@ struct SelfCheck {
             check("entities decode",
                   md("<div>Tom &amp; Jerry &mdash; &#39;hi&#39;</div>")
                     == "Tom & Jerry — 'hi'")
+            // Apple Notes emits a bare "&gt" (no semicolon) for a typed ">",
+            // which used to land in notes as literal "&gt".
+            check("entity without a semicolon decodes",
+                  md("<div>&gt why doesn't this show up</div>")
+                    == "> why doesn't this show up")
+            check("entity with a semicolon still decodes",
+                  md("<div>a &gt; b &lt; c</div>") == "a > b < c")
+            check("numeric entity without a semicolon decodes",
+                  md("<div>&#62 ok</div>") == "> ok")
+            check("hex numeric entity decodes",
+                  md("<div>&#x3E; ok</div>") == "> ok")
+            // A bare ampersand in ordinary text must survive untouched.
+            check("plain ampersand text is left alone",
+                  md("<div>R&D and AT&T and Tom & Jerry</div>")
+                    == "R&D and AT&T and Tom & Jerry")
             check("image becomes marker",
                   md("<div><img src=\"x.png\"></div>") == "[image omitted]")
             check("checklist becomes task",

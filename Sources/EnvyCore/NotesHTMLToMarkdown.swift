@@ -240,27 +240,70 @@ private let namedEntities: [String: String] = [
     "deg": "°", "middot": "·", "bull": "•", "times": "×", "divide": "÷",
 ]
 
+/// Decodes HTML entities, **with or without** the terminating semicolon.
+///
+/// The optional semicolon isn't pedantry: Apple Notes emits bare `&gt` (no
+/// semicolon) for a typed `>`, which is legal legacy HTML but was passing
+/// straight through as the literal text "&gt" into imported notes. Scanning for
+/// the entity name rather than requiring a `;` fixes that, and matches how
+/// browsers have always parsed these.
+///
+/// For the semicolon-less form the longest known name wins, so "R&D", "AT&T"
+/// and "Tom & Jerry" stay untouched — the character after `&` either isn't a
+/// name character or doesn't match any entity.
 private func decodeEntities(_ s: String) -> String {
     guard s.contains("&") else { return s }
     var result = ""
     var i = s.startIndex
     while i < s.endIndex {
-        if s[i] == "&", let semi = s[i...].firstIndex(of: ";"),
-           s.distance(from: i, to: semi) <= 10 {
-            let body = String(s[s.index(after: i)..<semi])
-            if body.hasPrefix("#") {
-                let numPart = body.dropFirst()
-                let value: Int?
-                if numPart.hasPrefix("x") || numPart.hasPrefix("X") {
-                    value = Int(numPart.dropFirst(), radix: 16)
+        guard s[i] == "&" else {
+            result.append(s[i]); i = s.index(after: i); continue
+        }
+        let afterAmp = s.index(after: i)
+
+        if afterAmp < s.endIndex, s[afterAmp] == "#" {
+            // Numeric: &#62 / &#62; / &#x3E / &#x3E;
+            var j = s.index(after: afterAmp)
+            var isHex = false
+            if j < s.endIndex, s[j] == "x" || s[j] == "X" {
+                isHex = true; j = s.index(after: j)
+            }
+            var digits = ""
+            while j < s.endIndex, digits.count < 8,
+                  isHex ? s[j].isHexDigit : s[j].isNumber {
+                digits.append(s[j]); j = s.index(after: j)
+            }
+            if !digits.isEmpty, let value = Int(digits, radix: isHex ? 16 : 10),
+               let scalar = Unicode.Scalar(value) {
+                result.append(Character(scalar))
+                if j < s.endIndex, s[j] == ";" { j = s.index(after: j) }
+                i = j; continue
+            }
+        } else {
+            // Named: read the name, then require either a semicolon or a
+            // known-entity match on the longest prefix.
+            var j = afterAmp
+            var name = ""
+            while j < s.endIndex, s[j].isLetter || s[j].isNumber, name.count < 10 {
+                name.append(s[j]); j = s.index(after: j)
+            }
+            if !name.isEmpty {
+                if j < s.endIndex, s[j] == ";" {
+                    if let mapped = namedEntities[name] {
+                        result += mapped; i = s.index(after: j); continue
+                    }
                 } else {
-                    value = Int(numPart)
+                    var length = name.count
+                    while length >= 2 {
+                        if let mapped = namedEntities[String(name.prefix(length))] {
+                            result += mapped
+                            i = s.index(afterAmp, offsetBy: length)
+                            break
+                        }
+                        length -= 1
+                    }
+                    if length >= 2 { continue }
                 }
-                if let value, let scalar = Unicode.Scalar(value) {
-                    result.append(Character(scalar)); i = s.index(after: semi); continue
-                }
-            } else if let mapped = namedEntities[body] {
-                result += mapped; i = s.index(after: semi); continue
             }
         }
         result.append(s[i]); i = s.index(after: i)
