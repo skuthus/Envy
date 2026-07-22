@@ -10,7 +10,9 @@ struct ImportSettingsView: View {
     @AppStorage("appleNotesArchiveFolder") private var archiveFolder = "Imported"
     @AppStorage(IndexPreference.storageKey) private var indexPathRaw = ""
 
-    @StateObject private var importer = AppleNotesImporter()
+    // Shared with the ⌘⌥I File-menu trigger, so progress and results appear
+    // here whether the import was started from this button or the menu.
+    @ObservedObject private var importer = AppleNotesImporter.shared
     @State private var folders: [String] = []
     @State private var loadingFolders = false
     @State private var folderError: String?

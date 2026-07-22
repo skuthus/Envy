@@ -18,6 +18,40 @@ struct EnvyApp: App {
         ShortcutPreferences.binding(for: action, raw: customShortcutsRaw)
     }
 
+    /// Runs an Apple Notes import straight from the menu / ⌘⌥I using the
+    /// folder saved in Settings — no need to open Settings first. If no outbox
+    /// has been chosen yet, sends the user to the Import tab to pick one.
+    /// Surfaces only failures (permission, a missing folder): a successful
+    /// import shows itself as the notes appearing, and an empty run needs no
+    /// interruption.
+    private func triggerAppleNotesImport() {
+        let defaults = UserDefaults.standard
+        let folder = (defaults.string(forKey: "appleNotesOutboxFolder") ?? "")
+            .trimmingCharacters(in: .whitespaces)
+        guard !folder.isEmpty else {
+            defaults.set("import", forKey: "settingsSelectedTab")
+            NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+            return
+        }
+        let archiveRaw = (defaults.string(forKey: "appleNotesArchiveFolder") ?? "")
+            .trimmingCharacters(in: .whitespaces)
+        let archive = archiveRaw.isEmpty ? "Imported" : archiveRaw
+        let index = IndexPreference.load()
+
+        Task { @MainActor in
+            let importer = AppleNotesImporter.shared
+            guard !importer.isRunning else { return }
+            await importer.run(folder: folder, archive: archive, indexDirectory: index)
+            if case let .failed(message) = importer.phase {
+                let alert = NSAlert()
+                alert.messageText = "Apple Notes Import"
+                alert.informativeText = message
+                alert.alertStyle = .warning
+                alert.runModal()
+            }
+        }
+    }
+
     var body: some Scene {
         // Declaring the title here (rather than imperatively via window.title)
         // is what actually sticks — SwiftUI otherwise reasserts its own
@@ -53,15 +87,10 @@ struct EnvyApp: App {
 
                 Divider()
 
-                Button("Import from Apple Notes…") {
-                    // Open Settings on the Import tab, where the picker and
-                    // progress live. Selecting the tab first (rather than
-                    // triggering a silent background import) keeps the long,
-                    // permission-prompting AppleScript work visible and off the
-                    // launch/summon path.
-                    UserDefaults.standard.set("import", forKey: "settingsSelectedTab")
-                    NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+                Button("Import from Apple Notes") {
+                    triggerAppleNotesImport()
                 }
+                .keyboardShortcut(binding(for: .importFromAppleNotes).keyEquivalent, modifiers: binding(for: .importFromAppleNotes).eventModifiers)
             }
             CommandGroup(after: .newItem) {
                 Button("Delete Note") {

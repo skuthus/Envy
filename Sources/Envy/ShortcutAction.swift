@@ -100,6 +100,7 @@ enum ShortcutAction: String, CaseIterable, Identifiable {
     case toggleBacklinks
     case showPinnedNote
     case unpinFromMenuBar
+    case importFromAppleNotes
 
     var id: String { rawValue }
 
@@ -124,6 +125,7 @@ enum ShortcutAction: String, CaseIterable, Identifiable {
         case .toggleBacklinks: "Toggle Backlinks"
         case .showPinnedNote: "Show/Hide Pinned Note (works from any app)"
         case .unpinFromMenuBar: "Unpin Note from Menu Bar (works from any app)"
+        case .importFromAppleNotes: "Import from Apple Notes"
         }
     }
 
@@ -172,6 +174,10 @@ enum ShortcutAction: String, CaseIterable, Identifiable {
             ShortcutBinding(character: String(KeyEquivalent.downArrow.character), keyCode: kVK_DownArrow, modifiers: SwiftUI.EventModifiers([.command, .option]).rawValue)
         case .unpinFromMenuBar:
             ShortcutBinding(character: "p", keyCode: kVK_ANSI_P, modifiers: SwiftUI.EventModifiers([.command, .option, .shift]).rawValue)
+        case .importFromAppleNotes:
+            // ⌘⌥I — plain ⌘I is Italic, so the option modifier keeps them
+            // distinct while staying "I for Import."
+            ShortcutBinding(character: "i", keyCode: kVK_ANSI_I, modifiers: SwiftUI.EventModifiers([.command, .option]).rawValue)
         }
     }
 }
