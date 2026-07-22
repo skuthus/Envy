@@ -119,7 +119,15 @@ final class AppleNotesImporter: ObservableObject {
         // Note untouched in the outbox, so the next run retries it.
         if !importedIDs.isEmpty {
             do {
-                try await Self.moveNotes(ids: importedIDs, fromFolder: folder, toArchive: archive)
+                let moved = try await Self.moveNotes(ids: importedIDs, fromFolder: folder, toArchive: archive)
+                if moved < importedIDs.count {
+                    // Some notes imported but didn't move out, so they'd import
+                    // again next run. Surface it rather than let them re-import.
+                    phase = .failed(
+                        "Imported \(importedIDs.count), but only \(moved) moved to “\(archive)”. "
+                        + "The rest are still in “\(folder)” and would import again — move them by hand.")
+                    return
+                }
             } catch {
                 // The notes are safely imported; a failed move just means they
                 // linger in the outbox and would re-import next time. Tell the
@@ -193,7 +201,13 @@ final class AppleNotesImporter: ObservableObject {
         return NoteRecord(id: id, title: title, date: date, html: html)
     }
 
-    private static func moveNotes(ids: [String], fromFolder folder: String, toArchive archive: String) async throws {
+    /// Moves the imported notes into `archive`, returning how many actually
+    /// moved. Single-pass — it walks the folder once and collects the matches,
+    /// rather than re-searching the whole folder per id (which was quadratic and
+    /// slow for a big batch). The moved count lets the caller notice a silent
+    /// skip, which would otherwise leave a note to re-import next time.
+    @discardableResult
+    private static func moveNotes(ids: [String], fromFolder folder: String, toArchive archive: String) async throws -> Int {
         let folderName = escapeForAppleScript(folder)
         let archiveName = escapeForAppleScript(archive)
         let idList = ids.map { "\"\(escapeForAppleScript($0))\"" }.joined(separator: ", ")
@@ -210,15 +224,27 @@ final class AppleNotesImporter: ObservableObject {
                 if (name of f) is "\(archiveName)" then set arch to f
             end repeat
             if arch is missing value then set arch to (make new folder at acct with properties {name:"\(archiveName)"})
-            repeat with theID in {\(idList)}
+            set wanted to {\(idList)}
+            set toMove to {}
+            repeat with n in notes of target
+                if ((id of n as string) is in wanted) then set end of toMove to n
+            end repeat
+            set movedCount to 0
+            repeat with n in toMove
                 try
-                    move (first note of target whose id is theID) to arch
+                    move n to arch
+                    set movedCount to movedCount + 1
                 end try
             end repeat
-            return "OK"
+            return "MOVED:" & movedCount
         end tell
         """
-        _ = try await runOsascript(script)
+        let out = try await runOsascript(script).trimmingCharacters(in: .whitespacesAndNewlines)
+        if out == errNoFolder {
+            throw ImportError(message: "The folder “\(folder)” no longer exists in Apple Notes.")
+        }
+        if out.hasPrefix("MOVED:"), let n = Int(out.dropFirst("MOVED:".count)) { return n }
+        return 0
     }
 
     // MARK: - Process plumbing

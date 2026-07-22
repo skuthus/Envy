@@ -90,6 +90,15 @@ struct ImportSettingsView: View {
         }
         .formStyle(.grouped)
         .frame(width: 520)
+        .task {
+            // Returning users (an outbox is already chosen, so Automation was
+            // granted on a past run) get their folder list without clicking
+            // Refresh. First-timers have no saved outbox, so this stays quiet
+            // and opening the tab never trips the consent prompt.
+            if !outboxFolder.isEmpty && folders.isEmpty {
+                await loadFolders()
+            }
+        }
     }
 
     @ViewBuilder
