@@ -26,6 +26,45 @@ public enum NotesHTMLToMarkdown {
         return c.finish()
     }
 
+    /// Drops the note's title from the top of its own body.
+    ///
+    /// Apple Notes has no separate title field — a note's name *is* its first
+    /// line, and that line is part of the body too. Since Envy's title is the
+    /// filename, importing the body as-is repeats the title as line one. This
+    /// removes that leading line when it matches the title, comparing on plain
+    /// text so a styled title ("# Thoughts", "**Thoughts**") still matches the
+    /// plain "Thoughts" that `name of note` returns. A body whose first line
+    /// *isn't* the title (rare, but possible) is left untouched.
+    public static func stripLeadingTitle(_ markdown: String, title: String) -> String {
+        let wanted = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !wanted.isEmpty else { return markdown }
+        var lines = markdown.components(separatedBy: "\n")
+        guard let firstIdx = lines.firstIndex(where: {
+            !$0.trimmingCharacters(in: .whitespaces).isEmpty
+        }) else { return markdown }
+
+        guard plainText(lines[firstIdx]).caseInsensitiveCompare(wanted) == .orderedSame else {
+            return markdown
+        }
+        lines.removeSubrange(0...firstIdx)
+        while let f = lines.first, f.trimmingCharacters(in: .whitespaces).isEmpty {
+            lines.removeFirst()
+        }
+        return lines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// The visible text of a Markdown line, with heading (`#`) and emphasis
+    /// (`*`, `_`) markers removed, for comparing a styled body line against a
+    /// plain title.
+    private static func plainText(_ line: String) -> String {
+        var s = line.trimmingCharacters(in: .whitespaces)
+        while s.hasPrefix("#") { s.removeFirst() }
+        s = s.replacingOccurrences(of: "**", with: "")
+             .replacingOccurrences(of: "*", with: "")
+             .replacingOccurrences(of: "_", with: "")
+        return s.trimmingCharacters(in: .whitespaces)
+    }
+
     private struct ListFrame {
         var ordered: Bool
         var checklist: Bool

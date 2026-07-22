@@ -1245,6 +1245,22 @@ struct SelfCheck {
                   md("<div>a</div><div><br></div><div>b</div>") == "a\n\nb")
             check("unknown tags strip but keep text",
                   md("<div><span style=\"color:red\">kept</span></div>") == "kept")
+
+            // Apple Notes has no title field, so the title line is repeated in
+            // the body — stripLeadingTitle removes it once it's the filename.
+            func strip(_ m: String, _ t: String) -> String {
+                NotesHTMLToMarkdown.stripLeadingTitle(m, title: t)
+            }
+            check("leading title line dropped",
+                  strip("Thoughts\n\nBody text", "Thoughts") == "Body text")
+            check("styled title line dropped",
+                  strip("# Thoughts\n\nBody", "Thoughts") == "Body")
+            check("title-only note becomes empty",
+                  strip("Thoughts", "Thoughts") == "")
+            check("non-matching first line is kept",
+                  strip("Different\nBody", "Thoughts") == "Different\nBody")
+            check("only the first occurrence is dropped",
+                  strip("Thoughts\n\nThoughts again", "Thoughts") == "Thoughts again")
         }
 
         print("")

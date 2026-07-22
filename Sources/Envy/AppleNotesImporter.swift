@@ -108,8 +108,11 @@ final class AppleNotesImporter: ObservableObject {
         phase = .writing(done: 0, total: records.count)
         var skipped = 0
         for (index, record) in records.enumerated() {
-            let markdown = NotesHTMLToMarkdown.convert(record.html)
             let title = record.title.isEmpty ? "Untitled" : record.title
+            // Apple Notes repeats the title as the body's first line; drop it
+            // so the note isn't titled and opened by the same line.
+            let markdown = NotesHTMLToMarkdown.stripLeadingTitle(
+                NotesHTMLToMarkdown.convert(record.html), title: record.title)
             let written = await Task.detached {
                 NoteStore.writeInboxNote(
                     titled: title, content: markdown, date: record.date,
