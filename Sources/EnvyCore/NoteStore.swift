@@ -574,6 +574,29 @@ public final class NoteStore: ObservableObject {
         return note
     }
 
+    /// Writes an imported note (e.g. from Apple Notes) straight into `Inbox/`
+    /// as a fleeting note, stamping the file's dates to `date` so it sorts by
+    /// when it was actually written rather than the moment of import.
+    ///
+    /// Unlike `createInboxNote`, this carries a body and a date — an import is
+    /// a finished note arriving from elsewhere, not a blank one being started.
+    /// It reuses the same `Inbox/` naming so imported and hand-captured
+    /// fleeting notes are indistinguishable once they land.
+    @discardableResult
+    public func importInboxNote(titled title: String, content: String, date: Date) -> Note {
+        markInternalWrite()
+        try? FileManager.default.createDirectory(at: inboxDirectory, withIntermediateDirectories: true)
+        let url = inboxDirectory.appendingPathComponent(Self.uniqueFilename(for: title, in: inboxDirectory))
+        try? content.write(to: url, atomically: true, encoding: .utf8)
+        // Stamp both dates: creation so a future "sort by created" is honest,
+        // modification because that's what the list actually sorts on today.
+        try? FileManager.default.setAttributes(
+            [.creationDate: date, .modificationDate: date], ofItemAtPath: url.path)
+        let note = Note(id: url.path, url: url, content: content, modifiedDate: date)
+        notes.insert(note, at: 0)
+        return note
+    }
+
     /// Files a fleeting note into The Index proper — a plain move out of
     /// `Inbox/`. The note's text is untouched, so nothing about having been
     /// fleeting survives in the file.

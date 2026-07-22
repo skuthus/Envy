@@ -1218,6 +1218,35 @@ struct SelfCheck {
             }
         }
 
+        // MARK: - Apple Notes HTML → Markdown
+        do {
+            func md(_ html: String) -> String { NotesHTMLToMarkdown.convert(html) }
+
+            check("inline bold and italic",
+                  md("<div>Some <b>bold</b> and <i>italic</i>.</div>")
+                    == "Some **bold** and _italic_.")
+            check("heading becomes #",
+                  md("<div><h1>Title</h1></div>") == "# Title")
+            check("bulleted list",
+                  md("<ul><li>one</li><li>two</li></ul>") == "- one\n- two")
+            check("ordered list numbers",
+                  md("<ol><li>a</li><li>b</li></ol>") == "1. a\n2. b")
+            check("link to markdown",
+                  md("<div>See <a href=\"https://x.com\">site</a>.</div>")
+                    == "See [site](https://x.com).")
+            check("entities decode",
+                  md("<div>Tom &amp; Jerry &mdash; &#39;hi&#39;</div>")
+                    == "Tom & Jerry — 'hi'")
+            check("image becomes marker",
+                  md("<div><img src=\"x.png\"></div>") == "[image omitted]")
+            check("checklist becomes task",
+                  md("<ul class=\"checklist\"><li>todo</li></ul>") == "- [ ] todo")
+            check("blank lines collapse to one",
+                  md("<div>a</div><div><br></div><div>b</div>") == "a\n\nb")
+            check("unknown tags strip but keep text",
+                  md("<div><span style=\"color:red\">kept</span></div>") == "kept")
+        }
+
         print("")
         if failures.isEmpty {
             print("All checks passed.")
