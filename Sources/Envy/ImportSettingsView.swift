@@ -12,6 +12,10 @@ struct ImportSettingsView: View {
     // true = Inbox (fleeting notes, to review and file); false = straight into
     // the Index as ordinary notes.
     @AppStorage("appleNotesImportToInbox") private var importToInbox = true
+    // Master switch for the whole feature; off by default so Envy stays inert
+    // toward Apple Notes (no folder reads, no Automation prompt) until the user
+    // opts in.
+    @AppStorage("appleNotesImportEnabled") private var importEnabled = false
 
     // Shared with the ⌘⌥I File-menu trigger, so progress and results appear
     // here whether the import was started from this button or the menu.
@@ -35,11 +39,15 @@ struct ImportSettingsView: View {
     var body: some View {
         Form {
             Section("Apple Notes") {
+                Toggle("Enable Apple Notes import", isOn: $importEnabled)
+
                 Text("Capture on the go in Apple Notes, then pull those notes into Envy. Envy reads one folder of your choosing, and after importing, moves each note to a chosen folder in Apple Notes so it's never imported twice. See [docs](https://envynote.app/docs.html) for more details.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
+            }
 
+            Section {
                 HStack {
                     Picker("Import from", selection: $outboxFolder) {
                         if folderOptions.isEmpty {
@@ -76,6 +84,7 @@ struct ImportSettingsView: View {
                     Text("The Index (directly)").tag(false)
                 }
             }
+            .disabled(!importEnabled)
 
             Section {
                 HStack {
@@ -98,15 +107,16 @@ struct ImportSettingsView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+            .disabled(!importEnabled)
         }
         .formStyle(.grouped)
         .frame(width: 520)
         .task {
-            // Returning users (an outbox is already chosen, so Automation was
-            // granted on a past run) get their folder list without clicking
-            // Refresh. First-timers have no saved outbox, so this stays quiet
-            // and opening the tab never trips the consent prompt.
-            if !outboxFolder.isEmpty && folders.isEmpty {
+            // Returning users (feature on, an outbox already chosen, so
+            // Automation was granted on a past run) get their folder list
+            // without clicking Refresh. If the feature is off or no outbox is
+            // set, this stays quiet and opening the tab never touches Notes.
+            if importEnabled && !outboxFolder.isEmpty && folders.isEmpty {
                 await loadFolders()
             }
         }
