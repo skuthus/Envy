@@ -50,6 +50,18 @@ struct EnvyApp: App {
                     NotificationCenter.default.post(name: .newFromTemplateRequested, object: nil)
                 }
                 .keyboardShortcut(binding(for: .newFromTemplate).keyEquivalent, modifiers: binding(for: .newFromTemplate).eventModifiers)
+
+                Divider()
+
+                Button("Import from Apple Notes…") {
+                    // Open Settings on the Import tab, where the picker and
+                    // progress live. Selecting the tab first (rather than
+                    // triggering a silent background import) keeps the long,
+                    // permission-prompting AppleScript work visible and off the
+                    // launch/summon path.
+                    UserDefaults.standard.set("import", forKey: "settingsSelectedTab")
+                    NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+                }
             }
             CommandGroup(after: .newItem) {
                 Button("Delete Note") {
