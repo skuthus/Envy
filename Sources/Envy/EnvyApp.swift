@@ -37,11 +37,14 @@ struct EnvyApp: App {
             .trimmingCharacters(in: .whitespaces)
         let archive = archiveRaw.isEmpty ? "Imported" : archiveRaw
         let index = IndexPreference.load()
+        // Defaults to Inbox when the key was never set (register-less bool → false),
+        // so read it explicitly with a true default to match the Settings picker.
+        let toInbox = defaults.object(forKey: "appleNotesImportToInbox") as? Bool ?? true
 
         Task { @MainActor in
             let importer = AppleNotesImporter.shared
             guard !importer.isRunning else { return }
-            await importer.run(folder: folder, archive: archive, indexDirectory: index)
+            await importer.run(folder: folder, archive: archive, indexDirectory: index, toInbox: toInbox)
             if case let .failed(message) = importer.phase {
                 let alert = NSAlert()
                 alert.messageText = "Apple Notes Import"

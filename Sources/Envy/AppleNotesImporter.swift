@@ -82,7 +82,7 @@ final class AppleNotesImporter: ObservableObject {
 
     /// Reads `folder`, writes each note into the Index's Inbox, then moves the
     /// successfully-written notes into `archive` inside the same account.
-    func run(folder: String, archive: String, indexDirectory: URL) async {
+    func run(folder: String, archive: String, indexDirectory: URL, toInbox: Bool) async {
         guard !isRunning else { return }
         phase = .reading
 
@@ -105,6 +105,12 @@ final class AppleNotesImporter: ObservableObject {
         // (recoverable by hand), just not in Envy — the deliberate trade for
         // halving the Apple Notes round-trips. In practice a local Inbox write
         // doesn't fail: the folder is created on demand.
+        // Fleeting notes land in Inbox/; a direct import files them in the
+        // Index root, the same place a submitted note would end up.
+        let destination = toInbox
+            ? indexDirectory.appendingPathComponent(NoteStore.inboxFolderName, isDirectory: true)
+            : indexDirectory
+
         phase = .writing(done: 0, total: records.count)
         var skipped = 0
         for (index, record) in records.enumerated() {
@@ -114,9 +120,9 @@ final class AppleNotesImporter: ObservableObject {
             let markdown = NotesHTMLToMarkdown.stripLeadingTitle(
                 NotesHTMLToMarkdown.convert(record.html), title: record.title)
             let written = await Task.detached {
-                NoteStore.writeInboxNote(
+                NoteStore.writeImportedNote(
                     titled: title, content: markdown, date: record.date,
-                    indexDirectory: indexDirectory)
+                    directory: destination)
             }.value
             if written == nil { skipped += 1 }
             phase = .writing(done: index + 1, total: records.count)

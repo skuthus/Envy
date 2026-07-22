@@ -574,24 +574,25 @@ public final class NoteStore: ObservableObject {
         return note
     }
 
-    /// Writes an imported note (e.g. from Apple Notes) straight into the Index's
-    /// `Inbox/` folder, stamping the file's dates to `date` so it sorts by when
-    /// it was actually written rather than the moment of import.
+    /// Writes an imported note (e.g. from Apple Notes) into `directory`,
+    /// stamping the file's dates to `date` so it sorts by when it was actually
+    /// written rather than the moment of import. `directory` is the Index's
+    /// `Inbox/` folder or the Index root itself, depending on whether the user
+    /// wants imports treated as fleeting notes or filed straight in.
     ///
     /// Static and store-free on purpose: the Apple Notes importer runs from the
     /// Settings scene, which has no live NoteStore, and writes straight to disk
     /// — the running app's file-watcher then surfaces the new notes the same way
-    /// it would any external edit. Reuses the same `Inbox/` naming so imported
-    /// and hand-captured fleeting notes are indistinguishable once they land.
+    /// it would any external edit. Reuses the same filename disambiguation so
+    /// imported notes sit beside hand-made ones indistinguishably.
     ///
     /// Returns the file it wrote, or nil if the write failed.
     @discardableResult
-    public nonisolated static func writeInboxNote(
-        titled title: String, content: String, date: Date, indexDirectory: URL
+    public nonisolated static func writeImportedNote(
+        titled title: String, content: String, date: Date, directory: URL
     ) -> URL? {
-        let inbox = indexDirectory.appendingPathComponent(inboxFolderName, isDirectory: true)
-        try? FileManager.default.createDirectory(at: inbox, withIntermediateDirectories: true)
-        let url = inbox.appendingPathComponent(uniqueFilename(for: title, in: inbox))
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let url = directory.appendingPathComponent(uniqueFilename(for: title, in: directory))
         do {
             try content.write(to: url, atomically: true, encoding: .utf8)
         } catch {

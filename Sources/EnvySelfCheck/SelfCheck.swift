@@ -1263,6 +1263,27 @@ struct SelfCheck {
                   strip("Thoughts\n\nThoughts again", "Thoughts") == "Thoughts again")
         }
 
+        // MARK: - Imported-note writing (destination-agnostic)
+        do {
+            let tmp = FileManager.default.temporaryDirectory
+                .appendingPathComponent("envy-import-\(UUID().uuidString)", isDirectory: true)
+            let date = Date(timeIntervalSince1970: 1_600_000_000)
+            let url = NoteStore.writeImportedNote(
+                titled: "Imported One", content: "Body here", date: date, directory: tmp)
+            check("writeImportedNote creates the file in the given directory",
+                  url != nil && FileManager.default.fileExists(atPath: url!.path))
+            if let url {
+                check("writeImportedNote writes into that exact directory",
+                      url.deletingLastPathComponent().standardizedFileURL == tmp.standardizedFileURL)
+                check("writeImportedNote writes the content",
+                      (try? String(contentsOf: url, encoding: .utf8)) == "Body here")
+                let mod = (try? FileManager.default.attributesOfItem(atPath: url.path)[.modificationDate]) as? Date
+                check("writeImportedNote stamps the source date",
+                      mod != nil && abs(mod!.timeIntervalSince(date)) < 1)
+            }
+            try? FileManager.default.removeItem(at: tmp)
+        }
+
         print("")
         if failures.isEmpty {
             print("All checks passed.")

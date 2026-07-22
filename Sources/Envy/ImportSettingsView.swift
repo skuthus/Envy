@@ -9,6 +9,9 @@ struct ImportSettingsView: View {
     @AppStorage("appleNotesOutboxFolder") private var outboxFolder = ""
     @AppStorage("appleNotesArchiveFolder") private var archiveFolder = "Imported"
     @AppStorage(IndexPreference.storageKey) private var indexPathRaw = ""
+    // true = Inbox (fleeting notes, to review and file); false = straight into
+    // the Index as ordinary notes.
+    @AppStorage("appleNotesImportToInbox") private var importToInbox = true
 
     // Shared with the ⌘⌥I File-menu trigger, so progress and results appear
     // here whether the import was started from this button or the menu.
@@ -32,7 +35,7 @@ struct ImportSettingsView: View {
     var body: some View {
         Form {
             Section("Apple Notes") {
-                Text("Capture on the go in Apple Notes, then pull those notes into Envy's Inbox as fleeting notes. Envy reads one folder — your outbox — and after importing, moves each note to a “\(archiveFolder.isEmpty ? "Imported" : archiveFolder)” folder in Apple Notes so it's never imported twice.")
+                Text("Capture on the go in Apple Notes, then pull those notes into Envy. Envy reads one folder of your choosing, and after importing, moves each note to a chosen folder in Apple Notes so it's never imported twice. See [docs](https://envynote.app/docs.html) for more details.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -67,6 +70,11 @@ struct ImportSettingsView: View {
                 }
 
                 TextField("Move imported notes to", text: $archiveFolder, prompt: Text("Imported"))
+
+                Picker("Import to", selection: $importToInbox) {
+                    Text("Inbox (as fleeting notes)").tag(true)
+                    Text("The Index (directly)").tag(false)
+                }
             }
 
             Section {
@@ -76,7 +84,8 @@ struct ImportSettingsView: View {
                             await importer.run(
                                 folder: outboxFolder,
                                 archive: archiveFolder.trimmingCharacters(in: .whitespaces).isEmpty ? "Imported" : archiveFolder,
-                                indexDirectory: indexDirectory)
+                                indexDirectory: indexDirectory,
+                                toInbox: importToInbox)
                         }
                     }
                     .disabled(outboxFolder.isEmpty || importer.isRunning)
@@ -85,7 +94,7 @@ struct ImportSettingsView: View {
                     statusView
                 }
             } footer: {
-                Text("Images and attachments don't transfer over — they arrive as an “[image omitted]” marker. Everything else (text, formatting, lists, checklists, links) comes across as Markdown.")
+                Text("Images and attachments don't transfer over — they arrive as an “[image omitted]” marker, and Apple Notes checklists come in as plain bullet lists. Everything else (text, formatting, lists, links) comes across as Markdown.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
