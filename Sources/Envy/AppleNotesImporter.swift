@@ -114,13 +114,16 @@ final class AppleNotesImporter: ObservableObject {
         phase = .writing(done: 0, total: records.count)
         var skipped = 0
         for (index, record) in records.enumerated() {
-            let title = record.title.isEmpty ? "Untitled" : record.title
-            // Apple Notes repeats the title as the body's first line; drop it
-            // so the note isn't titled and opened by the same line.
-            let markdown = NotesHTMLToMarkdown.stripLeadingTitle(
-                NotesHTMLToMarkdown.convert(record.html), title: record.title)
-            let written = await Task.detached {
-                NoteStore.writeImportedNote(
+            // The HTML→Markdown conversion is the expensive part of a large
+            // note, so it belongs on the detached task with the write — the
+            // main actor's only job in this loop is publishing progress.
+            let written = await Task.detached { () -> URL? in
+                let title = record.title.isEmpty ? "Untitled" : record.title
+                // Apple Notes repeats the title as the body's first line; drop
+                // it so the note isn't titled and opened by the same line.
+                let markdown = NotesHTMLToMarkdown.stripLeadingTitle(
+                    NotesHTMLToMarkdown.convert(record.html), title: record.title)
+                return NoteStore.writeImportedNote(
                     titled: title, content: markdown, date: record.date,
                     directory: destination)
             }.value

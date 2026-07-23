@@ -3,16 +3,16 @@ import EnvyCore
 
 @MainActor
 enum MarkdownStyler {
-    private nonisolated(unsafe) static let wikiLinkRegex = try! NSRegularExpression(pattern: #"\[\[([^\[\]]+)\]\]"#)
+    private nonisolated static let wikiLinkRegex = try! NSRegularExpression(pattern: #"\[\[([^\[\]]+)\]\]"#)
     private static let boldItalicRegex = try! NSRegularExpression(pattern: #"\*\*\*([^*\n]+)\*\*\*"#)
     private static let boldRegex = try! NSRegularExpression(pattern: #"\*\*([^*\n]+)\*\*"#)
     private static let italicRegex = try! NSRegularExpression(pattern: #"(?<!\*)\*([^*\n]+)\*(?!\*)"#)
     private static let strikethroughRegex = try! NSRegularExpression(pattern: #"~~([^~\n]+)~~"#)
     private static let highlightRegex = try! NSRegularExpression(pattern: #"==([^=\n]+)=="#)
-    private nonisolated(unsafe) static let codeRegex = try! NSRegularExpression(pattern: #"`([^`\n]+)`"#)
-    private nonisolated(unsafe) static let fencedCodeBlockRegex = try! NSRegularExpression(pattern: #"^```[^\n]*\n([\s\S]*?)\n```[ \t]*$"#, options: [.anchorsMatchLines])
+    private nonisolated static let codeRegex = try! NSRegularExpression(pattern: #"`([^`\n]+)`"#)
+    private nonisolated static let fencedCodeBlockRegex = try! NSRegularExpression(pattern: #"^```[^\n]*\n([\s\S]*?)\n```[ \t]*$"#, options: [.anchorsMatchLines])
     private static let headerRegex = try! NSRegularExpression(pattern: #"^(#{1,6})[ \t]+(.*)$"#, options: [.anchorsMatchLines])
-    nonisolated(unsafe) private static let blockquoteRegex = try! NSRegularExpression(pattern: #"^(>[ \t]?)(.*)$"#, options: [.anchorsMatchLines])
+    private nonisolated static let blockquoteRegex = try! NSRegularExpression(pattern: #"^(>[ \t]?)(.*)$"#, options: [.anchorsMatchLines])
     private static let horizontalRuleRegex = try! NSRegularExpression(pattern: #"^ {0,3}([-*_])[ \t]*(?:\1[ \t]*){2,}$"#, options: [.anchorsMatchLines])
     // The "-"/"*"/"+" list marker is optional (group 1 still captures it,
     // and any leading whitespace, when present) — "[ ] Buy milk" on its own
@@ -554,12 +554,7 @@ enum MarkdownStyler {
         // Which "![[...]]" markers are real embeds vs. still-being-typed
         // text — see embedRanges(in:noteTitles:) above for why this can't
         // just be "any syntactically valid span."
-        noteTitles: [String] = [],
-        // Embed titles the user has collapsed via EmbeddedNoteView's own
-        // for that specific embed's spacer line. Owned by
-        // MarkdownTextView.Coordinator, not this caller-agnostic function;
-        // just a plain title match here, same as embedRanges' own title
-        // resolution.
+        noteTitles: [String] = []
     ) {
         let wholeDocument = NSRange(location: 0, length: (text as NSString).length)
         let full = restyleRange.map { NSIntersectionRange($0, wholeDocument) } ?? wholeDocument
@@ -1199,6 +1194,25 @@ enum MarkdownStyler {
         return bg > 0.5 ? .black : .white
     }
 
+    // Search-highlight patterns are derived from the query, which changes
+    // far less often than restyles run (an active search restyles the full
+    // document on every keystroke) — so compiled regexes are memoized by
+    // pattern rather than rebuilt per pass. Capped crudely: distinct
+    // patterns accumulate only as fast as the user types new queries, so
+    // clearing wholesale on overflow is fine.
+    private static let highlightRegexLock = NSLock()
+    nonisolated(unsafe) private static var highlightRegexCache: [String: NSRegularExpression] = [:]
+
+    private static func cachedHighlightRegex(_ pattern: String) -> NSRegularExpression? {
+        highlightRegexLock.lock()
+        defer { highlightRegexLock.unlock() }
+        if let cached = highlightRegexCache[pattern] { return cached }
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else { return nil }
+        if highlightRegexCache.count > 64 { highlightRegexCache.removeAll(keepingCapacity: true) }
+        highlightRegexCache[pattern] = regex
+        return regex
+    }
+
     private static func highlightMatches(of query: String, in text: String, textStorage: NSTextStorage, color: NSColor, backdrop: NSColor) {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
@@ -1208,7 +1222,7 @@ enum MarkdownStyler {
         let perceivedColor = compositedColor(color, over: backdrop)
 
         func highlightMatches(ofPattern pattern: String) {
-            guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else { return }
+            guard let regex = cachedHighlightRegex(pattern) else { return }
             for match in regex.matches(in: text, range: fullRange) {
                 textStorage.addAttribute(.backgroundColor, value: color, range: match.range)
                 // Reads whatever foreground color the rest of styling
@@ -1276,8 +1290,7 @@ enum MarkdownStyler {
                 // search only highlights the substring actually searched.
                 let tagName = lowered.dropFirst("tag:".count)
                 guard !tagName.isEmpty else { continue }
-                let tagRegex = try? NSRegularExpression(pattern: "(?<![\\w#])#[A-Za-z0-9_-]+")
-                for tagMatch in tagRegex?.matches(in: text, range: fullRange) ?? [] {
+                for tagMatch in hashtagRegex.matches(in: text, range: fullRange) {
                     let tagText = nsText.substring(with: tagMatch.range)
                     guard let subRange = tagText.range(of: tagName, options: .caseInsensitive) else { continue }
                     let nsSubRange = NSRange(subRange, in: tagText)
@@ -1326,9 +1339,28 @@ enum MarkdownStyler {
         for offset in 0..<range.length {
             let charRange = NSRange(location: range.location + offset, length: 1)
             let char = nsText.substring(with: charRange)
-            let width = NSAttributedString(string: char, attributes: [.font: font]).size().width
-            textStorage.addAttribute(.kern, value: -width, range: charRange)
+            textStorage.addAttribute(.kern, value: -advanceWidth(of: char, font: font), range: charRange)
         }
+    }
+
+    // Marker characters repeat constantly (#, *, -, backticks, brackets) and
+    // fonts are stable across a whole restyle pass, so each collapsed
+    // character's advance is measured exactly once per font instead of
+    // allocating an NSAttributedString and running text measurement per
+    // marker character per keystroke. Lock-guarded (same pattern as
+    // NoteDerivedCache) since styling can run for popovers and previews too;
+    // the cache stays tiny — distinct marker characters × font sizes in use.
+    private static let advanceWidthLock = NSLock()
+    nonisolated(unsafe) private static var advanceWidthCache: [String: CGFloat] = [:]
+
+    private static func advanceWidth(of character: String, font: NSFont) -> CGFloat {
+        let key = "\(character)\u{0}\(font.fontName)\u{0}\(font.pointSize)"
+        advanceWidthLock.lock()
+        defer { advanceWidthLock.unlock() }
+        if let cached = advanceWidthCache[key] { return cached }
+        let width = NSAttributedString(string: character, attributes: [.font: font]).size().width
+        advanceWidthCache[key] = width
+        return width
     }
 
     // Like collapse(), but instead of shrinking the character to zero width,
@@ -1356,10 +1388,24 @@ enum MarkdownStyler {
     }
 
     static func checkboxSymbolWidth(baseFont: NSFont) -> CGFloat {
+        // Memoized through the same advance-width cache collapse() uses —
+        // this runs per checkbox per restyle, and the font lookup plus two
+        // measurements only depend on the base font.
+        let key = "checkbox\u{0}\(baseFont.fontName)\u{0}\(baseFont.pointSize)"
+        advanceWidthLock.lock()
+        if let cached = advanceWidthCache[key] {
+            advanceWidthLock.unlock()
+            return cached
+        }
+        advanceWidthLock.unlock()
         let symbolFont = checkboxSymbolFont(baseFont: baseFont)
         let checked = NSAttributedString(string: "☑", attributes: [.font: symbolFont]).size().width
         let unchecked = NSAttributedString(string: "☐", attributes: [.font: symbolFont]).size().width
-        return max(checked, unchecked)
+        let width = max(checked, unchecked)
+        advanceWidthLock.lock()
+        advanceWidthCache[key] = width
+        advanceWidthLock.unlock()
+        return width
     }
 
     private static func applyEmphasis(

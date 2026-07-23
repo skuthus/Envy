@@ -146,11 +146,16 @@ public final class NoteStore: ObservableObject {
         let generation = reloadGeneration
         let directory = noteDirectory
         let includeSubfolders = includeSubfolders
+        // Snapshot of what's already loaded, keyed by path — the scan reuses
+        // any note whose file hasn't changed on disk since it was read, so a
+        // one-file external edit doesn't reread (and re-derive caches for)
+        // the whole vault.
+        let previous = Dictionary(notes.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
         isLoading = true
 
         Task {
             let loaded = await Task.detached(priority: .userInitiated) {
-                Self.scanDirectory(directory, includeSubfolders: includeSubfolders)
+                Self.scanDirectory(directory, includeSubfolders: includeSubfolders, reusing: previous)
             }.value
 
             // A newer reload may have been kicked off (e.g. the folder
@@ -189,8 +194,13 @@ public final class NoteStore: ObservableObject {
 
         var results: [URL] = []
         for case let url as URL in enumerator {
-            if url.resolvingSymlinksInPath() == templatesDirectory {
-                enumerator.skipDescendants()
+            // resolvingSymlinksInPath() hits the filesystem, so only pay for
+            // it on directories (the only thing Templates/ could be) rather
+            // than on every enumerated file.
+            if (try? url.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true {
+                if url.resolvingSymlinksInPath() == templatesDirectory {
+                    enumerator.skipDescendants()
+                }
                 continue
             }
             guard url.pathExtension.lowercased() == "md" else { continue }
@@ -199,7 +209,7 @@ public final class NoteStore: ObservableObject {
         return results
     }
 
-    nonisolated private static func scanDirectory(_ directory: URL, includeSubfolders: Bool) -> [Note] {
+    nonisolated private static func scanDirectory(_ directory: URL, includeSubfolders: Bool, reusing previous: [String: Note] = [:]) -> [Note] {
         let fm = FileManager.default
         let urls: [URL]
         if includeSubfolders {
@@ -238,8 +248,21 @@ public final class NoteStore: ObservableObject {
             let box = UnsafeParallelWriteBox(buffer: rawBuffer)
             DispatchQueue.concurrentPerform(iterations: urls.count) { index in
                 let url = urls[index]
-                guard let content = try? String(contentsOf: url, encoding: .utf8) else { return }
                 let modified = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? Date()
+                // Same path, same mtime: the file hasn't changed since it was
+                // last read, so keep the existing Note — its derived cache
+                // (lowercased content, tags, links) survives with it. An
+                // internal save() stamps the in-memory note with Date()
+                // rather than the disk mtime, so anything Envy itself wrote
+                // recently misses here and gets re-read: the conservative
+                // direction. (The classic mtime-cache blind spot — content
+                // swapped under an unchanged mtime — is accepted; nothing
+                // ordinary does that to a notes folder.)
+                if let existing = previous[url.path], existing.modifiedDate == modified {
+                    box.buffer[index] = existing
+                    return
+                }
+                guard let content = try? String(contentsOf: url, encoding: .utf8) else { return }
                 box.buffer[index] = Note(id: url.path, url: url, content: content, modifiedDate: modified)
             }
         }
@@ -455,9 +478,16 @@ public final class NoteStore: ObservableObject {
     /// A small fixed set of tokens — plain string replacement, not any
     /// kind of scripting, so a template stays a plain markdown file
     /// readable by any other editor too.
+    /// DateFormatter construction is expensive enough to be worth caching
+    /// even here, where it only ran per created note.
+    private static let templateTimeFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.timeStyle = .short
+        return formatter
+    }()
+
     private static func applyingTemplateTokens(_ content: String, title: String, dateText: String) -> String {
-        let timeFormatter = DateFormatter()
-        timeFormatter.timeStyle = .short
+        let timeFormatter = templateTimeFormatter
         return content
             .replacingOccurrences(of: "{{date}}", with: dateText)
             .replacingOccurrences(of: "{{time}}", with: timeFormatter.string(from: Date()))
@@ -517,8 +547,9 @@ public final class NoteStore: ObservableObject {
 
     /// Not parallelized like scanDirectory() — trash is expected to hold far
     /// fewer notes than the whole Index at any given time (it only
-    /// accumulates between emptyTrash() sweeps), so a plain synchronous
-    /// scan on the main actor is simpler and in practice just as fast.
+    /// accumulates between emptyTrash() sweeps). Runs off the main actor via
+    /// refreshTrashedNotes(), since allTrashDirectories() walks the whole
+    /// vault subtree even when the trash itself is empty.
     nonisolated private static func scanTrashedNotes(under directory: URL) -> [Note] {
         let fm = FileManager.default
         var results: [Note] = []
@@ -746,31 +777,31 @@ public final class NoteStore: ObservableObject {
         }
     }
 
-    /// A free filename in `directory` for `title`, disambiguating with
-    /// " (2)", " (3)" and so on.
-    ///
-    /// Parenthesised rather than Finder's bare " 2", which reads as part of
-    /// a title — a note actually called "Ideas 2" is entirely plausible.
-    /// Compared case-insensitively because APFS is: "ideas" and "Ideas"
-    /// already collide at the filesystem level, so matching only exact case
-    /// would happily generate a name the OS then refuses.
     nonisolated static func availableURL(for title: String, in directory: URL) -> URL {
-        let fm = FileManager.default
-        let existing = Set(
-            ((try? fm.contentsOfDirectory(atPath: directory.path)) ?? [])
-                .map { ($0 as NSString).deletingPathExtension.lowercased() }
-        )
-        let base = title.replacingOccurrences(of: "/", with: "-")
-        guard existing.contains(base.lowercased()) else {
-            return directory.appendingPathComponent("\(base).md")
-        }
-        var counter = 2
-        while existing.contains("\(base) (\(counter))".lowercased()) { counter += 1 }
-        return directory.appendingPathComponent("\(base) (\(counter)).md")
+        directory.appendingPathComponent(uniqueFilename(for: title, in: directory))
     }
 
+    /// The full rescan, kicked off the main actor: the scan itself is cheap
+    /// (trash holds few notes) but *finding* the `.trash` folders walks the
+    /// entire vault subtree, which scales with the vault, not the trash.
+    /// Only reload() needs this — the store's own trash mutations
+    /// (delete/restore/empty) know exactly which notes moved and update
+    /// `trashedNotes` in memory instead, keeping the "updates immediately"
+    /// guarantee its doc comment makes without any disk walk at all.
+    /// Generation-guarded the same way reload() is, so overlapping
+    /// refreshes can't assign results out of order.
+    private var trashRefreshGeneration = 0
     private func refreshTrashedNotes() {
-        trashedNotes = Self.scanTrashedNotes(under: noteDirectory)
+        trashRefreshGeneration += 1
+        let generation = trashRefreshGeneration
+        let directory = noteDirectory
+        Task {
+            let scanned = await Task.detached(priority: .utility) {
+                Self.scanTrashedNotes(under: directory)
+            }.value
+            guard generation == self.trashRefreshGeneration else { return }
+            self.trashedNotes = scanned
+        }
     }
 
     /// The most recently deleted note(s) — a single delete or a whole bulk
@@ -809,7 +840,8 @@ public final class NoteStore: ObservableObject {
         lastDeleted = trashed
         let deletedIDs = Set(notesToDelete.map(\.id))
         notes.removeAll { deletedIDs.contains($0.id) }
-        refreshTrashedNotes()
+        let newlyTrashed = trashed.map { Note(id: $0.trashedURL.path, url: $0.trashedURL, content: $0.note.content, modifiedDate: $0.note.modifiedDate) }
+        trashedNotes = (trashedNotes + newlyTrashed).sorted { $0.modifiedDate > $1.modifiedDate }
     }
 
     /// Moves the most recently deleted note(s) back out of .trash/ to their
@@ -823,18 +855,23 @@ public final class NoteStore: ObservableObject {
         guard !lastDeleted.isEmpty else { return [] }
         markInternalWrite()
         var restored: [Note] = []
+        // A trashed note's id is its path inside .trash/ — collected here so
+        // the trashedNotes removal below matches where each note was
+        // sitting, not where it went back to.
+        var restoredTrashPaths = Set<String>()
         for (note, trashedURL) in lastDeleted {
             guard !FileManager.default.fileExists(atPath: note.url.path) else { continue }
             do {
                 try FileManager.default.moveItem(at: trashedURL, to: note.url)
                 restored.append(note)
+                restoredTrashPaths.insert(trashedURL.path)
             } catch {
                 continue
             }
         }
         lastDeleted = []
         notes.append(contentsOf: restored)
-        refreshTrashedNotes()
+        trashedNotes.removeAll { restoredTrashPaths.contains($0.id) }
         return restored
     }
 
@@ -860,7 +897,7 @@ public final class NoteStore: ObservableObject {
         }
         let restored = Note(id: destination.path, url: destination, content: note.content, modifiedDate: Date())
         notes.insert(restored, at: 0)
-        refreshTrashedNotes()
+        trashedNotes.removeAll { $0.id == note.id }
         return restored
     }
 
@@ -871,7 +908,7 @@ public final class NoteStore: ObservableObject {
     public func deleteFromTrash(_ note: Note) {
         markInternalWrite()
         try? FileManager.default.trashItem(at: note.url, resultingItemURL: nil)
-        refreshTrashedNotes()
+        trashedNotes.removeAll { $0.id == note.id }
     }
 
     /// Sweeps everything currently sitting in any of The Index's `.trash`
@@ -898,7 +935,7 @@ public final class NoteStore: ObservableObject {
         }
         guard swept else { return }
         markInternalWrite()
-        refreshTrashedNotes()
+        trashedNotes = []
     }
 
     /// Renames the note by moving its underlying file to a new filename derived
@@ -951,9 +988,7 @@ public final class NoteStore: ObservableObject {
         ) else { return }
         let template = "$1[[" + NSRegularExpression.escapedTemplate(for: newTitle) + "$2]]"
 
-        let candidateIDs = notes.filter { $0.wikiLinks.contains(oldLower) }.map(\.id)
-        for id in candidateIDs {
-            guard let idx = notes.firstIndex(where: { $0.id == id }) else { continue }
+        for idx in notes.indices where notes[idx].wikiLinks.contains(oldLower) {
             let content = notes[idx].content
             let updated = regex.stringByReplacingMatches(
                 in: content,
@@ -1001,13 +1036,19 @@ public final class NoteStore: ObservableObject {
         (haystack as NSString).range(of: needle).location != NSNotFound
     }
 
-    /// Whether `phrase` appears in `haystack` bounded by non-word characters
-    /// on both sides — the exact-match half of a closed "quoted phrase", so
-    /// "nee" doesn't match inside "needed". Unicode-aware word classes, so
-    /// accented letters and digits count as part of a word.
-    nonisolated private static func wholeWordContains(_ haystack: String, _ phrase: String) -> Bool {
+    /// The whole-word matcher for a closed "quoted phrase" — the phrase
+    /// bounded by non-word characters on both sides, so "nee" doesn't match
+    /// inside "needed". Unicode-aware word classes, so accented letters and
+    /// digits count as part of a word. Compiled once per phrase per search
+    /// (the compile is the expensive half; matching is cheap), never per
+    /// note — the pattern is fully escaped, so compilation can't realistically
+    /// fail.
+    nonisolated private static func wholeWordRegex(for phrase: String) -> NSRegularExpression? {
         let pattern = "(?<![\\p{L}\\p{N}_])" + NSRegularExpression.escapedPattern(for: phrase) + "(?![\\p{L}\\p{N}_])"
-        guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else { return false }
+        return try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive])
+    }
+
+    nonisolated private static func wholeWordContains(_ haystack: String, _ regex: NSRegularExpression) -> Bool {
         let range = NSRange(haystack.startIndex..., in: haystack)
         return regex.firstMatch(in: haystack, range: range) != nil
     }
@@ -1288,6 +1329,12 @@ public final class NoteStore: ObservableObject {
         // rather than the current instant.
         let overdueThreshold = Calendar.current.startOfDay(for: Date())
 
+        // Compiled once per group rather than per note — these used to be
+        // rebuilt inside the scan, i.e. one regex compile per note per
+        // phrase per keystroke.
+        let phraseRegexes = phraseTerms.compactMap(Self.wholeWordRegex(for:))
+        let excludePhraseRegexes = excludePhrases.compactMap(Self.wholeWordRegex(for:))
+
         return notes.compactMap { note -> (Note, Int)? in
             // Membership is the folder the file sits in — there's no flag on
             // a note saying it's fleeting, and there shouldn't be: moving it
@@ -1300,15 +1347,15 @@ public final class NoteStore: ObservableObject {
             let noteIsOrphan = note.wikiLinks.isEmpty && !linkedToTitles.contains(note.lowercasedTitle)
             if isOrphanOnly, !noteIsOrphan { return nil }
             if isLinkedOnly, noteIsOrphan { return nil }
-            if !phraseTerms.isEmpty {
+            if !phraseRegexes.isEmpty {
                 let t = note.lowercasedTitle, c = note.lowercasedContent
-                for phrase in phraseTerms where !(Self.wholeWordContains(t, phrase) || Self.wholeWordContains(c, phrase)) {
+                for regex in phraseRegexes where !(Self.wholeWordContains(t, regex) || Self.wholeWordContains(c, regex)) {
                     return nil
                 }
             }
-            if !excludePhrases.isEmpty {
+            if !excludePhraseRegexes.isEmpty {
                 let t = note.lowercasedTitle, c = note.lowercasedContent
-                if excludePhrases.contains(where: { Self.wholeWordContains(t, $0) || Self.wholeWordContains(c, $0) }) { return nil }
+                if excludePhraseRegexes.contains(where: { Self.wholeWordContains(t, $0) || Self.wholeWordContains(c, $0) }) { return nil }
             }
             if isTodoOnly, !note.hasUncheckedTask { return nil }
             if isTodoExcluded, note.hasUncheckedTask { return nil }
@@ -1637,19 +1684,30 @@ public final class NoteStore: ObservableObject {
 
     // MARK: - Filenames
 
-    nonisolated private static func uniqueFilename(for title: String, in directory: URL) -> String {
+    /// The one free-filename rule for `title` in `directory`, disambiguating
+    /// with " (2)", " (3)" and so on. Every path that names a file —
+    /// create, rename, submit-from-inbox, trash — goes through here, so the
+    /// same collision always resolves to the same name.
+    ///
+    /// Parenthesised rather than Finder's bare " 2", which reads as part of
+    /// a title — a note actually called "Ideas 2" is entirely plausible.
+    /// Compared case-insensitively because APFS is: "ideas" and "Ideas"
+    /// already collide at the filesystem level, so matching only exact case
+    /// would happily generate a name the OS then refuses. One directory
+    /// read up front rather than a fileExists syscall per candidate.
+    nonisolated static func uniqueFilename(for title: String, in directory: URL) -> String {
         let sanitized = title
             .replacingOccurrences(of: "/", with: "-")
             .replacingOccurrences(of: ":", with: "-")
             .trimmingCharacters(in: .whitespacesAndNewlines)
         let base = sanitized.isEmpty ? "Untitled" : sanitized
-
-        var candidate = "\(base).md"
-        var suffix = 2
-        while FileManager.default.fileExists(atPath: directory.appendingPathComponent(candidate).path) {
-            candidate = "\(base) \(suffix).md"
-            suffix += 1
-        }
-        return candidate
+        let existing = Set(
+            ((try? FileManager.default.contentsOfDirectory(atPath: directory.path)) ?? [])
+                .map { ($0 as NSString).deletingPathExtension.lowercased() }
+        )
+        guard existing.contains(base.lowercased()) else { return "\(base).md" }
+        var counter = 2
+        while existing.contains("\(base) (\(counter))".lowercased()) { counter += 1 }
+        return "\(base) (\(counter)).md"
     }
 }

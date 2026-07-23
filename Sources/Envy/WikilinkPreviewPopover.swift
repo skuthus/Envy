@@ -180,12 +180,9 @@ struct WikilinkPreviewContentView: View {
 
     private func scheduleSave(_ newValue: String) {
         guard let note else { return }
-        saveTask?.cancel()
         var updated = note
         updated.content = newValue
-        saveTask = Task { @MainActor in
-            try? await Task.sleep(for: .milliseconds(400))
-            guard !Task.isCancelled else { return }
+        saveTask = DebouncedSave.schedule(replacing: saveTask) {
             store.save(updated)
             lastSyncedContent = updated.content
         }

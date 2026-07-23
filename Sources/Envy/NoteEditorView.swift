@@ -34,6 +34,7 @@ struct NoteEditorView: View {
 
     @State private var content: String
     @State private var saveTask: Task<Void, Never>?
+    @State private var statsTask: Task<Void, Never>?
     @State private var titleText: String
     @FocusState private var isTitleFocused: Bool
     /// Whether the title is currently showing as an editable TextField —
@@ -123,8 +124,12 @@ struct NoteEditorView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            header
+        // Resolved once per body pass — the lookup is an O(n) scan over
+        // every note, and the header alone used to hit the computed
+        // property several times per keystroke-triggered render.
+        let note = self.note
+        return VStack(alignment: .leading, spacing: 0) {
+            header(note: note)
             Divider()
             MarkdownTextView(
                 text: $content,
@@ -165,7 +170,13 @@ struct NoteEditorView: View {
         }
         .onChange(of: content) { _, newValue in
             scheduleSave(newValue)
-            onStatsChange(wordCount, characterCount)
+            // Debounced, unlike the immediate onAppear call above: the
+            // counts land in ContentView @State, so pushing them per
+            // keystroke invalidated the entire window (note list included)
+            // just to refresh one footer label — and the word-count split
+            // is itself a full-content pass. A quarter second of footer lag
+            // is invisible; the per-keystroke window re-render was not.
+            scheduleStatsUpdate()
         }
         // Fires when the note's on-disk content changed outside this view —
         // another app editing the same file, or a folder-level reload. Our
@@ -219,7 +230,7 @@ struct NoteEditorView: View {
         }
     }
 
-    private var header: some View {
+    private func header(note: Note?) -> some View {
         HStack {
             Group {
                 if isEditingTitle {
@@ -330,14 +341,20 @@ struct NoteEditorView: View {
         content.count
     }
 
+    private func scheduleStatsUpdate() {
+        statsTask?.cancel()
+        statsTask = Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(250))
+            guard !Task.isCancelled else { return }
+            onStatsChange(wordCount, characterCount)
+        }
+    }
+
     private func scheduleSave(_ newValue: String) {
         guard let note, newValue != note.content else { return }
-        saveTask?.cancel()
         var updated = note
         updated.content = newValue
-        saveTask = Task { @MainActor in
-            try? await Task.sleep(for: .milliseconds(400))
-            guard !Task.isCancelled else { return }
+        saveTask = DebouncedSave.schedule(replacing: saveTask) {
             store.save(updated)
             // Recorded at the moment the store adopts our value — in the
             // same main-actor turn, before any later keystroke can run.

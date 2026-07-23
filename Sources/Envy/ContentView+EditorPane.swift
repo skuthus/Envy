@@ -39,8 +39,14 @@ extension ContentView {
                             onCreateNote: { createFromTemplate(template, title: template.name) },
                             // A template's id is its path, so renaming it
                             // means re-pointing the highlight at the moved
-                            // file or the pane goes blank underneath you.
-                            onRenamed: { movedURL in highlightedTemplateID = movedURL.path }
+                            // file or the pane goes blank underneath you —
+                            // and the cached template list has to pick up
+                            // the move too, for the same reason: the
+                            // highlight lookup above runs against it.
+                            onRenamed: { movedURL in
+                                refreshTemplates()
+                                highlightedTemplateID = movedURL.path
+                            }
                         )
                         .id(template.id)
                     } else {
@@ -50,6 +56,11 @@ extension ContentView {
                     trashPreviewPane
 
                 } else if let selectedID, store.notes.contains(where: { $0.id == selectedID }) {
+                    // Resolved once per render — the computed property is an
+                    // O(notes) scan, and the two closure parameters below
+                    // would otherwise each run it fresh in the same body pass
+                    // (SwiftUI doesn't share computed-property evaluations).
+                    let fleetingNote = fleetingNote
                     NoteEditorView(
                         store: store,
                         noteID: selectedID,

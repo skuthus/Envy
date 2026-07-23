@@ -197,8 +197,21 @@ struct ContentView: View {
         BlurStrength(rawValue: backgroundBlurStrengthRaw) ?? .strong
     }
 
-    var availableTemplates: [NoteTemplate] {
-        store.templates()
+    // store.templates() lists the Templates/ directory on disk every call,
+    // and this used to be a plain computed property wrapping it — so
+    // browsing a "template:" query hit the filesystem several times per
+    // render (the rows, the fragment filter, the editor pane's highlight
+    // lookup). Cached instead, refreshed from the events that can actually
+    // change the folder's contents: the query entering/typing in template
+    // mode (see searchField's onChange), a store.notes reload while
+    // browsing (covers bulk convert-to-note), and the delete/rename
+    // template actions' own call sites.
+    @State var availableTemplatesCache: [NoteTemplate] = []
+
+    var availableTemplates: [NoteTemplate] { availableTemplatesCache }
+
+    func refreshTemplates() {
+        availableTemplatesCache = store.templates()
     }
 
     var availableTrashedNotes: [Note] {
@@ -231,12 +244,23 @@ struct ContentView: View {
     /// field's body on every keystroke render.
     @State var suggestionNoteCache: Note?
     @State var queryHasExactTitleMatch = false
+    /// How many notes are waiting in Inbox/ (drives the fleeting badge) and
+    /// which of the store's notes live there (drives each row's fleeting
+    /// icon) — both used to be recomputed in the list pane's body, an
+    /// O(notes) scan for the count and a two-URL standardization per
+    /// visible row for the membership check, on every render. Folded into
+    /// the background search pass instead, since it already walks the same
+    /// snapshot on exactly the right triggers (store.notes changes included).
+    @State var fleetingCountCache = 0
+    @State var inboxNoteIDsCache: Set<String> = []
     @State private var searchComputeGeneration = 0
 
     struct SearchComputation: Sendable {
         var notes: [Note]
         var suggestion: Note?
         var hasExactTitleMatch: Bool
+        var fleetingCount: Int
+        var inboxNoteIDs: Set<String>
     }
 
     /// The whole search pipeline — filter, rank-sort, pinning, plus the
@@ -252,7 +276,8 @@ struct ContentView: View {
         pinnedIDs: Set<String>,
         sortField: NoteSortField,
         sortAscending: Bool,
-        showInbox: Bool
+        showInbox: Bool,
+        inboxDirectory: URL
     ) -> SearchComputation {
         var filtered = NoteStore.filtered(notes, query: query)
         // Hidden only when the query isn't already about the inbox — asking
@@ -273,7 +298,21 @@ struct ContentView: View {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         let hasExact = !trimmed.isEmpty && notes.contains { $0.lowercasedTitle == trimmed }
 
-        return SearchComputation(notes: pinned, suggestion: suggestion, hasExactTitleMatch: hasExact)
+        // The badge's count deliberately uses the name-based
+        // isInInboxFolder (any Inbox/ folder), while per-row membership
+        // matches store.isInboxNote (The Index's own Inbox/ specifically,
+        // via the directory URL snapshotted before this pass detached) —
+        // two different predicates on purpose, same as the call sites they
+        // replaced.
+        let fleetingCount = notes.reduce(into: 0) { total, note in
+            if NoteStore.isInInboxFolder(note) { total += 1 }
+        }
+        let standardizedInbox = inboxDirectory.standardizedFileURL
+        let inboxIDs = Set(notes.lazy
+            .filter { $0.url.deletingLastPathComponent().standardizedFileURL == standardizedInbox }
+            .map(\.id))
+
+        return SearchComputation(notes: pinned, suggestion: suggestion, hasExactTitleMatch: hasExact, fleetingCount: fleetingCount, inboxNoteIDs: inboxIDs)
     }
 
     /// Guarded by a generation counter rather than task cancellation alone:
@@ -289,13 +328,19 @@ struct ContentView: View {
         let field = sortField
         let ascending = sortAscending
         let showInbox = showInboxInMainList
+        // Snapshotted here because the store's inboxDirectory isn't
+        // reachable from the detached task — and an index switch that moves
+        // it also reloads store.notes, which re-runs this whole pass anyway.
+        let inboxDirectory = store.inboxDirectory
         let result = await Task.detached(priority: .userInitiated) {
-            Self.computeSearch(notes: notesSnapshot, query: querySnapshot, pinnedIDs: pinnedSnapshot, sortField: field, sortAscending: ascending, showInbox: showInbox)
+            Self.computeSearch(notes: notesSnapshot, query: querySnapshot, pinnedIDs: pinnedSnapshot, sortField: field, sortAscending: ascending, showInbox: showInbox, inboxDirectory: inboxDirectory)
         }.value
         guard generation == searchComputeGeneration else { return }
         filteredNotesCache = result.notes
         suggestionNoteCache = result.suggestion
         queryHasExactTitleMatch = result.hasExactTitleMatch
+        fleetingCountCache = result.fleetingCount
+        inboxNoteIDsCache = result.inboxNoteIDs
     }
 
     /// Titles of every note, newest-edited first — feeds the editors'
@@ -647,6 +692,12 @@ struct ContentView: View {
             recomputeInterlinks()
             recomputeNoteTitles()
             recomputeAllTags()
+            // Gated so ordinary editing (which fires this via the debounced
+            // save) never touches the disk for templates — a notes reload
+            // only changes the template list when it came from converting
+            // templates to notes mid-browse, and browsing is the only time
+            // the cache is even on screen.
+            if isTemplateQuery { refreshTemplates() }
         }
         .onChange(of: showBacklinks) { _, _ in recomputeInterlinks() }
         .rebuildingListOnChange(self)

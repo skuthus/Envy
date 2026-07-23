@@ -26,16 +26,12 @@ struct EnvyApp: App {
     /// interruption.
     private func triggerAppleNotesImport() {
         let defaults = UserDefaults.standard
-        // Master switch (off by default). When the feature's off, ⌘⌥I sends
-        // the user to the Import tab to enable it rather than doing nothing.
-        guard defaults.bool(forKey: "appleNotesImportEnabled") else {
-            defaults.set("import", forKey: "settingsSelectedTab")
-            NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
-            return
-        }
         let folder = (defaults.string(forKey: "appleNotesOutboxFolder") ?? "")
             .trimmingCharacters(in: .whitespaces)
-        guard !folder.isEmpty else {
+        // Master switch (off by default) plus a chosen outbox folder — missing
+        // either, ⌘⌥I sends the user to the Import tab to finish setting up
+        // rather than doing nothing.
+        guard defaults.bool(forKey: "appleNotesImportEnabled"), !folder.isEmpty else {
             defaults.set("import", forKey: "settingsSelectedTab")
             NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
             return

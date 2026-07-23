@@ -80,40 +80,38 @@ struct EmbeddedNoteView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            do {
-                if isCurrentlyOpenElsewhere {
-                    Spacer(minLength: 0)
-                    Text("Already open above")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, alignment: .center)
-                    Spacer(minLength: 0)
-                } else if note != nil {
-                    MarkdownTextView(
-                        text: $content,
-                        onNavigate: onNavigate,
-                        theme: theme,
-                        requireModifierForLinkClick: requireModifierForLinkClick,
-                        searchQuery: "",
-                        isEditable: isEditable,
-                        onRequestEditable: { isEditable = true },
-                        noteTitles: noteTitles,
-                        allowsEmbeds: false,
-                        allowsScrollPassthrough: true,
-                        // Plus this view's own chrome — the bottom overhang
-                        // that marks the end of the embed. The host reserves
-                        // what it's told, so what it's told has to be the
-                        // whole thing, not just the text.
-                        onContentHeightChange: { onContentHeightChange($0 + 10) }
-                    )
-                } else {
-                    Spacer(minLength: 0)
-                    Text("Note not found")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, alignment: .center)
-                    Spacer(minLength: 0)
-                }
+            if isCurrentlyOpenElsewhere {
+                Spacer(minLength: 0)
+                Text("Already open above")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .center)
+                Spacer(minLength: 0)
+            } else if note != nil {
+                MarkdownTextView(
+                    text: $content,
+                    onNavigate: onNavigate,
+                    theme: theme,
+                    requireModifierForLinkClick: requireModifierForLinkClick,
+                    searchQuery: "",
+                    isEditable: isEditable,
+                    onRequestEditable: { isEditable = true },
+                    noteTitles: noteTitles,
+                    allowsEmbeds: false,
+                    allowsScrollPassthrough: true,
+                    // Plus this view's own chrome — the bottom overhang
+                    // that marks the end of the embed. The host reserves
+                    // what it's told, so what it's told has to be the
+                    // whole thing, not just the text.
+                    onContentHeightChange: { onContentHeightChange($0 + 10) }
+                )
+            } else {
+                Spacer(minLength: 0)
+                Text("Note not found")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .center)
+                Spacer(minLength: 0)
             }
         }
         // A left rule rather than a box. The border framed the embed as a
@@ -166,12 +164,9 @@ struct EmbeddedNoteView: View {
 
     private func scheduleSave(_ newValue: String) {
         guard let note else { return }
-        saveTask?.cancel()
         var updated = note
         updated.content = newValue
-        saveTask = Task { @MainActor in
-            try? await Task.sleep(for: .milliseconds(400))
-            guard !Task.isCancelled else { return }
+        saveTask = DebouncedSave.schedule(replacing: saveTask) {
             store.save(updated)
             lastSyncedContent = updated.content
         }

@@ -7,10 +7,16 @@ import EnvyCore
 // item lives in AppDelegate+MenuBar.swift and the pinned-note panel in
 // AppDelegate+PinnedNote.swift; several members here sit at internal (not
 // private) access because those same-class extensions live in other files.
+//
+// @MainActor on the class rather than sprinkled per-method (which is how it
+// had grown): everything here touches AppKit, and AppKit delivers every
+// delegate callback, menu action, and .main-queue notification on the main
+// thread anyway — the blanket isolation just tells the compiler so, and the
+// few @Sendable observer closures assert it explicitly with assumeIsolated.
+@MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private let hotKey = GlobalHotKey()
-    private var centerWindowMonitor: Any?
-    private var focusAreaMonitor: Any?
+    private var keyDownMonitor: Any?
     weak var mainWindow: NSWindow?
     private var keyObserver: Any?
     var statusItem: NSStatusItem?
@@ -50,36 +56,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         window?.makeKeyAndOrderFront(nil)
 
         // A SwiftUI .commands keyboardShortcut here loses to AppKit's own
-        // default Return-key handling (which zooms/full-screens the window)
-        // more often than it wins. A local monitor lets us intercept and
-        // consume the key combo ourselves, deterministically — matched
-        // against the user's customizable binding (Settings → Shortcuts)
-        // rather than a hardcoded key, read fresh from UserDefaults on every
-        // keypress so a change in Settings takes effect immediately.
-        centerWindowMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
-            let raw = UserDefaults.standard.string(forKey: ShortcutPreferences.storageKey) ?? ""
-            let binding = ShortcutPreferences.binding(for: .centerWindow, raw: raw)
-            let relevant = event.modifierFlags.intersection([.command, .option, .control, .shift])
-            let matches = event.charactersIgnoringModifiers == binding.character && EventModifiers(relevant) == binding.eventModifiers
-            guard matches else { return event }
-            NSApp.windows.first?.center()
-            return nil
-        }
-
-        // Option+Up/Down are already claimed by AppKit's own paragraph-
-        // navigation text editing (moveToBeginningOfParagraph:/
-        // moveToEndOfParagraph:) inside any text view — same category of
-        // conflict as Center Window above, same fix.
-        focusAreaMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+        // default key handling (Return zooms the window; Option+Up/Down are
+        // claimed by paragraph-navigation text editing inside any text view)
+        // more often than it wins. One local monitor intercepts and consumes
+        // these combos ourselves, deterministically — matched against the
+        // user's customizable bindings (Settings → Shortcuts) rather than
+        // hardcoded keys, read from UserDefaults on every keypress so a
+        // change in Settings takes effect immediately (cheap: the decode is
+        // memoized inside ShortcutPreferences, so this is a string compare
+        // per keypress, not a JSON parse).
+        keyDownMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
             let raw = UserDefaults.standard.string(forKey: ShortcutPreferences.storageKey) ?? ""
             let relevant = event.modifierFlags.intersection([.command, .option, .control, .shift])
-            let nextBinding = ShortcutPreferences.binding(for: .focusNextArea, raw: raw)
-            let previousBinding = ShortcutPreferences.binding(for: .focusPreviousArea, raw: raw)
-            if event.charactersIgnoringModifiers == nextBinding.character && EventModifiers(relevant) == nextBinding.eventModifiers {
+            func matches(_ binding: ShortcutBinding) -> Bool {
+                event.charactersIgnoringModifiers == binding.character && EventModifiers(relevant) == binding.eventModifiers
+            }
+            if matches(ShortcutPreferences.binding(for: .centerWindow, raw: raw)) {
+                NSApp.windows.first?.center()
+                return nil
+            }
+            if matches(ShortcutPreferences.binding(for: .focusNextArea, raw: raw)) {
                 NotificationCenter.default.post(name: .focusNextAreaRequested, object: nil)
                 return nil
             }
-            if event.charactersIgnoringModifiers == previousBinding.character && EventModifiers(relevant) == previousBinding.eventModifiers {
+            if matches(ShortcutPreferences.binding(for: .focusPreviousArea, raw: raw)) {
                 NotificationCenter.default.post(name: .focusPreviousAreaRequested, object: nil)
                 return nil
             }
@@ -99,8 +99,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             object: nil,
             queue: .main
         ) { [weak self] note in
-            guard let self, let window = note.object as? NSWindow, window === self.mainWindow else { return }
-            Self.applyWindowChrome(to: window)
+            // The .main queue already guarantees the main thread;
+            // assumeIsolated tells the compiler what the queue promised.
+            // Same pattern for every observer below. The notification's
+            // object crosses into the isolated closure as unsafe only
+            // because Notification itself isn't Sendable — same guarantee.
+            nonisolated(unsafe) let object = note.object
+            MainActor.assumeIsolated {
+                guard let self, let window = object as? NSWindow, window === self.mainWindow else { return }
+                Self.applyWindowChrome(to: window)
+            }
         }
         if let window {
             Self.applyWindowChrome(to: window)
@@ -138,10 +146,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            self?.applySummonHotKey()
-            self?.applyPinnedNoteHotKey()
-            self?.applyUnpinNoteHotKey()
-            self?.applyAppVisibility()
+            MainActor.assumeIsolated {
+                self?.applySummonHotKey()
+                self?.applyPinnedNoteHotKey()
+                self?.applyUnpinNoteHotKey()
+                self?.applyAppVisibility()
+            }
         }
 
         if visibility.showsInMenuBar {
@@ -161,8 +171,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            guard let self else { return }
-            self.applyActivationPolicy(for: self.currentAppVisibility)
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.applyActivationPolicy(for: self.currentAppVisibility)
+            }
         })
         windowStateObservers.append(NotificationCenter.default.addObserver(
             forName: NSWindow.didResignKeyNotification,
@@ -194,7 +206,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            self?.hideIfAutoHideEnabled()
+            MainActor.assumeIsolated {
+                self?.hideIfAutoHideEnabled()
+            }
         }
     }
 
@@ -212,28 +226,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         updateStatusItemIcon()
     }
 
-    private func applySummonHotKey() {
+    /// One registration rule for all three global hotkeys: read the current
+    /// binding, skip if it's what's already registered, re-register otherwise.
+    private func applyHotKey(_ action: ShortcutAction, id: UInt32, applied: inout ShortcutBinding?) {
         let raw = UserDefaults.standard.string(forKey: ShortcutPreferences.storageKey) ?? ""
-        let binding = ShortcutPreferences.binding(for: .summonApp, raw: raw)
-        guard binding != appliedSummonBinding else { return }
-        appliedSummonBinding = binding
-        hotKey.register(id: Self.summonHotKeyID, keyCode: UInt32(binding.keyCode), modifiers: binding.carbonModifiers)
+        let binding = ShortcutPreferences.binding(for: action, raw: raw)
+        guard binding != applied else { return }
+        applied = binding
+        hotKey.register(id: id, keyCode: UInt32(binding.keyCode), modifiers: binding.carbonModifiers)
+    }
+
+    private func applySummonHotKey() {
+        applyHotKey(.summonApp, id: Self.summonHotKeyID, applied: &appliedSummonBinding)
     }
 
     private func applyPinnedNoteHotKey() {
-        let raw = UserDefaults.standard.string(forKey: ShortcutPreferences.storageKey) ?? ""
-        let binding = ShortcutPreferences.binding(for: .showPinnedNote, raw: raw)
-        guard binding != appliedPinnedNoteBinding else { return }
-        appliedPinnedNoteBinding = binding
-        hotKey.register(id: Self.pinnedNoteHotKeyID, keyCode: UInt32(binding.keyCode), modifiers: binding.carbonModifiers)
+        applyHotKey(.showPinnedNote, id: Self.pinnedNoteHotKeyID, applied: &appliedPinnedNoteBinding)
     }
 
     private func applyUnpinNoteHotKey() {
-        let raw = UserDefaults.standard.string(forKey: ShortcutPreferences.storageKey) ?? ""
-        let binding = ShortcutPreferences.binding(for: .unpinFromMenuBar, raw: raw)
-        guard binding != appliedUnpinNoteBinding else { return }
-        appliedUnpinNoteBinding = binding
-        hotKey.register(id: Self.unpinNoteHotKeyID, keyCode: UInt32(binding.keyCode), modifiers: binding.carbonModifiers)
+        applyHotKey(.unpinFromMenuBar, id: Self.unpinNoteHotKeyID, applied: &appliedUnpinNoteBinding)
     }
 
     /// Always targets the pinned note directly. No-op if nothing's
@@ -303,14 +315,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         applyActivationPolicy(for: currentAppVisibility)
     }
 
+    /// Shim for non-isolated callers (menu actions, panel callbacks — all of
+    /// which run on the main thread anyway). This used to be a hand-rolled
+    /// copy of the summon sequence that had already drifted from it (no
+    /// deminiaturize, no .summonRequested post); routing through
+    /// summonMainWindow keeps "the single path" claim true.
+    @MainActor
     func activateAndShowWindow() {
-        captureFrontmostForRestore()
-        NSApp.activate(ignoringOtherApps: true)
-        NSApp.windows.first?.makeKeyAndOrderFront(nil)
-        updateStatusItemIcon()
-        if let windowNumber = NSApp.windows.first?.windowNumber {
-            performAeroSpaceHandoff(forWindowNumber: windowNumber)
-        }
+        summonMainWindow()
     }
 
     private static func applyWindowChrome(to window: NSWindow) {
@@ -333,14 +345,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         // matters now that hiding uses orderOut instead of NSApp.hide(nil)
         // (see hideIfAutoHideEnabled for why).
         if window.isVisible {
-            // Captured before orderOut: once the window is gone, AppKit may
-            // already have flipped frontmost to its own arbitrary pick.
-            let wasFrontmost = envyIsFrontmost
-            window.orderOut(nil)
-            restorePreviousAppFocus(envyWasFrontmost: wasFrontmost)
+            hideMainWindow(window)
         } else {
             summonMainWindow()
         }
+    }
+
+    /// The one hide path — the summon hotkey's hide half and the red close
+    /// button do the identical focus handoff, so they share it.
+    private func hideMainWindow(_ window: NSWindow) {
+        // Captured before orderOut: once the window is gone, AppKit may
+        // already have flipped frontmost to its own arbitrary pick.
+        let wasFrontmost = envyIsFrontmost
+        window.orderOut(nil)
+        restorePreviousAppFocus(envyWasFrontmost: wasFrontmost)
         updateStatusItemIcon()
     }
 
@@ -456,13 +474,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     // brought back, the same "quit-resistant" behavior the summon hotkey
     // and menu bar item are meant to provide.
     func windowShouldClose(_ sender: NSWindow) -> Bool {
-        // Same focus-handoff as hiding via the hotkey/menu bar (toggleWindow)
-        // — clicking the red button gives up focus too, so without this it
-        // hits the identical AeroSpace "next window" jump.
-        let wasFrontmost = envyIsFrontmost
-        sender.orderOut(nil)
-        restorePreviousAppFocus(envyWasFrontmost: wasFrontmost)
-        updateStatusItemIcon()
+        hideMainWindow(sender)
         return false
     }
 }

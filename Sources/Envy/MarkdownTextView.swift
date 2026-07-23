@@ -378,9 +378,7 @@ struct MarkdownTextView: NSViewRepresentable {
             // as anything but literal characters, so there's nothing there
             // to click.
             guard let coordinator, coordinator.parent.plainTextMode == false else { return false }
-            return coordinator.checkboxHitRects().contains(where: { $0.contains(point) })
-                || coordinator.footnoteHitRects().contains(where: { $0.contains(point) })
-                || coordinator.dueTokenHitRects().contains(where: { $0.contains(point) })
+            return coordinator.clickTargetRects().contains(where: { $0.contains(point) })
         }
 
         let scrollView: NSScrollView = allowsScrollPassthrough ? NestedAwareScrollView() : NSScrollView()
@@ -397,10 +395,7 @@ struct MarkdownTextView: NSViewRepresentable {
                 MarkdownStyler.style(textStorage: textStorage, text: text, theme: theme, searchQuery: searchQuery, fontSizeAdjustment: fontZoom, allowsEmbeds: allowsEmbeds, embedHeights: context.coordinator.embedHeights, noteTitles: noteTitles)
             }
         }
-        context.coordinator.updateBlockquoteRules(in: textView)
-        context.coordinator.updateCheckboxOverlays(in: textView)
-        context.coordinator.updateEmbedOverlays(in: textView)
-        context.coordinator.updateSignaturePill(in: textView)
+        context.coordinator.updateOverlays(in: textView)
         // SwiftUI's first call to makeNSView often happens before this view
         // has its real, final width from the surrounding layout (the note
         // list/editor split isn't necessarily settled yet) — the checkbox
@@ -418,11 +413,10 @@ struct MarkdownTextView: NSViewRepresentable {
         context.coordinator.frameObserver = NotificationCenter.default.addObserver(
             forName: NSView.frameDidChangeNotification, object: textView, queue: .main
         ) { [weak coordinator = context.coordinator, weak textView] _ in
-            guard let coordinator, let textView else { return }
-            coordinator.updateBlockquoteRules(in: textView)
-            coordinator.updateCheckboxOverlays(in: textView)
-            coordinator.updateEmbedOverlays(in: textView)
-            coordinator.updateSignaturePill(in: textView)
+            MainActor.assumeIsolated {
+                guard let coordinator, let textView else { return }
+                coordinator.updateOverlays(in: textView)
+            }
         }
         // Belt and suspenders alongside ensureLayout() (inside
         // updateCheckboxOverlays itself) and the frame observer above: this
@@ -434,10 +428,7 @@ struct MarkdownTextView: NSViewRepresentable {
         // moment this function ran.
         DispatchQueue.main.async { [weak coordinator = context.coordinator, weak textView] in
             guard let coordinator, let textView else { return }
-            coordinator.updateBlockquoteRules(in: textView)
-            coordinator.updateCheckboxOverlays(in: textView)
-            coordinator.updateEmbedOverlays(in: textView)
-            coordinator.updateSignaturePill(in: textView)
+            coordinator.updateOverlays(in: textView)
         }
         // Same "wait one runloop turn for real layout/geometry" reasoning as
         // the checkbox overlay positioning above — scrollRangeToVisible
@@ -520,10 +511,7 @@ struct MarkdownTextView: NSViewRepresentable {
                     )
                 }
             }
-            context.coordinator.updateBlockquoteRules(in: textView)
-            context.coordinator.updateCheckboxOverlays(in: textView)
-            context.coordinator.updateEmbedOverlays(in: textView)
-            context.coordinator.updateSignaturePill(in: textView)
+            context.coordinator.updateOverlays(in: textView)
             context.coordinator.lastTheme = theme
             context.coordinator.lastSearchQuery = searchQuery
             context.coordinator.lastFontZoom = fontZoom
@@ -614,6 +602,24 @@ struct MarkdownTextView: NSViewRepresentable {
 
         private var cachedText: String = ""
         private var cachedWikiLinkRanges: [NSRange] = []
+
+        /// Memo for MarkdownStyler.aiSignatureRange — a full-document regex
+        /// that, with signature protection on, used to re-run up to four
+        /// separate times per keystroke (edit veto, selection clamp,
+        /// windowing check, pill update). Same text-keyed pattern as
+        /// wikiLinkRanges(for:); tri-state so a legitimately signature-less
+        /// note doesn't recompute on every query either.
+        private var cachedSignatureText: String?
+        private var cachedSignatureRange: NSRange?
+
+        @MainActor
+        func cachedAISignatureRange(in text: String) -> NSRange? {
+            if text == cachedSignatureText { return cachedSignatureRange }
+            let range = MarkdownStyler.aiSignatureRange(in: text)
+            cachedSignatureText = text
+            cachedSignatureRange = range
+            return range
+        }
         private var isHandlingTextChange = false
         /// True only for the brief span of the "Remove AI Mark" edit, so the
         /// signature-protection veto lets that one deliberate removal through.
@@ -660,12 +666,6 @@ struct MarkdownTextView: NSViewRepresentable {
         /// note), created lazily. Hidden when protection is off or the note
         /// has no signature.
         private var signaturePillView: NSHostingView<SignaturePillView>?
-        /// Embed titles collapsed via EmbeddedNoteView's own chevron —
-        /// plain in-memory UI state, not saved anywhere (same as
-        /// ContentView's own backlinksExpanded), and owned here rather
-        /// than as @State inside EmbeddedNoteView itself since it also has
-        /// to reach MarkdownStyler.style()'s reservation height, which
-        /// runs before any SwiftUI view for the embed even exists yet.
         /// The suggested remainder text currently on screen, and the cursor
         /// location it was computed for. Accepting only applies if the
         /// cursor still matches — Tab/Right-arrow otherwise fall through to
@@ -718,14 +718,17 @@ struct MarkdownTextView: NSViewRepresentable {
             // only ever one NoteEditorView/Coordinator alive at a time, torn
             // down and recreated per note via .id(noteID), so this doesn't
             // need to disambiguate between multiple notes.
+            // The .main queue already guarantees these run on the main
+            // thread; assumeIsolated is just telling the compiler what the
+            // queue already promised.
             boldObserver = NotificationCenter.default.addObserver(forName: .boldSelectionRequested, object: nil, queue: .main) { [weak self] _ in
-                self?.toggleBold()
+                MainActor.assumeIsolated { self?.toggleBold() }
             }
             italicObserver = NotificationCenter.default.addObserver(forName: .italicSelectionRequested, object: nil, queue: .main) { [weak self] _ in
-                self?.toggleItalic()
+                MainActor.assumeIsolated { self?.toggleItalic() }
             }
             extractObserver = NotificationCenter.default.addObserver(forName: .extractToNoteRequested, object: nil, queue: .main) { [weak self] _ in
-                self?.extractSelectionToNote()
+                MainActor.assumeIsolated { self?.extractSelectionToNote() }
             }
         }
 
@@ -794,7 +797,7 @@ struct MarkdownTextView: NSViewRepresentable {
             // textView.string directly and never pass through here, so the
             // connector can still re-stamp freely.
             if parent.protectAISignature, !isHandlingTextChange, !isRemovingSignature,
-               let signatureRange = MarkdownStyler.aiSignatureRange(in: textView.string) {
+               let signatureRange = cachedAISignatureRange(in: textView.string) {
                 let signatureEnd = signatureRange.location + signatureRange.length
                 let editEnd = affectedCharRange.location + affectedCharRange.length
                 let touchesSignature = affectedCharRange.location < signatureEnd && editEnd > signatureRange.location
@@ -1367,7 +1370,7 @@ struct MarkdownTextView: NSViewRepresentable {
         /// untouched.
         func textView(_ textView: NSTextView, willChangeSelectionFromCharacterRanges oldSelectedCharRanges: [NSValue], toCharacterRanges newSelectedCharRanges: [NSValue]) -> [NSValue] {
             guard parent.protectAISignature,
-                  let signatureRange = MarkdownStyler.aiSignatureRange(in: textView.string) else {
+                  let signatureRange = cachedAISignatureRange(in: textView.string) else {
                 return newSelectedCharRanges
             }
             let limit = signatureRange.location
@@ -1405,10 +1408,7 @@ struct MarkdownTextView: NSViewRepresentable {
             guard let textStorage = textView.textStorage else { return }
             if parent.plainTextMode {
                 MarkdownStyler.clearFormatting(textStorage: textStorage, text: textView.string, theme: parent.theme, fontSizeAdjustment: parent.fontZoom)
-                updateBlockquoteRules(in: textView)
-                updateCheckboxOverlays(in: textView)
-                updateEmbedOverlays(in: textView)
-                updateSignaturePill(in: textView)
+                updateOverlays(in: textView)
                 return
             }
             let window = windowedRestyleRange(for: textView)
@@ -1427,10 +1427,7 @@ struct MarkdownTextView: NSViewRepresentable {
             )
             lastRestyleCursorLocation = textView.selectedRange().location
             pendingRestyleInvalidationRange = nil
-            updateBlockquoteRules(in: textView)
-            updateCheckboxOverlays(in: textView)
-            updateEmbedOverlays(in: textView)
-            updateSignaturePill(in: textView)
+            updateOverlays(in: textView)
         }
 
         /// Everything restyle() runs on is per-keystroke (typing, arrow
@@ -1486,7 +1483,7 @@ struct MarkdownTextView: NSViewRepresentable {
             // the signature line would leave stale styling there. The line is
             // always at the very end (past any typical edit window), so just
             // decline windowing whenever a protected signature exists.
-            if parent.protectAISignature, MarkdownStyler.aiSignatureRange(in: textView.string) != nil {
+            if parent.protectAISignature, cachedAISignatureRange(in: textView.string) != nil {
                 return nil
             }
 
@@ -1504,6 +1501,35 @@ struct MarkdownTextView: NSViewRepresentable {
             // line-anchored or can't span a newline, so a window that only
             // ever starts/ends at line breaks can't cut a construct in half.
             return nsText.paragraphRange(for: NSRange(location: low, length: high - low))
+        }
+
+        /// The four overlay/adornment passes that must re-run together
+        /// whenever text, styling, or geometry changes — one entry point so
+        /// no call site can forget one. Also the natural place to drop the
+        /// click-target rect cache: everything that can move a clickable
+        /// glyph (an edit, a restyle, a frame change) funnels through here.
+        @MainActor
+        func updateOverlays(in textView: NSTextView) {
+            cachedClickTargetRects = nil
+            updateBlockquoteRules(in: textView)
+            updateCheckboxOverlays(in: textView)
+            updateEmbedOverlays(in: textView)
+            updateSignaturePill(in: textView)
+        }
+
+        /// Every clickable inline target's padded rect, cached until the
+        /// next updateOverlays(in:) pass. mouseMoved queries this on every
+        /// pointer move to pick a cursor shape — without the cache that was
+        /// three full-document regex scans plus per-match glyph measurement
+        /// per event.
+        private var cachedClickTargetRects: [NSRect]?
+
+        @MainActor
+        func clickTargetRects() -> [NSRect] {
+            if let cachedClickTargetRects { return cachedClickTargetRects }
+            let rects = checkboxHitRects() + footnoteHitRects() + dueTokenHitRects()
+            cachedClickTargetRects = rects
+            return rects
         }
 
         /// Repositions/recreates one floating label per checkbox in the
@@ -1737,7 +1763,7 @@ struct MarkdownTextView: NSViewRepresentable {
         @MainActor
         func updateSignaturePill(in textView: NSTextView) {
             guard parent.protectAISignature,
-                  let signatureRange = MarkdownStyler.aiSignatureRange(in: textView.string),
+                  let signatureRange = cachedAISignatureRange(in: textView.string),
                   let layoutManager = textView.layoutManager,
                   let textContainer = textView.textContainer,
                   let textStorage = textView.textStorage else {
@@ -1792,7 +1818,7 @@ struct MarkdownTextView: NSViewRepresentable {
         /// undoable like any other edit.
         @MainActor
         private func removeSignature() {
-            guard let textView, let signatureRange = MarkdownStyler.aiSignatureRange(in: textView.string) else { return }
+            guard let textView, let signatureRange = cachedAISignatureRange(in: textView.string) else { return }
             let nsText = textView.string as NSString
             var start = signatureRange.location
             while start > 0, nsText.character(at: start - 1) == 10 { start -= 1 }
@@ -1804,14 +1830,6 @@ struct MarkdownTextView: NSViewRepresentable {
             textView.didChangeText()
         }
 
-        /// EmbeddedNoteView's own collapse chevron calls this — flips
-        /// whether MarkdownStyler.style() reserves the measured height or
-        /// the full embedHeight for this specific embed's spacer line, then
-        /// restyles and repositions immediately so the visible reserved
-        /// block resizes right away instead of waiting for some other,
-        /// unrelated edit to trigger the next restyle pass.
-        @MainActor
-
         /// Briefly flags an externally-changed range so the user notices it
         /// without having to spot the diff themselves. Same highlight color
         /// as search matches — one theme-controlled "highlight" concept for
@@ -1822,6 +1840,7 @@ struct MarkdownTextView: NSViewRepresentable {
         /// implicitly — then reverts with a normal restyle pass rather than
         /// just stripping the attribute, so a flash landing over (say) a
         /// code span's own background doesn't leave it wrong afterward.
+        @MainActor
         func flashHighlight(range: NSRange, in textView: NSTextView) {
             guard let textStorage = textView.textStorage else { return }
             highlightFadeTask?.cancel()
@@ -2202,15 +2221,16 @@ struct MarkdownTextView: NSViewRepresentable {
             return false
         }
 
-        /// Padded on-screen rect for every checkbox in the current text, used
-        /// to show a pointing-hand cursor over them (see resetCursorRects()).
+        /// One geometry rule for every clickable inline target (checkboxes,
+        /// footnote references, due tokens): the glyph run's on-screen rect,
+        /// padded outward because the rendered glyphs are tiny click targets
+        /// otherwise.
         @MainActor
-        func checkboxHitRects() -> [NSRect] {
+        private func paddedRects(for ranges: [NSRange], padding: CGFloat) -> [NSRect] {
             guard let textView, let layoutManager = textView.layoutManager, let textContainer = textView.textContainer else { return [] }
             let origin = textView.textContainerOrigin
-            let padding: CGFloat = 6
-            return MarkdownStyler.taskCheckboxRanges(in: textView.string).map { checkbox in
-                let glyphRange = layoutManager.glyphRange(forCharacterRange: checkbox.glyphRange, actualCharacterRange: nil)
+            return ranges.map { range in
+                let glyphRange = layoutManager.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
                 var rect = layoutManager.boundingRect(forGlyphRange: glyphRange, in: textContainer)
                 rect.origin.x += origin.x
                 rect.origin.y += origin.y
@@ -2218,113 +2238,80 @@ struct MarkdownTextView: NSViewRepresentable {
             }
         }
 
-        /// Picks the *closest* checkbox to the click point among all whose
+        /// Picks the *closest* target to the click point among all whose
         /// padded rect contains it, rather than the first one found — with
         /// tightly spaced rows (e.g. "compact" list density), adjacent
-        /// checkboxes' padded rects can overlap, and always taking the first
+        /// targets' padded rects can overlap, and always taking the first
         /// match meant a click nearer the row below could still register on
-        /// the row above.
+        /// the row above. Distance is measured to the unpadded glyph rect's
+        /// center (identical to the padded rect's center — the padding is
+        /// symmetric).
+        @MainActor
+        private func closestHit<Item>(
+            at point: NSPoint,
+            items: [Item],
+            range: (Item) -> NSRange,
+            padding: CGFloat
+        ) -> (item: Item, rect: NSRect)? {
+            guard let textView, let layoutManager = textView.layoutManager, let textContainer = textView.textContainer else { return nil }
+            let origin = textView.textContainerOrigin
+            var best: (item: Item, rect: NSRect, distance: CGFloat)?
+            for item in items {
+                let glyphRange = layoutManager.glyphRange(forCharacterRange: range(item), actualCharacterRange: nil)
+                var rect = layoutManager.boundingRect(forGlyphRange: glyphRange, in: textContainer)
+                rect.origin.x += origin.x
+                rect.origin.y += origin.y
+                let padded = rect.insetBy(dx: -padding, dy: -padding)
+                guard padded.contains(point) else { continue }
+                let distance = hypot(point.x - rect.midX, point.y - rect.midY)
+                if best == nil || distance < best!.distance {
+                    best = (item, padded, distance)
+                }
+            }
+            return best.map { ($0.item, $0.rect) }
+        }
+
+        /// Used to show a pointing-hand cursor (see resetCursorRects()).
+        @MainActor
+        func checkboxHitRects() -> [NSRect] {
+            guard let textView else { return [] }
+            return paddedRects(for: MarkdownStyler.taskCheckboxRanges(in: textView.string).map { $0.glyphRange }, padding: 6)
+        }
+
         @MainActor
         private func checkboxAndRect(at point: NSPoint) -> (checkbox: (glyphRange: NSRange, toggleRange: NSRange, isChecked: Bool), rect: NSRect)? {
-            guard let textView, let layoutManager = textView.layoutManager, let textContainer = textView.textContainer else { return nil }
-            let origin = textView.textContainerOrigin
-            let padding: CGFloat = 6
-            var best: (checkbox: (glyphRange: NSRange, toggleRange: NSRange, isChecked: Bool), rect: NSRect, distance: CGFloat)?
-            for checkbox in MarkdownStyler.taskCheckboxRanges(in: textView.string) {
-                let glyphRange = layoutManager.glyphRange(forCharacterRange: checkbox.glyphRange, actualCharacterRange: nil)
-                var rect = layoutManager.boundingRect(forGlyphRange: glyphRange, in: textContainer)
-                rect.origin.x += origin.x
-                rect.origin.y += origin.y
-                let padded = rect.insetBy(dx: -padding, dy: -padding)
-                guard padded.contains(point) else { continue }
-                let distance = hypot(point.x - rect.midX, point.y - rect.midY)
-                if best == nil || distance < best!.distance {
-                    best = (checkbox, padded, distance)
-                }
-            }
-            return best.map { ($0.checkbox, $0.rect) }
+            guard let textView else { return nil }
+            return closestHit(at: point, items: MarkdownStyler.taskCheckboxRanges(in: textView.string), range: { $0.glyphRange }, padding: 6)
+                .map { ($0.item, $0.rect) }
         }
 
-        /// Padded on-screen rect for every footnote reference, same reasoning
-        /// as checkboxHitRects() — the rendered glyph (a small raised number)
-        /// is a tiny click target otherwise.
         @MainActor
         func footnoteHitRects() -> [NSRect] {
-            guard let textView, let layoutManager = textView.layoutManager, let textContainer = textView.textContainer else { return [] }
-            let origin = textView.textContainerOrigin
-            let padding: CGFloat = 6
-            return MarkdownStyler.footnoteReferenceLabels(in: textView.string).map { footnote in
-                let glyphRange = layoutManager.glyphRange(forCharacterRange: footnote.labelRange, actualCharacterRange: nil)
-                var rect = layoutManager.boundingRect(forGlyphRange: glyphRange, in: textContainer)
-                rect.origin.x += origin.x
-                rect.origin.y += origin.y
-                return rect.insetBy(dx: -padding, dy: -padding)
-            }
+            guard let textView else { return [] }
+            return paddedRects(for: MarkdownStyler.footnoteReferenceLabels(in: textView.string).map { $0.labelRange }, padding: 6)
         }
 
-        /// Closest footnote reference to the click point among all whose
-        /// padded rect contains it — same reasoning as checkboxAndRect(at:).
         @MainActor
         private func footnoteAndRect(at point: NSPoint) -> (footnote: (labelRange: NSRange, label: String), rect: NSRect)? {
-            guard let textView, let layoutManager = textView.layoutManager, let textContainer = textView.textContainer else { return nil }
-            let origin = textView.textContainerOrigin
-            let padding: CGFloat = 6
-            var best: (footnote: (labelRange: NSRange, label: String), rect: NSRect, distance: CGFloat)?
-            for footnote in MarkdownStyler.footnoteReferenceLabels(in: textView.string) {
-                let glyphRange = layoutManager.glyphRange(forCharacterRange: footnote.labelRange, actualCharacterRange: nil)
-                var rect = layoutManager.boundingRect(forGlyphRange: glyphRange, in: textContainer)
-                rect.origin.x += origin.x
-                rect.origin.y += origin.y
-                let padded = rect.insetBy(dx: -padding, dy: -padding)
-                guard padded.contains(point) else { continue }
-                let distance = hypot(point.x - rect.midX, point.y - rect.midY)
-                if best == nil || distance < best!.distance {
-                    best = (footnote, padded, distance)
-                }
-            }
-            return best.map { ($0.footnote, $0.rect) }
+            guard let textView else { return nil }
+            return closestHit(at: point, items: MarkdownStyler.footnoteReferenceLabels(in: textView.string), range: { $0.labelRange }, padding: 6)
+                .map { ($0.item, $0.rect) }
         }
 
-        /// Padded on-screen rect for every due token, same reasoning as
-        /// checkboxHitRects()/footnoteHitRects() — this is a small inline
-        /// span, and a click needs some margin around its exact glyphs to
-        /// land reliably.
+        /// Due tokens use tighter padding than checkboxes/footnotes — the
+        /// token is a longer inline span, so less margin is needed to land
+        /// a click, and the wider padding collided with neighboring lines.
         @MainActor
         func dueTokenHitRects() -> [NSRect] {
-            guard let textView, let layoutManager = textView.layoutManager, let textContainer = textView.textContainer else { return [] }
-            let origin = textView.textContainerOrigin
-            let padding: CGFloat = 4
-            return MarkdownStyler.dueTokenRanges(in: textView.string).map { due in
-                let glyphRange = layoutManager.glyphRange(forCharacterRange: due.range, actualCharacterRange: nil)
-                var rect = layoutManager.boundingRect(forGlyphRange: glyphRange, in: textContainer)
-                rect.origin.x += origin.x
-                rect.origin.y += origin.y
-                return rect.insetBy(dx: -padding, dy: -padding)
-            }
+            guard let textView else { return [] }
+            return paddedRects(for: MarkdownStyler.dueTokenRanges(in: textView.string).map { $0.range }, padding: 4)
         }
 
-        /// Closest due token to the click point among all whose padded rect
-        /// contains it — same reasoning as checkboxAndRect(at:)/
-        /// footnoteAndRect(at:).
         @MainActor
         private func dueTokenAndRect(at point: NSPoint) -> (due: (range: NSRange, isCrossedOut: Bool), rect: NSRect)? {
-            guard let textView, let layoutManager = textView.layoutManager, let textContainer = textView.textContainer else { return nil }
-            let origin = textView.textContainerOrigin
-            let padding: CGFloat = 4
-            var best: (due: (range: NSRange, isCrossedOut: Bool), rect: NSRect, distance: CGFloat)?
-            for due in MarkdownStyler.dueTokenRanges(in: textView.string) {
-                let glyphRange = layoutManager.glyphRange(forCharacterRange: due.range, actualCharacterRange: nil)
-                var rect = layoutManager.boundingRect(forGlyphRange: glyphRange, in: textContainer)
-                rect.origin.x += origin.x
-                rect.origin.y += origin.y
-                let padded = rect.insetBy(dx: -padding, dy: -padding)
-                guard padded.contains(point) else { continue }
-                let distance = hypot(point.x - rect.midX, point.y - rect.midY)
-                if best == nil || distance < best!.distance {
-                    best = (due, padded, distance)
-                }
-            }
-            return best.map { ($0.due, $0.rect) }
+            guard let textView else { return nil }
+            return closestHit(at: point, items: MarkdownStyler.dueTokenRanges(in: textView.string), range: { $0.range }, padding: 4)
+                .map { ($0.item, $0.rect) }
         }
 
         @MainActor

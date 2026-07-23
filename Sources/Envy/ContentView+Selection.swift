@@ -1,6 +1,143 @@
 import SwiftUI
 import EnvyCore
 
+/// isPinned() runs once per visible row on every list render, so parsing the
+/// newline-joined AppStorage string into a fresh Set on each call scaled the
+/// cost with the list for nothing. Memoized against the raw string itself:
+/// AppStorage is process-wide, so one cache serves every view instance, and
+/// a raw mismatch simply re-parses.
+@MainActor
+private enum PinnedIDsMemo {
+    static var raw: String?
+    static var ids: Set<String> = []
+}
+
+/// One copy of the Finder-style list-selection machinery, shared by the note
+/// list, template: browsing, and trash: browsing — each keeps its own
+/// primary/multi/anchor @State trio in ContentView, but the behavior is
+/// deliberately identical, so the three families of entry points in the
+/// extension below are thin wrappers over this. The primary ID is the
+/// "moving end" that drives the detail pane; the anchor is the fixed end a
+/// ⇧-range grows from.
+@MainActor
+private struct ListSelection<Item: Identifiable> where Item.ID == String {
+    let list: [Item]
+    @Binding var primaryID: String?
+    @Binding var multiIDs: Set<String>
+    @Binding var anchorID: String?
+
+    func move(_ delta: Int) {
+        multiIDs.removeAll()
+        // A plain (non-shift) move abandons whatever anchor a previous
+        // shift-selection left behind — the next ⇧↑/⇧↓ should start a fresh
+        // range from wherever this lands, not resume growing/shrinking the
+        // old one. extend() re-seeds this itself the next time it's needed
+        // (from whatever primaryID becomes below).
+        anchorID = nil
+        guard !list.isEmpty else { return }
+        if let currentID = primaryID, let idx = list.firstIndex(where: { $0.id == currentID }) {
+            let newIdx = max(0, min(list.count - 1, idx + delta))
+            primaryID = list[newIdx].id
+        } else {
+            primaryID = delta > 0 ? list.first?.id : list.last?.id
+        }
+    }
+
+    /// Shift+↑/↓ — Finder's own keyboard multi-select: grows or shrinks the
+    /// selection one item at a time from a fixed anchor, exactly like
+    /// repeated ⇧-clicks would. The primary is the moving end (same as
+    /// selectRange(to:) already treats it for ⇧-click), so walking it by one
+    /// list position and handing that off to selectRange(to:) reuses the
+    /// exact same anchor-to-target math instead of duplicating it here.
+    ///
+    /// The anchor has to be pinned to the *starting* position before that
+    /// first walk — selectRange(to:) itself falls back to the primary only
+    /// when the anchor is nil, and the primary becomes the *moving* end
+    /// after each call. Without seeding the anchor here first, the second
+    /// ⇧↓ in a row would silently re-anchor on the item the first ⇧↓ just
+    /// moved to, sliding a fixed-size window down the list instead of
+    /// growing it.
+    func extend(_ delta: Int) {
+        guard !list.isEmpty else { return }
+        guard let currentID = primaryID, let idx = list.firstIndex(where: { $0.id == currentID }) else {
+            primaryID = delta > 0 ? list.first?.id : list.last?.id
+            anchorID = primaryID
+            return
+        }
+        if anchorID == nil {
+            anchorID = currentID
+        }
+        let newIdx = max(0, min(list.count - 1, idx + delta))
+        selectRange(to: list[newIdx])
+    }
+
+    func selectSingle(_ item: Item) {
+        primaryID = item.id
+        multiIDs.removeAll()
+        anchorID = item.id
+    }
+
+    /// ⇧-click range selection — selects every item between the fixed
+    /// anchor and the clicked item, inclusive, in the list's current
+    /// sorted/filtered order. The clicked item becomes the primary
+    /// selection driving the detail pane, matching how ⌘-click already
+    /// updates the primary when it lands on a new item.
+    func selectRange(to item: Item) {
+        guard let anchorID = anchorID ?? primaryID,
+              let anchorIndex = list.firstIndex(where: { $0.id == anchorID }),
+              let targetIndex = list.firstIndex(where: { $0.id == item.id }) else {
+            selectSingle(item)
+            return
+        }
+        let range = anchorIndex < targetIndex ? anchorIndex...targetIndex : targetIndex...anchorIndex
+        primaryID = item.id
+        multiIDs = Set(list[range].map(\.id)).subtracting([item.id])
+    }
+
+    /// Toggles an item's membership in the selection. Demoting the current
+    /// primary promotes another selected item to take its place if one
+    /// exists, since the primary always drives the detail pane and must
+    /// stay in sync with "is anything selected at all".
+    func toggleMembership(_ item: Item) {
+        if item.id == primaryID {
+            if let newPrimary = multiIDs.first {
+                multiIDs.remove(newPrimary)
+                primaryID = newPrimary
+            } else {
+                primaryID = nil
+            }
+        } else if multiIDs.contains(item.id) {
+            multiIDs.remove(item.id)
+        } else {
+            multiIDs.insert(item.id)
+        }
+    }
+
+    /// Same fallback-to-first-when-gone idea as reconcileSelection() in the
+    /// extension below, plus mode-exit cleanup: once `active` goes false
+    /// (the query stopped being a "template:"/"trash:" one), the primary,
+    /// the multi-selection, and the anchor all clear outright. While the
+    /// mode is active, the primary re-settles onto the first match whenever
+    /// the narrowing fragment leaves the previously highlighted item out,
+    /// and any multi-selected items (and the anchor) that fell out of the
+    /// narrowed list as the fragment kept typing are dropped.
+    func reconcile(active: Bool) {
+        guard active else {
+            primaryID = nil
+            multiIDs.removeAll()
+            anchorID = nil
+            return
+        }
+        let listIDs = Set(list.map(\.id))
+        multiIDs.formIntersection(listIDs)
+        if let anchorID, !listIDs.contains(anchorID) {
+            self.anchorID = nil
+        }
+        if let primaryID, listIDs.contains(primaryID) { return }
+        primaryID = list.first?.id
+    }
+}
+
 // Selection, keyboard navigation, focus cycling, and pinning — the state
 // machinery between the list and the editor. Split out of ContentView.swift
 // purely for file size/navigability — same type, zero behavior change.
@@ -8,7 +145,11 @@ extension ContentView {
     // MARK: - Pinning
 
     var pinnedNoteIDs: Set<String> {
-        Set(pinnedNotePathsRaw.split(separator: "\n").map(String.init))
+        if PinnedIDsMemo.raw != pinnedNotePathsRaw {
+            PinnedIDsMemo.raw = pinnedNotePathsRaw
+            PinnedIDsMemo.ids = Set(pinnedNotePathsRaw.split(separator: "\n").map(String.init))
+        }
+        return PinnedIDsMemo.ids
     }
 
     func isPinned(_ note: Note) -> Bool {
@@ -68,6 +209,27 @@ extension ContentView {
 
     // MARK: - Selection
 
+    private var noteSelection: ListSelection<Note> {
+        ListSelection(list: filteredNotes,
+                      primaryID: $selectedID,
+                      multiIDs: $multiSelectedIDs,
+                      anchorID: $selectionAnchorID)
+    }
+
+    private var templateSelection: ListSelection<NoteTemplate> {
+        ListSelection(list: matchingTemplatesForQuery,
+                      primaryID: $highlightedTemplateID,
+                      multiIDs: $multiSelectedTemplateIDs,
+                      anchorID: $templateSelectionAnchorID)
+    }
+
+    private var trashSelection: ListSelection<Note> {
+        ListSelection(list: matchingTrashForQuery,
+                      primaryID: $highlightedTrashID,
+                      multiIDs: $multiSelectedTrashIDs,
+                      anchorID: $trashSelectionAnchorID)
+    }
+
     /// Shared by both the list's own arrow-key handling and the search
     /// field's (which mirrors it so ↑/↓ work no matter which one has
     /// focus) — a named function here instead of the branching inline in
@@ -87,52 +249,18 @@ extension ContentView {
     }
 
     func moveSelection(_ delta: Int) {
-        multiSelectedIDs.removeAll()
-        // A plain (non-shift) move abandons whatever anchor a previous
-        // shift-selection left behind — the next ⇧↑/⇧↓ should start a fresh
-        // range from wherever this lands, not resume growing/shrinking the
-        // old one. extendSelection() re-seeds this itself the next time
-        // it's needed (from whatever selectedID becomes below).
-        selectionAnchorID = nil
-        let list = filteredNotes
-        guard !list.isEmpty else { return }
-        if let currentID = selectedID, let idx = list.firstIndex(where: { $0.id == currentID }) {
-            let newIdx = max(0, min(list.count - 1, idx + delta))
-            selectedID = list[newIdx].id
-        } else {
-            selectedID = delta > 0 ? list.first?.id : list.last?.id
-        }
+        noteSelection.move(delta)
     }
 
-    /// Shift+↑/↓ — Finder's own keyboard multi-select: grows or shrinks the
-    /// selection one note at a time from a fixed anchor, exactly like
-    /// repeated ⇧-clicks would. selectedID is the moving end (same as
-    /// selectRange(to:) already treats it for ⇧-click), so walking it by one
-    /// list position and handing that off to selectRange(to:) reuses the
-    /// exact same anchor-to-target math instead of duplicating it here.
-    ///
-    /// The anchor has to be pinned to the *starting* position before that
-    /// first walk — selectRange(to:) itself falls back to `selectedID` only
-    /// when `selectionAnchorID` is nil, and selectedID becomes the *moving*
-    /// end after each call. Without seeding the anchor here first, the second
-    /// ⇧↓ in a row would silently re-anchor on the note the first ⇧↓ just
-    /// moved to, sliding a fixed-size window down the list instead of
-    /// growing it.
     func extendSelection(_ delta: Int) {
-        let list = filteredNotes
-        guard !list.isEmpty else { return }
-        guard let currentID = selectedID, let idx = list.firstIndex(where: { $0.id == currentID }) else {
-            selectedID = delta > 0 ? list.first?.id : list.last?.id
-            selectionAnchorID = selectedID
-            return
-        }
-        if selectionAnchorID == nil {
-            selectionAnchorID = currentID
-        }
-        let newIdx = max(0, min(list.count - 1, idx + delta))
-        selectRange(to: list[newIdx])
+        noteSelection.extend(delta)
     }
 
+    /// Deliberately narrower than ListSelection.reconcile(active:), which
+    /// the template/trash reconciles below use: only the primary selection
+    /// snaps to the first result when it falls out of the filtered list —
+    /// the multi-selection and anchor are left untouched here, preserving
+    /// the note list's existing behavior across query edits.
     func reconcileSelection() {
         let list = filteredNotes
         if let selectedID, list.contains(where: { $0.id == selectedID }) { return }
@@ -162,58 +290,17 @@ extension ContentView {
     }
 
     func moveTemplateSelection(_ delta: Int) {
-        multiSelectedTemplateIDs.removeAll()
-        templateSelectionAnchorID = nil
-        let list = matchingTemplatesForQuery
-        guard !list.isEmpty else { return }
-        if let currentID = highlightedTemplateID, let idx = list.firstIndex(where: { $0.id == currentID }) {
-            let newIdx = max(0, min(list.count - 1, idx + delta))
-            highlightedTemplateID = list[newIdx].id
-        } else {
-            highlightedTemplateID = delta > 0 ? list.first?.id : list.last?.id
-        }
+        templateSelection.move(delta)
     }
 
-    /// Shift+↑/↓ for template: browsing — same anchor-pinning shape as
-    /// extendSelection(_:) above, and for the same reason: the anchor has
-    /// to be seeded from the *starting* highlight before the first walk, or
-    /// the second press re-anchors on wherever the first one just moved to.
     func extendTemplateSelection(_ delta: Int) {
-        let list = matchingTemplatesForQuery
-        guard !list.isEmpty else { return }
-        guard let currentID = highlightedTemplateID, let idx = list.firstIndex(where: { $0.id == currentID }) else {
-            highlightedTemplateID = delta > 0 ? list.first?.id : list.last?.id
-            templateSelectionAnchorID = highlightedTemplateID
-            return
-        }
-        if templateSelectionAnchorID == nil {
-            templateSelectionAnchorID = currentID
-        }
-        let newIdx = max(0, min(list.count - 1, idx + delta))
-        selectTemplateRange(to: list[newIdx])
+        templateSelection.extend(delta)
     }
 
-    /// Same shape as reconcileSelection(), but for the highlighted template
-    /// — clears it outright once the query stops being a "template:" one,
-    /// and re-settles it onto the first match whenever the narrowing
-    /// fragment leaves the previously highlighted template out. Also drops
-    /// any multi-selected templates (and the anchor) that fell out of the
-    /// narrowed list as the fragment kept typing.
+    /// Clears the highlight/multi-selection/anchor outright once the query
+    /// stops being a "template:" one — see ListSelection.reconcile(active:).
     func reconcileTemplateHighlight() {
-        guard isTemplateQuery else {
-            highlightedTemplateID = nil
-            multiSelectedTemplateIDs.removeAll()
-            templateSelectionAnchorID = nil
-            return
-        }
-        let list = matchingTemplatesForQuery
-        let listIDs = Set(list.map(\.id))
-        multiSelectedTemplateIDs.formIntersection(listIDs)
-        if let templateSelectionAnchorID, !listIDs.contains(templateSelectionAnchorID) {
-            self.templateSelectionAnchorID = nil
-        }
-        if let highlightedTemplateID, listIDs.contains(highlightedTemplateID) { return }
-        highlightedTemplateID = list.first?.id
+        templateSelection.reconcile(active: isTemplateQuery)
     }
 
     var fullTemplateSelection: Set<String> {
@@ -225,41 +312,15 @@ extension ContentView {
     }
 
     func selectSingleTemplate(_ template: NoteTemplate) {
-        highlightedTemplateID = template.id
-        multiSelectedTemplateIDs.removeAll()
-        templateSelectionAnchorID = template.id
+        templateSelection.selectSingle(template)
     }
 
-    /// ⇧-click range selection for template: browsing — same shape as
-    /// selectRange(to:) above.
     func selectTemplateRange(to template: NoteTemplate) {
-        let list = matchingTemplatesForQuery
-        guard let anchorID = templateSelectionAnchorID ?? highlightedTemplateID,
-              let anchorIndex = list.firstIndex(where: { $0.id == anchorID }),
-              let targetIndex = list.firstIndex(where: { $0.id == template.id }) else {
-            selectSingleTemplate(template)
-            return
-        }
-        let range = anchorIndex < targetIndex ? anchorIndex...targetIndex : targetIndex...anchorIndex
-        highlightedTemplateID = template.id
-        multiSelectedTemplateIDs = Set(list[range].map(\.id)).subtracting([template.id])
+        templateSelection.selectRange(to: template)
     }
 
-    /// ⌘-click toggle for template: browsing — same shape as
-    /// toggleMultiSelect(_:) above.
     func toggleMultiSelectTemplate(_ template: NoteTemplate) {
-        if template.id == highlightedTemplateID {
-            if let newPrimary = multiSelectedTemplateIDs.first {
-                multiSelectedTemplateIDs.remove(newPrimary)
-                highlightedTemplateID = newPrimary
-            } else {
-                highlightedTemplateID = nil
-            }
-        } else if multiSelectedTemplateIDs.contains(template.id) {
-            multiSelectedTemplateIDs.remove(template.id)
-        } else {
-            multiSelectedTemplateIDs.insert(template.id)
-        }
+        templateSelection.toggleMembership(template)
     }
 
     func selectedTemplates() -> [NoteTemplate] {
@@ -268,51 +329,17 @@ extension ContentView {
     }
 
     func moveTrashSelection(_ delta: Int) {
-        multiSelectedTrashIDs.removeAll()
-        trashSelectionAnchorID = nil
-        let list = matchingTrashForQuery
-        guard !list.isEmpty else { return }
-        if let currentID = highlightedTrashID, let idx = list.firstIndex(where: { $0.id == currentID }) {
-            let newIdx = max(0, min(list.count - 1, idx + delta))
-            highlightedTrashID = list[newIdx].id
-        } else {
-            highlightedTrashID = delta > 0 ? list.first?.id : list.last?.id
-        }
+        trashSelection.move(delta)
     }
 
-    /// Shift+↑/↓ for trash: browsing — same anchor-pinning shape as
-    /// extendSelection(_:)/extendTemplateSelection(_:) above.
     func extendTrashSelection(_ delta: Int) {
-        let list = matchingTrashForQuery
-        guard !list.isEmpty else { return }
-        guard let currentID = highlightedTrashID, let idx = list.firstIndex(where: { $0.id == currentID }) else {
-            highlightedTrashID = delta > 0 ? list.first?.id : list.last?.id
-            trashSelectionAnchorID = highlightedTrashID
-            return
-        }
-        if trashSelectionAnchorID == nil {
-            trashSelectionAnchorID = currentID
-        }
-        let newIdx = max(0, min(list.count - 1, idx + delta))
-        selectTrashRange(to: list[newIdx])
+        trashSelection.extend(delta)
     }
 
-    /// Same shape as reconcileTemplateHighlight(), but for "trash:" browsing.
+    /// Clears the highlight/multi-selection/anchor outright once the query
+    /// stops being a "trash:" one — see ListSelection.reconcile(active:).
     func reconcileTrashHighlight() {
-        guard isTrashQuery else {
-            highlightedTrashID = nil
-            multiSelectedTrashIDs.removeAll()
-            trashSelectionAnchorID = nil
-            return
-        }
-        let list = matchingTrashForQuery
-        let listIDs = Set(list.map(\.id))
-        multiSelectedTrashIDs.formIntersection(listIDs)
-        if let trashSelectionAnchorID, !listIDs.contains(trashSelectionAnchorID) {
-            self.trashSelectionAnchorID = nil
-        }
-        if let highlightedTrashID, listIDs.contains(highlightedTrashID) { return }
-        highlightedTrashID = list.first?.id
+        trashSelection.reconcile(active: isTrashQuery)
     }
 
     var fullTrashSelection: Set<String> {
@@ -324,41 +351,15 @@ extension ContentView {
     }
 
     func selectSingleTrash(_ note: Note) {
-        highlightedTrashID = note.id
-        multiSelectedTrashIDs.removeAll()
-        trashSelectionAnchorID = note.id
+        trashSelection.selectSingle(note)
     }
 
-    /// ⇧-click range selection for trash: browsing — same shape as
-    /// selectRange(to:) above.
     func selectTrashRange(to note: Note) {
-        let list = matchingTrashForQuery
-        guard let anchorID = trashSelectionAnchorID ?? highlightedTrashID,
-              let anchorIndex = list.firstIndex(where: { $0.id == anchorID }),
-              let targetIndex = list.firstIndex(where: { $0.id == note.id }) else {
-            selectSingleTrash(note)
-            return
-        }
-        let range = anchorIndex < targetIndex ? anchorIndex...targetIndex : targetIndex...anchorIndex
-        highlightedTrashID = note.id
-        multiSelectedTrashIDs = Set(list[range].map(\.id)).subtracting([note.id])
+        trashSelection.selectRange(to: note)
     }
 
-    /// ⌘-click toggle for trash: browsing — same shape as
-    /// toggleMultiSelect(_:) above.
     func toggleMultiSelectTrash(_ note: Note) {
-        if note.id == highlightedTrashID {
-            if let newPrimary = multiSelectedTrashIDs.first {
-                multiSelectedTrashIDs.remove(newPrimary)
-                highlightedTrashID = newPrimary
-            } else {
-                highlightedTrashID = nil
-            }
-        } else if multiSelectedTrashIDs.contains(note.id) {
-            multiSelectedTrashIDs.remove(note.id)
-        } else {
-            multiSelectedTrashIDs.insert(note.id)
-        }
+        trashSelection.toggleMembership(note)
     }
 
     func selectedTrashNotes() -> [Note] {
@@ -375,46 +376,15 @@ extension ContentView {
     }
 
     func selectSingle(_ note: Note) {
-        selectedID = note.id
-        multiSelectedIDs.removeAll()
-        selectionAnchorID = note.id
+        noteSelection.selectSingle(note)
     }
 
-    /// ⇧-click range selection — selects every note between the fixed
-    /// anchor (see selectionAnchorID) and the clicked note, inclusive, in
-    /// the list's current sorted/filtered order. The clicked note becomes
-    /// the primary selection driving the editor, matching how ⌘-click
-    /// already updates selectedID when it lands on a new note.
     func selectRange(to note: Note) {
-        let list = filteredNotes
-        guard let anchorID = selectionAnchorID ?? selectedID,
-              let anchorIndex = list.firstIndex(where: { $0.id == anchorID }),
-              let targetIndex = list.firstIndex(where: { $0.id == note.id }) else {
-            selectSingle(note)
-            return
-        }
-        let range = anchorIndex < targetIndex ? anchorIndex...targetIndex : targetIndex...anchorIndex
-        selectedID = note.id
-        multiSelectedIDs = Set(list[range].map(\.id)).subtracting([note.id])
+        noteSelection.selectRange(to: note)
     }
 
-    /// Toggles a note's membership in the selection. Demoting the current
-    /// primary (selectedID) promotes another selected note to take its place
-    /// if one exists, since selectedID always drives the editor pane and
-    /// must stay in sync with "is anything selected at all".
     func toggleMultiSelect(_ note: Note) {
-        if note.id == selectedID {
-            if let newPrimary = multiSelectedIDs.first {
-                multiSelectedIDs.remove(newPrimary)
-                selectedID = newPrimary
-            } else {
-                selectedID = nil
-            }
-        } else if multiSelectedIDs.contains(note.id) {
-            multiSelectedIDs.remove(note.id)
-        } else {
-            multiSelectedIDs.insert(note.id)
-        }
+        noteSelection.toggleMembership(note)
     }
 
     func selectDefaultIfNeeded() {

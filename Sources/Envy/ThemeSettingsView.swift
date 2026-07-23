@@ -375,10 +375,23 @@ struct ThemeSettingsView: View {
         let theme: Theme
         /// Non-nil for an adaptive entry — `theme` is its light face.
         let darkTheme: Theme?
+        /// The adaptive pair's encoded form, computed once here so each
+        /// swatch's selection check is a plain string compare instead of
+        /// JSON-encoding both faces on every render.
+        let pairRaw: String?
         // Only set for a user-saved theme — gates the full rename/duplicate/
         // delete context menu, which built-in presets and System Default
         // don't get (presets are read-only; System Default is just "off").
         let namedTheme: NamedTheme?
+
+        init(id: String, name: String, theme: Theme, darkTheme: Theme?, namedTheme: NamedTheme?) {
+            self.id = id
+            self.name = name
+            self.theme = theme
+            self.darkTheme = darkTheme
+            self.pairRaw = darkTheme.map { ThemePair(light: theme, dark: $0).rawValue }
+            self.namedTheme = namedTheme
+        }
     }
 
     private var galleryEntries: [GalleryEntry] {
@@ -409,8 +422,8 @@ struct ThemeSettingsView: View {
         // faces is ever live.
         let preview = entry.darkTheme.map { colorScheme == .dark ? $0 : entry.theme } ?? entry.theme
         let isSelected: Bool = {
-            if let dark = entry.darkTheme {
-                return themePairRaw == ThemePair(light: entry.theme, dark: dark).rawValue
+            if let pairRaw = entry.pairRaw {
+                return themePairRaw == pairRaw
             }
             return themePairRaw.isEmpty && theme == entry.theme
         }()
@@ -452,7 +465,7 @@ struct ThemeSettingsView: View {
                     themeNamePrompt = .rename(named.id)
                 }
                 Button("Delete…", role: .destructive) { themeToDelete = named }
-            } else if entry.id != "system-default" {
+            } else {
                 Button("Export…") { export(NamedTheme(name: entry.name, theme: entry.theme)) }
                 Button("Duplicate as My Theme") { duplicate(NamedTheme(name: entry.name, theme: entry.theme)) }
             }

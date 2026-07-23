@@ -105,14 +105,20 @@ struct GeneralSettingsView: View {
         indexURL.appendingPathComponent(".trash", isDirectory: true)
     }
 
+    // Formatters are expensive to construct, and this one would otherwise be
+    // rebuilt on every body evaluation just to render one line of text.
+    private static let lastCheckedFormatter: RelativeDateTimeFormatter = {
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .full
+        return formatter
+    }()
+
     /// Sparkle reports nil until the first check completes, and "Never"
     /// is more useful to someone debugging why they missed a release than a
     /// placeholder date would be.
     private var lastCheckedDescription: String {
         guard let date = updater.lastUpdateCheckDate else { return "Last checked: never" }
-        let formatter = RelativeDateTimeFormatter()
-        formatter.unitsStyle = .full
-        return "Last checked \(formatter.localizedString(for: date, relativeTo: Date()))"
+        return "Last checked \(Self.lastCheckedFormatter.localizedString(for: date, relativeTo: Date()))"
     }
 
     var body: some View {

@@ -352,6 +352,7 @@ extension AppDelegate {
         menu.popUp(positioning: nil, at: NSPoint(x: 0, y: button.bounds.maxY + 4), in: button)
     }
 
+    @MainActor
     @objc private func newNoteFromStatusMenu() {
         activateAndShowWindow()
         NotificationCenter.default.post(name: .newNoteRequested, object: nil)

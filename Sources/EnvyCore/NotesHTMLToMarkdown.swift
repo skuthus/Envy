@@ -135,7 +135,7 @@ public enum NotesHTMLToMarkdown {
                     let href = anchors.popLast() ?? nil
                     if let href, !href.isEmpty { out += "](\(href))" }
                 } else {
-                    let href = attribute("href", in: attrs)
+                    let href = hrefAttribute(in: attrs)
                     anchors.append(href)
                     if let href, !href.isEmpty { out += "[" }
                 }
@@ -219,12 +219,17 @@ public enum NotesHTMLToMarkdown {
 
 // MARK: - helpers
 
-private func attribute(_ name: String, in attrs: String) -> String? {
-    // Matches name="value" or name='value', case-insensitive on the key.
-    guard let regex = try? NSRegularExpression(
-        pattern: "\(name)\\s*=\\s*(?:\"([^\"]*)\"|'([^']*)')",
-        options: [.caseInsensitive]
-    ) else { return nil }
+// Compiled once at file scope: href is the only attribute the converter ever
+// extracts, and recompiling the pattern inside the lookup would pay the
+// NSRegularExpression setup cost on every <a> tag of every imported note.
+private let hrefRegex = try? NSRegularExpression(
+    pattern: "href\\s*=\\s*(?:\"([^\"]*)\"|'([^']*)')",
+    options: [.caseInsensitive]
+)
+
+private func hrefAttribute(in attrs: String) -> String? {
+    // Matches href="value" or href='value', case-insensitive on the key.
+    guard let regex = hrefRegex else { return nil }
     let range = NSRange(attrs.startIndex..., in: attrs)
     guard let m = regex.firstMatch(in: attrs, range: range) else { return nil }
     for g in 1...2 {

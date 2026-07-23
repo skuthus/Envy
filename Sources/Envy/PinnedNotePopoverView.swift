@@ -266,11 +266,9 @@ struct PinnedNotePopoverView: View {
     }
 
     private func scheduleSave(_ newValue: String) {
-        saveTask?.cancel()
-        saveTask = Task {
-            try? await Task.sleep(for: .milliseconds(400))
-            guard !Task.isCancelled else { return }
-            try? newValue.write(to: url, atomically: true, encoding: .utf8)
+        let destination = url
+        saveTask = DebouncedSave.schedule(replacing: saveTask) {
+            try? newValue.write(to: destination, atomically: true, encoding: .utf8)
             lastSyncedContent = newValue
         }
     }

@@ -81,7 +81,6 @@ extension ContentView {
                     // Return here is intentionally a no-op rather than
                     // mirroring actOnHighlightedTemplate()'s create-on-Return.
                     if isTemplateQuery { actOnHighlightedTemplate() }
-                    else if isInboxQuery { focusedField = .editor }
                     else if !isTrashQuery { focusedField = .editor }
                     return .handled
                 }
@@ -118,7 +117,7 @@ extension ContentView {
     /// for EditorViewNotifications.
     @ViewBuilder
     private func noteRow(for note: Note) -> some View {
-        NoteRow(note: note, showPreview: showNotePreview, showDateModified: showDateModified, dateDisplayStyle: dateDisplayStyle, sortField: sortField, theme: theme, textColor: theme.fileListTextColor?.color, bold: boldFileListText, isPinned: isPinned(note), isFleeting: store.isInboxNote(note))
+        NoteRow(note: note, showPreview: showNotePreview, showDateModified: showDateModified, dateDisplayStyle: dateDisplayStyle, sortField: sortField, theme: theme, textColor: theme.fileListTextColor?.color, bold: boldFileListText, isPinned: isPinned(note), isFleeting: inboxNoteIDsCache.contains(note.id))
             .padding(.vertical, listDensity.rowVerticalPadding)
             .padding(.horizontal, 8)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -176,7 +175,7 @@ extension ContentView {
                 .padding(.horizontal, 10)
                 .padding(.vertical, 6)
             if let suggestionRemainder {
-                (Text(query).foregroundColor(.clear) + Text(suggestionRemainder).foregroundColor(.secondary))
+                Text("\(Text(query).foregroundColor(.clear))\(Text(suggestionRemainder).foregroundColor(.secondary))")
                     .font(.system(size: 13 * interfaceFontScale))
                     .padding(.horizontal, 10)
                     .padding(.vertical, 6)
@@ -221,6 +220,15 @@ extension ContentView {
         }
         .onSubmit { handleEnter() }
         .onChange(of: query) { _, _ in
+            // Synchronous and undebounced, unlike the search pipeline below
+            // — a fresh list has to be up before the template rows render
+            // (createTemplate resets the query and expects its new file
+            // highlighted immediately), and listing the small Templates/
+            // folder once per keystroke is nothing next to the several
+            // reads per *render* the cache replaced. Only ever fires while
+            // a "template:" query is being typed; plain searches never
+            // touch the disk here.
+            if isTemplateQuery { refreshTemplates() }
             // Debounced rather than recomputed inline — with several
             // thousand notes even the fast path below is real work, and
             // running it synchronously on every single keystroke was
@@ -289,14 +297,13 @@ extension ContentView {
         .padding(.top, 10)
     }
 
-    /// How many notes are sitting in Inbox/ — read from every note rather
-    /// than from the filtered list, so the count is the size of the backlog
-    /// and not of whatever happens to be on screen.
-    var fleetingCount: Int {
-        store.notes.reduce(into: 0) { total, note in
-            if NoteStore.isInInboxFolder(note) { total += 1 }
-        }
-    }
+    /// How many notes are sitting in Inbox/ — counted over every note
+    /// rather than the filtered list, so the count is the size of the
+    /// backlog and not of whatever happens to be on screen. Counted in the
+    /// background search pass (see computeSearch) rather than here: as a
+    /// computed property it was an O(notes) scan with per-note URL work,
+    /// re-run on every listPane render — twice whenever the badge showed.
+    var fleetingCount: Int { fleetingCountCache }
 
     /// The search field's own height, expressed the way the field builds it:
     /// one line of its font plus its vertical padding. Derived rather than
@@ -486,6 +493,12 @@ extension ContentView {
                 }
                 Button("Delete", role: .destructive) {
                     deleteTemplate(template)
+                    // Deleting trashes the file without a store reload
+                    // (deleteTemplate suppresses it) and without touching
+                    // the query, so neither of the cache's automatic
+                    // refresh triggers fires — refresh explicitly or the
+                    // row lingers.
+                    refreshTemplates()
                 }
             }
         }
@@ -514,6 +527,9 @@ extension ContentView {
                 deleteTemplate(template)
             }
             multiSelectedTemplateIDs.removeAll()
+            // Same reason as the single-template Delete: no reload, no
+            // query change, so nothing else refreshes the cache.
+            refreshTemplates()
         }
     }
 
@@ -616,16 +632,29 @@ extension ContentView {
     /// comma group a word happens to be in, so nothing extra is needed
     /// here for that).
     private var containsSearchOperator: Bool {
-        query.split(separator: " ").contains { word in
-            let lowered = word.lowercased()
-            return lowered.hasPrefix("tag:") || lowered.hasPrefix("date:")
-                || lowered.hasPrefix("due:")
-                || lowered.hasPrefix("link:") || lowered.hasPrefix("-link:")
-                || lowered == "orphan:" || lowered == "linked:"
-                || lowered.hasPrefix("-tag:")
-                || lowered == "todo:"
-                || (lowered.hasPrefix("-") && lowered.count > 1)
-        }
+        query.split(separator: " ").contains { Self.isSearchOperatorWord($0.lowercased()) }
+    }
+
+    /// The filter operators NoteStore.filtered(query:) recognizes, shared
+    /// between containsSearchOperator and styledQueryText so the two can't
+    /// drift apart again (they had, once each grew its own hand-written
+    /// chain). Split prefix-matched from whole-word because that difference
+    /// is load-bearing: "todo:xyz" is not an operator, "tag:xyz" is.
+    private static let operatorPrefixes = ["tag:", "date:", "due:", "link:", "-link:", "-tag:"]
+    private static let operatorWords = ["orphan:", "linked:", "todo:"]
+
+    /// Whether one lowercased query word reads as an operator.
+    /// `browsePrefixes` exists because the two call sites deliberately
+    /// differ: styledQueryText dims the browse-mode prefixes
+    /// (template:/trash:/inbox:) too, since they're visibly commands, but
+    /// containsSearchOperator must not match them — they aren't filters
+    /// NoteStore.filtered honors mid-query, and isSearchOperatorQuery
+    /// already accounts for them separately (whole-query, first-word-only).
+    private static func isSearchOperatorWord(_ lowered: String, browsePrefixes: [String] = []) -> Bool {
+        operatorPrefixes.contains(where: lowered.hasPrefix)
+            || browsePrefixes.contains(where: lowered.hasPrefix)
+            || operatorWords.contains(lowered)
+            || (lowered.hasPrefix("-") && lowered.count > 1)
     }
 
     /// "tag:xyz"/"date:xyz" are search operators, not literal titles — Enter
@@ -713,20 +742,14 @@ extension ContentView {
             if query[index] == " " {
                 var end = index
                 while end < query.endIndex, query[end] == " " { end = query.index(after: end) }
-                result = result + Text(query[index..<end])
+                result = Text("\(result)\(Text(query[index..<end]))")
                 index = end
             } else {
                 var end = index
                 while end < query.endIndex, query[end] != " " { end = query.index(after: end) }
                 let word = query[index..<end]
-                let lowered = word.lowercased()
-                let isOperator = lowered.hasPrefix("tag:") || lowered.hasPrefix("date:") || lowered.hasPrefix("template:")
-                    || lowered.hasPrefix("due:") || lowered.hasPrefix("trash:") || lowered.hasPrefix("inbox:")
-                    || lowered.hasPrefix("link:") || lowered.hasPrefix("-link:")
-                    || lowered == "orphan:" || lowered == "linked:"
-                    || lowered.hasPrefix("-tag:")
-                    || lowered == "todo:" || (lowered.hasPrefix("-") && lowered.count > 1)
-                result = result + Text(word).foregroundColor(isOperator ? Color.primary.opacity(0.8) : .primary)
+                let isOperator = Self.isSearchOperatorWord(word.lowercased(), browsePrefixes: ["template:", "trash:", "inbox:"])
+                result = Text("\(result)\(Text(word).foregroundColor(isOperator ? Color.primary.opacity(0.8) : .primary))")
                 index = end
             }
         }
