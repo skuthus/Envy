@@ -653,6 +653,99 @@ public final class NoteStore: ObservableObject {
         return destination
     }
 
+    // MARK: - Extracting a selection into its own note
+
+    /// Splits a selection being extracted into its own note into a title and a
+    /// body — the "one idea per note" move, done to text you've already written.
+    ///
+    /// The title is the selection's first non-empty line when that line is short
+    /// enough to read as a name, and the rest of the selection becomes the body,
+    /// so a note doesn't repeat its own title. When the first line is too long to
+    /// serve as one, the title becomes a truncation of it and the *entire*
+    /// selection is kept as the body: a shortened title is a summary, not a copy,
+    /// so dropping the line it came from would lose words you wrote.
+    ///
+    /// Leading Markdown markers (`#`, `-`, `>`, `1.`) are stripped from the title
+    /// so extracting a heading or a bullet doesn't bake punctuation into a
+    /// filename, while the body keeps them exactly as typed.
+    public nonisolated static func extractedTitleAndBody(from selection: String) -> (title: String, body: String) {
+        let maxTitle = 60
+        let lines = selection.components(separatedBy: "\n")
+        let whole = selection.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let firstIdx = lines.firstIndex(where: {
+            !$0.trimmingCharacters(in: .whitespaces).isEmpty
+        }) else {
+            return ("Untitled", whole)
+        }
+
+        let candidate = strippingLeadingMarkers(lines[firstIdx].trimmingCharacters(in: .whitespaces))
+        guard !candidate.isEmpty else { return ("Untitled", whole) }
+
+        if candidate.count <= maxTitle {
+            let body = lines[(firstIdx + 1)...]
+                .joined(separator: "\n")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            return (sanitizedTitle(candidate), body)
+        }
+
+        // Too long for a name: title summarises, body keeps everything.
+        var truncated = ""
+        for word in candidate.split(separator: " ") {
+            if truncated.count + word.count + 1 > maxTitle { break }
+            truncated += truncated.isEmpty ? String(word) : " " + word
+        }
+        if truncated.isEmpty { truncated = String(candidate.prefix(maxTitle)) }
+        return (sanitizedTitle(truncated), whole)
+    }
+
+    /// Drops a leading heading/bullet/quote/number marker from a line.
+    nonisolated private static func strippingLeadingMarkers(_ line: String) -> String {
+        var s = line
+        while let first = s.first, first == "#" || first == ">" { s.removeFirst() }
+        s = s.trimmingCharacters(in: .whitespaces)
+        if s.hasPrefix("- ") || s.hasPrefix("* ") || s.hasPrefix("+ ") { s.removeFirst(2) }
+        // An ordered-list marker ("12. ")
+        if let dot = s.firstIndex(of: "."),
+           s[s.startIndex..<dot].allSatisfy(\.isNumber), s.startIndex != dot,
+           s.index(after: dot) < s.endIndex, s[s.index(after: dot)] == " " {
+            s = String(s[s.index(dot, offsetBy: 2)...])
+        }
+        // A task checkbox left over after the bullet
+        if s.hasPrefix("[ ] ") || s.hasPrefix("[x] ") || s.hasPrefix("[X] ") { s.removeFirst(4) }
+        return s.trimmingCharacters(in: .whitespaces)
+    }
+
+    nonisolated private static func sanitizedTitle(_ s: String) -> String {
+        let cleaned = s
+            .replacingOccurrences(of: "/", with: "-")
+            .replacingOccurrences(of: ":", with: "-")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return cleaned.isEmpty ? "Untitled" : cleaned
+    }
+
+    /// The cutoff for `stale:` — notes untouched since this date are stale.
+    ///
+    /// Bare `stale:` means six months, long enough that anything it surfaces is
+    /// genuinely out of mind rather than merely last week's work. Returns nil for
+    /// a value that isn't a recognised period, which the caller treats as "no
+    /// filter" — the same lenient fallback `date:` uses, so a typo shows you
+    /// everything rather than an unexplained empty list.
+    nonisolated static func staleCutoff(for value: String) -> Date? {
+        let v = value.trimmingCharacters(in: .whitespaces).lowercased()
+        let calendar = Calendar.current
+        let now = Date()
+        if v.isEmpty { return calendar.date(byAdding: .month, value: -6, to: now) }
+        switch v {
+        case "week": return calendar.date(byAdding: .day, value: -7, to: now)
+        case "month": return calendar.date(byAdding: .month, value: -1, to: now)
+        case "year": return calendar.date(byAdding: .year, value: -1, to: now)
+        default:
+            let digits = v.hasSuffix("d") ? String(v.dropLast()) : v
+            guard let days = Int(digits), days > 0 else { return nil }
+            return calendar.date(byAdding: .day, value: -days, to: now)
+        }
+    }
+
     /// A free filename in `directory` for `title`, disambiguating with
     /// " (2)", " (3)" and so on.
     ///
@@ -1023,6 +1116,8 @@ public final class NoteStore: ObservableObject {
         var tagFilter: String?
         var excludeTags: [String] = []
         var dateFilter: (start: Date, end: Date)?
+        var staleCutoff: Date?
+        var excludeStaleCutoff: Date?
         var dueCondition: DueCondition?
         var excludeDueCondition: DueCondition?
         var isDueInvalid = false
@@ -1087,6 +1182,14 @@ public final class NoteStore: ObservableObject {
             } else if token.hasPrefix("date:") {
                 if dateFilter == nil {
                     dateFilter = Self.dateRange(for: String(token.dropFirst("date:".count)))
+                }
+            } else if token.hasPrefix("-stale:") {
+                if excludeStaleCutoff == nil {
+                    excludeStaleCutoff = Self.staleCutoff(for: String(token.dropFirst("-stale:".count)))
+                }
+            } else if token.hasPrefix("stale:") {
+                if staleCutoff == nil {
+                    staleCutoff = Self.staleCutoff(for: String(token.dropFirst("stale:".count)))
                 }
             } else if token.hasPrefix("-due:") {
                 if !excludeDueTokenSeen {
@@ -1168,6 +1271,8 @@ public final class NoteStore: ObservableObject {
             || linkFilter != nil || !excludeLinks.isEmpty || isOrphanOnly || isLinkedOnly
             || isTodoOnly || isTodoExcluded || tagFilter != nil || !excludeTags.isEmpty
             || dateFilter != nil
+            || staleCutoff != nil
+            || excludeStaleCutoff != nil
             || dueCondition != nil || excludeDueCondition != nil || isDueInvalid
             || aiCondition != nil || excludeAiCondition != nil
 
@@ -1210,6 +1315,9 @@ public final class NoteStore: ObservableObject {
             if let tagFilter, !note.tags.contains(where: { Self.fastContains($0, tagFilter) }) { return nil }
             if !excludeTags.isEmpty, note.tags.contains(where: { tag in excludeTags.contains { Self.fastContains(tag, $0) } }) { return nil }
             if let dateFilter, !(note.modifiedDate >= dateFilter.start && note.modifiedDate < dateFilter.end) { return nil }
+            // stale: is date:'s complement — untouched since the cutoff.
+            if let staleCutoff, !(note.modifiedDate < staleCutoff) { return nil }
+            if let excludeStaleCutoff, note.modifiedDate < excludeStaleCutoff { return nil }
             if isDueInvalid { return nil }
             if let dueCondition, !Self.dueConditionMatches(dueCondition, note: note, overdueThreshold: overdueThreshold) { return nil }
             if let excludeDueCondition, Self.dueConditionMatches(excludeDueCondition, note: note, overdueThreshold: overdueThreshold) { return nil }

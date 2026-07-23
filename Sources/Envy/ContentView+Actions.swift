@@ -87,6 +87,30 @@ extension ContentView {
         newNotesStartInInbox ? store.createInboxNote(titled: title) : store.create(title: title)
     }
 
+    /// Splits the selected text out into a note of its own, returning the title
+    /// the editor should link to — the "one idea per note" move applied to
+    /// something already written. Nil if the selection had nothing usable in it.
+    ///
+    /// Honours "New notes start in the Inbox" like every other way a note gets
+    /// made — the omnibar, following a `[[link]]`, and now this. An extracted
+    /// note is still a new note, and someone who wants everything to land in the
+    /// Inbox first almost certainly means this too; splitting it onto its own
+    /// switch would make one decision into two.
+    ///
+    /// The auto-derived title being imperfect is cheap on purpose — renaming a
+    /// note rewrites every `[[link]]` aimed at it, so a better name later costs
+    /// one rename, and a naming prompt here would interrupt the writing this is
+    /// meant to keep flowing.
+    func extractSelectionToNote(_ selection: String) -> String? {
+        let (title, body) = NoteStore.extractedTitleAndBody(from: selection)
+        var note = createNoteWhereNewNotesGo(titled: title)
+        if !body.isEmpty {
+            note.content = body
+            store.save(note)
+        }
+        return note.title
+    }
+
     /// The query to leave in the search box after creating `note` — normally
     /// empty, but "inbox:" for a fleeting note while fleeting notes are
     /// hidden from the list.

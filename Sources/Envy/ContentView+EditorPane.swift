@@ -55,6 +55,7 @@ extension ContentView {
                         noteID: selectedID,
                         focusedField: $focusedField,
                         onNavigate: navigateToNote,
+                        onExtractSelection: extractSelectionToNote,
                         onRename: { newTitle in renameSelectedNote(to: newTitle) },
                         onSubmitFleeting: fleetingNote.map { note in { submitFromInbox(note) } },
                         onDeleteFleeting: fleetingNote.map { note in { deleteFromInbox(note) } },

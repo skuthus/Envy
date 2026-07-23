@@ -234,6 +234,13 @@ private struct SignaturePillView: View {
 struct MarkdownTextView: NSViewRepresentable {
     @Binding var text: String
     var onNavigate: (String) -> Void
+    /// Extracts the selected text into a note of its own — the "one idea per
+    /// note" split, applied to text already written. Given the selection, the
+    /// handler creates the note and returns its final title (which can differ
+    /// from the one asked for, if the name collided); this view then replaces
+    /// the selection with a link to it. Nil means the note wasn't created, and
+    /// the selection is left exactly as it was.
+    var onExtractSelection: ((String) -> String?)?
     var theme: Theme
     var requireModifierForLinkClick: Bool
     var searchQuery: String
@@ -671,6 +678,7 @@ struct MarkdownTextView: NSViewRepresentable {
         // pattern/reasoning as NoteStore's eventStream property.
         nonisolated(unsafe) private var boldObserver: NSObjectProtocol?
         nonisolated(unsafe) private var italicObserver: NSObjectProtocol?
+        nonisolated(unsafe) private var extractObserver: NSObjectProtocol?
         // Registered once the text view exists, in makeNSView below.
         nonisolated(unsafe) var frameObserver: NSObjectProtocol?
 
@@ -716,11 +724,15 @@ struct MarkdownTextView: NSViewRepresentable {
             italicObserver = NotificationCenter.default.addObserver(forName: .italicSelectionRequested, object: nil, queue: .main) { [weak self] _ in
                 self?.toggleItalic()
             }
+            extractObserver = NotificationCenter.default.addObserver(forName: .extractToNoteRequested, object: nil, queue: .main) { [weak self] _ in
+                self?.extractSelectionToNote()
+            }
         }
 
         deinit {
             if let boldObserver { NotificationCenter.default.removeObserver(boldObserver) }
             if let italicObserver { NotificationCenter.default.removeObserver(italicObserver) }
+            if let extractObserver { NotificationCenter.default.removeObserver(extractObserver) }
             if let frameObserver { NotificationCenter.default.removeObserver(frameObserver) }
         }
 
@@ -1949,6 +1961,28 @@ struct MarkdownTextView: NSViewRepresentable {
         // elsewhere in this file. queue: .main already guarantees these run on
         // the main thread at runtime, same trust placed in applyWindowChrome
         // in EnvyApp.swift for its own unisolated NSWindow property writes.
+        /// Replaces the selection with a link to a new note holding that text.
+        /// Uses the same shouldChangeText/didChangeText pair as the emphasis
+        /// commands so the split lands on the undo stack and triggers the
+        /// ordinary save + restyle, rather than mutating storage behind the
+        /// editor's back.
+        private func extractSelectionToNote() {
+            guard let textView, let extract = parent.onExtractSelection else { return }
+            let selRange = textView.selectedRange()
+            guard selRange.length > 0 else { return }
+            let selected = (textView.string as NSString).substring(with: selRange)
+            guard !selected.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+            guard let title = extract(selected) else { return }
+
+            let link = "[[\(title)]]"
+            guard textView.shouldChangeText(in: selRange, replacementString: link) else { return }
+            textView.textStorage?.replaceCharacters(in: selRange, with: link)
+            textView.didChangeText()
+            // Cursor lands after the link, where writing would naturally carry
+            // on, rather than leaving the whole link selected.
+            textView.setSelectedRange(NSRange(location: selRange.location + (link as NSString).length, length: 0))
+        }
+
         private func toggleBold() {
             guard let textView else { return }
             toggleEmphasis(marker: "**", in: textView)

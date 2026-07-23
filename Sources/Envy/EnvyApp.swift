@@ -95,6 +95,11 @@ struct EnvyApp: App {
                 }
                 .keyboardShortcut(binding(for: .newFromTemplate).keyEquivalent, modifiers: binding(for: .newFromTemplate).eventModifiers)
 
+                Button("Extract Selection to New Note") {
+                    NotificationCenter.default.post(name: .extractToNoteRequested, object: nil)
+                }
+                .keyboardShortcut(binding(for: .extractToNote).keyEquivalent, modifiers: binding(for: .extractToNote).eventModifiers)
+
                 Divider()
 
                 Button("Import from Apple Notes") {

@@ -1299,6 +1299,73 @@ struct SelfCheck {
             try? FileManager.default.removeItem(at: tmp)
         }
 
+        // MARK: - Extracting a selection into its own note
+        do {
+            func split(_ s: String) -> (title: String, body: String) {
+                NoteStore.extractedTitleAndBody(from: s)
+            }
+
+            let simple = split("Atomicity\nOne idea per note.")
+            check("first line becomes the title", simple.title == "Atomicity")
+            check("the rest becomes the body", simple.body == "One idea per note.")
+
+            let heading = split("## Atomicity\nOne idea per note.")
+            check("heading markers are stripped from the title", heading.title == "Atomicity")
+
+            let bullet = split("- Atomicity\nbody")
+            check("bullet markers are stripped from the title", bullet.title == "Atomicity")
+            let task = split("- [ ] Do the thing\nbody")
+            check("task markers are stripped from the title", task.title == "Do the thing")
+            let ordered = split("12. Numbered thought\nbody")
+            check("ordered-list markers are stripped from the title", ordered.title == "Numbered thought")
+
+            // A long first line can't be a filename, so the title summarises and
+            // the body keeps everything — losing the line would lose words.
+            let long = String(repeating: "word ", count: 40)
+            let truncated = split(long)
+            check("a long first line is truncated for the title", truncated.title.count <= 60)
+            check("a truncated title keeps the whole selection as the body",
+                  truncated.body == long.trimmingCharacters(in: .whitespacesAndNewlines))
+
+            let oneLine = split("Just this")
+            check("a single-line selection titles it and leaves an empty body",
+                  oneLine.title == "Just this" && oneLine.body == "")
+
+            check("a slash can't break the filename",
+                  split("a/b\nbody").title == "a-b")
+            check("an empty selection falls back to Untitled",
+                  split("   \n  ").title == "Untitled")
+        }
+
+        // MARK: - stale:
+        do {
+            let cal = Calendar.current
+            func cutoff(_ v: String) -> Date? { NoteStore.staleCutoff(for: v) }
+
+            if let bare = cutoff("") {
+                let sixMonths = cal.date(byAdding: .month, value: -6, to: Date())!
+                check("bare stale: means six months",
+                      abs(bare.timeIntervalSince(sixMonths)) < 60)
+            } else {
+                check("bare stale: means six months", false)
+            }
+            if let week = cutoff("week") {
+                check("stale:week is seven days back",
+                      abs(week.timeIntervalSince(cal.date(byAdding: .day, value: -7, to: Date())!)) < 60)
+            } else {
+                check("stale:week is seven days back", false)
+            }
+            if let days = cutoff("90") {
+                check("stale:90 counts days",
+                      abs(days.timeIntervalSince(cal.date(byAdding: .day, value: -90, to: Date())!)) < 60)
+            } else {
+                check("stale:90 counts days", false)
+            }
+            check("stale:90d accepts the d suffix", cutoff("90d") != nil)
+            check("an unrecognised stale: value means no filter", cutoff("cats") == nil)
+            check("stale:0 is not a period", cutoff("0") == nil)
+        }
+
         print("")
         if failures.isEmpty {
             print("All checks passed.")

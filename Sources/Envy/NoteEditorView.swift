@@ -7,6 +7,7 @@ struct NoteEditorView: View {
     let noteID: String
     var focusedField: FocusState<FocusField?>.Binding
     var onNavigate: (String) -> Void
+    var onExtractSelection: ((String) -> String?)?
     var onRename: (String) -> Void
     /// Non-nil only for a note sitting in `Inbox/`. The two review actions
     /// live in the ordinary title bar rather than a separate pane — a
@@ -73,6 +74,7 @@ struct NoteEditorView: View {
         noteID: String,
         focusedField: FocusState<FocusField?>.Binding,
         onNavigate: @escaping (String) -> Void,
+        onExtractSelection: ((String) -> String?)? = nil,
         onRename: @escaping (String) -> Void,
         onSubmitFleeting: (() -> Void)? = nil,
         onDeleteFleeting: (() -> Void)? = nil,
@@ -93,6 +95,7 @@ struct NoteEditorView: View {
         self.noteID = noteID
         self.focusedField = focusedField
         self.onNavigate = onNavigate
+        self.onExtractSelection = onExtractSelection
         self.onRename = onRename
         self.onSubmitFleeting = onSubmitFleeting
         self.onDeleteFleeting = onDeleteFleeting
@@ -126,6 +129,7 @@ struct NoteEditorView: View {
             MarkdownTextView(
                 text: $content,
                 onNavigate: onNavigate,
+                onExtractSelection: onExtractSelection,
                 theme: theme,
                 requireModifierForLinkClick: requireModifierForLinkClick,
                 searchQuery: searchQuery,

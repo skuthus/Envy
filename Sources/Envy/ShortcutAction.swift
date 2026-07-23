@@ -101,6 +101,7 @@ enum ShortcutAction: String, CaseIterable, Identifiable {
     case showPinnedNote
     case unpinFromMenuBar
     case importFromAppleNotes
+    case extractToNote
 
     var id: String { rawValue }
 
@@ -126,6 +127,7 @@ enum ShortcutAction: String, CaseIterable, Identifiable {
         case .showPinnedNote: "Show/Hide Pinned Note (works from any app)"
         case .unpinFromMenuBar: "Unpin Note from Menu Bar (works from any app)"
         case .importFromAppleNotes: "Import from Apple Notes"
+        case .extractToNote: "Extract Selection to New Note"
         }
     }
 
@@ -178,6 +180,10 @@ enum ShortcutAction: String, CaseIterable, Identifiable {
             // ⌘⌥I — plain ⌘I is Italic, so the option modifier keeps them
             // distinct while staying "I for Import."
             ShortcutBinding(character: "i", keyCode: kVK_ANSI_I, modifiers: SwiftUI.EventModifiers([.command, .option]).rawValue)
+        case .extractToNote:
+            // ⌥⌘N — it makes a new note, so it sits beside the other "new"
+            // shortcuts rather than the formatting ones.
+            ShortcutBinding(character: "n", keyCode: kVK_ANSI_N, modifiers: SwiftUI.EventModifiers([.command, .option]).rawValue)
         }
     }
 }
