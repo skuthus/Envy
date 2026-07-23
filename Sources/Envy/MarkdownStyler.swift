@@ -8,6 +8,7 @@ enum MarkdownStyler {
     private static let boldRegex = try! NSRegularExpression(pattern: #"\*\*([^*\n]+)\*\*"#)
     private static let italicRegex = try! NSRegularExpression(pattern: #"(?<!\*)\*([^*\n]+)\*(?!\*)"#)
     private static let strikethroughRegex = try! NSRegularExpression(pattern: #"~~([^~\n]+)~~"#)
+    private static let highlightRegex = try! NSRegularExpression(pattern: #"==([^=\n]+)=="#)
     private nonisolated(unsafe) static let codeRegex = try! NSRegularExpression(pattern: #"`([^`\n]+)`"#)
     private nonisolated(unsafe) static let fencedCodeBlockRegex = try! NSRegularExpression(pattern: #"^```[^\n]*\n([\s\S]*?)\n```[ \t]*$"#, options: [.anchorsMatchLines])
     private static let headerRegex = try! NSRegularExpression(pattern: #"^(#{1,6})[ \t]+(.*)$"#, options: [.anchorsMatchLines])
@@ -1057,6 +1058,41 @@ enum MarkdownStyler {
             let clickableRange = isRevealed ? match.range : titleRange
             if let url = URL(string: "envy:///\(encoded)") {
                 textStorage.addAttribute(.link, value: url, range: clickableRange)
+            }
+        }
+
+        // ==highlight== deliberately reuses the search-match colour rather than
+        // adding a theme entry of its own. It runs here, second-to-last, for the
+        // same reason the search pass runs last: every span has its final
+        // foreground colour by now, so the same legibility correction can tell
+        // whether the highlight would render bold text, a link or a tag
+        // unreadable. The search pass still runs after this, so a query match
+        // always paints last — the two share a colour, so a marked word that is
+        // also a match simply stays marked, which is the honest outcome of
+        // reusing one colour for both.
+        //
+        // Inline code and fenced blocks are already claimed by this point, so
+        // `a == b` inside backticks is left alone for free.
+        let markBackdrop = compositedColor(theme.resolvedHighlightColor, over: theme.resolvedBackgroundColor)
+        for match in highlightRegex.matches(in: text, range: full) {
+            guard !isClaimed(match.range) else { continue }
+            let contentRange = match.range(at: 1)
+            let leadingMarker = NSRange(location: match.range.location, length: 2)
+            let trailingMarker = NSRange(location: match.range.location + match.range.length - 2, length: 2)
+            textStorage.addAttribute(.backgroundColor, value: theme.resolvedHighlightColor, range: contentRange)
+            textStorage.enumerateAttribute(.foregroundColor, in: contentRange, options: []) { existing, subrange, _ in
+                let current = (existing as? NSColor) ?? .labelColor
+                let adjusted = legibleForeground(current, over: markBackdrop)
+                if adjusted != current {
+                    textStorage.addAttribute(.foregroundColor, value: adjusted, range: subrange)
+                }
+            }
+            if touches(match.range, cursorSelection) {
+                textStorage.addAttribute(.foregroundColor, value: markerColor, range: leadingMarker)
+                textStorage.addAttribute(.foregroundColor, value: markerColor, range: trailingMarker)
+            } else {
+                collapse(range: leadingMarker, in: textStorage, text: text, font: baseFont)
+                collapse(range: trailingMarker, in: textStorage, text: text, font: baseFont)
             }
         }
 
