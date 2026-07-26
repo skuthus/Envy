@@ -260,7 +260,10 @@ struct NoteEditorView: View {
             .frame(height: 20, alignment: .leading)
             .frame(maxWidth: .infinity, alignment: .leading)
             .foregroundStyle(theme.noteTitleBarTextColor?.color ?? Color.primary)
-            HStack(spacing: 6) {
+            // FlowLayout, not HStack: with enough tag/due pills a single row
+            // squeezes them together and clips — this wraps them onto more rows
+            // at full size instead, growing the title bar's height to fit.
+            FlowLayout(spacing: 6, lineSpacing: 6) {
                 if let onSubmitFleeting, let onDeleteFleeting {
                     FleetingDot(theme: theme)
                     Button("Submit Note", action: onSubmitFleeting)
@@ -288,15 +291,7 @@ struct NoteEditorView: View {
                 }
                 if showTagsInTitleBar, let note, !note.tags.isEmpty {
                     ForEach(note.tags.sorted(), id: \.self) { tag in
-                        Text("#\(tag)")
-                            .font(.caption.bold())
-                            .foregroundStyle(Color(nsColor: theme.resolvedTagColor))
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
-                            .background(Color(nsColor: theme.resolvedTagBackgroundColor))
-                            .clipShape(Capsule())
-                            .contentShape(Capsule())
-                            .onTapGesture { onTagSearch(tag) }
+                        TagChipView(tag: tag, theme: theme, onTagSearch: onTagSearch)
                     }
                 }
             }
