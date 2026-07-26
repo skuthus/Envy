@@ -18,9 +18,60 @@ final class HoverAwareTextView: NSTextView {
 
     override func drawBackground(in rect: NSRect) {
         super.drawBackground(in: rect)
-        guard !blockquoteRanges.isEmpty,
-              let layoutManager, let textContainer else { return }
+        guard let layoutManager, let textContainer else { return }
 
+        // Domain pills behind collapsed bare URLs. The pill color rides on the
+        // .envyURLPill attribute the styler set, so there's no range list to
+        // keep in sync — just draw a rounded capsule behind each marked run.
+        // Bounded to the dirty rect's characters so a long note doesn't walk
+        // its whole attribute table on every redraw.
+        if let storage = textStorage, storage.length > 0 {
+            let visibleGlyphs = layoutManager.glyphRange(forBoundingRect: rect, in: textContainer)
+            let visibleChars = layoutManager.characterRange(forGlyphRange: visibleGlyphs, actualGlyphRange: nil)
+            if visibleChars.length > 0 {
+                storage.enumerateAttribute(.envyURLPill, in: visibleChars, options: []) { value, attrRange, _ in
+                    guard let tint = value as? NSColor else { return }
+                    let font = (storage.attribute(.font, at: attrRange.location, effectiveRange: nil) as? NSFont)
+                        ?? NSFont.systemFont(ofSize: NSFont.systemFontSize)
+                    var emoji: String?
+                    storage.enumerateAttribute(.envyURLEmoji, in: attrRange, options: []) { v, _, stop in
+                        if let e = v as? String { emoji = e; stop.pointee = true }
+                    }
+                    let glyphRange = layoutManager.glyphRange(forCharacterRange: attrRange, actualCharacterRange: nil)
+                    layoutManager.enumerateEnclosingRects(
+                        forGlyphRange: glyphRange,
+                        withinSelectedGlyphRange: NSRange(location: NSNotFound, length: 0),
+                        in: textContainer
+                    ) { glyphRect, _ in
+                        var box = glyphRect
+                        box.origin.x += self.textContainerInset.width
+                        box.origin.y += self.textContainerInset.height
+
+                        tint.withAlphaComponent(0.16).setFill()
+                        let pill = box.insetBy(dx: -4, dy: -1)
+                        NSBezierPath(roundedRect: pill, xRadius: pill.height / 2, yRadius: pill.height / 2).fill()
+
+                        // Emoji fills the reserved slot at the pill's left edge,
+                        // drawn slightly below full size so a tall glyph isn't
+                        // clipped against the line top.
+                        if let emoji {
+                            let emojiFont = NSFont.systemFont(ofSize: font.pointSize * MarkdownStyler.pillEmojiScale)
+                            let s = emoji as NSString
+                            let size = s.size(withAttributes: [.font: emojiFont])
+                            s.draw(at: NSPoint(x: box.minX, y: box.midY - size.height / 2),
+                                   withAttributes: [.font: emojiFont])
+                        }
+                        // Arrow fills the reserved trailing slot at the right.
+                        let arrow = "↗" as NSString
+                        let aSize = arrow.size(withAttributes: [.font: font])
+                        arrow.draw(at: NSPoint(x: box.maxX - aSize.width, y: box.midY - aSize.height / 2),
+                                   withAttributes: [.font: font, .foregroundColor: tint])
+                    }
+                }
+            }
+        }
+
+        guard !blockquoteRanges.isEmpty else { return }
         blockquoteRuleColor.setFill()
         for range in blockquoteRanges {
             let glyphRange = layoutManager.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
@@ -1865,6 +1916,67 @@ struct MarkdownTextView: NSViewRepresentable {
             }
         }
 
+        /// Right-clicking a link pill offers a per-domain emoji — the same
+        /// gesture that colors a tag. NSTextView calls this to let the delegate
+        /// amend its context menu, passing the clicked character index, so the
+        /// link (and thus the domain) is read straight from the attribute run.
+        func textView(_ textView: NSTextView, menu: NSMenu, for event: NSEvent, at charIndex: Int) -> NSMenu? {
+            guard UserDefaults.standard.object(forKey: "linkDomainPills") as? Bool ?? true,
+                  let storage = textView.textStorage,
+                  charIndex >= 0, charIndex < storage.length,
+                  let url = storage.attribute(.link, at: charIndex, effectiveRange: nil) as? URL,
+                  let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https",
+                  let domain = DomainEmojiPreferences.domainKey(for: url) else { return menu }
+
+            let submenu = NSMenu()
+            for emoji in DomainEmojiPreferences.presets {
+                let item = NSMenuItem(title: emoji, action: #selector(setDomainEmoji(_:)), keyEquivalent: "")
+                item.target = self
+                item.representedObject = ["domain": domain, "emoji": emoji, "view": textView]
+                submenu.addItem(item)
+            }
+            submenu.addItem(.separator())
+            let other = NSMenuItem(title: "Other…", action: #selector(chooseCustomDomainEmoji(_:)), keyEquivalent: "")
+            other.target = self
+            other.representedObject = ["domain": domain, "view": textView]
+            submenu.addItem(other)
+            if DomainEmojiPreferences.emoji(for: domain, raw: UserDefaults.standard.string(forKey: DomainEmojiPreferences.storageKey) ?? "") != nil {
+                let remove = NSMenuItem(title: "Remove Emoji", action: #selector(setDomainEmoji(_:)), keyEquivalent: "")
+                remove.target = self
+                remove.representedObject = ["domain": domain, "view": textView]   // no "emoji" = clear
+                submenu.addItem(remove)
+            }
+
+            let parent = NSMenuItem(title: "Link Emoji for “\(domain)”", action: nil, keyEquivalent: "")
+            parent.submenu = submenu
+            menu.insertItem(parent, at: 0)
+            menu.insertItem(.separator(), at: 1)
+            return menu
+        }
+
+        private func writeDomainEmoji(_ emoji: String?, for domain: String, view: NSTextView) {
+            let key = DomainEmojiPreferences.storageKey
+            let raw = UserDefaults.standard.string(forKey: key) ?? ""
+            UserDefaults.standard.set(DomainEmojiPreferences.setting(emoji, for: domain, in: raw), forKey: key)
+            restyle(view)   // repaint the pill with (or without) its new mark
+        }
+
+        @objc private func setDomainEmoji(_ sender: NSMenuItem) {
+            guard let info = sender.representedObject as? [String: Any],
+                  let domain = info["domain"] as? String,
+                  let view = info["view"] as? NSTextView else { return }
+            writeDomainEmoji(info["emoji"] as? String, for: domain, view: view)
+        }
+
+        @objc private func chooseCustomDomainEmoji(_ sender: NSMenuItem) {
+            guard let info = sender.representedObject as? [String: Any],
+                  let domain = info["domain"] as? String,
+                  let view = info["view"] as? NSTextView else { return }
+            DomainEmojiPicker.shared.present(in: view) { [weak self] emoji in
+                self?.writeDomainEmoji(emoji, for: domain, view: view)
+            }
+        }
+
         func textView(_ textView: NSTextView, clickedOnLink link: Any, at charIndex: Int) -> Bool {
             guard let url = link as? URL else { return false }
 
@@ -2176,12 +2288,60 @@ struct MarkdownTextView: NSViewRepresentable {
         /// directly) so the edit participates in undo and triggers the normal
         /// textDidChange path — same restyle and save flow as typing.
         @MainActor
+        /// The URL of a link pill whose drawn capsule contains `point`, or nil.
+        /// Checks the clicked character and the one before it (the arrow sits in
+        /// trailing space that maps just past the domain's last character), then
+        /// confirms the point is actually inside the pill's rect so a click off
+        /// the end of the same line doesn't count.
+        private func urlPillLink(at point: NSPoint, in textView: NSTextView) -> URL? {
+            guard let storage = textView.textStorage, storage.length > 0,
+                  let lm = textView.layoutManager, let container = textView.textContainer else { return nil }
+            let idx = textView.characterIndexForInsertion(at: point)
+            for probe in [idx, idx - 1] where probe >= 0 && probe < storage.length {
+                var pillRange = NSRange()
+                guard storage.attribute(.envyURLPill, at: probe, effectiveRange: &pillRange) != nil else { continue }
+                var url: URL?
+                storage.enumerateAttribute(.link, in: pillRange, options: []) { v, _, stop in
+                    if let u = v as? URL { url = u; stop.pointee = true }
+                }
+                guard let url else { continue }
+                let glyphRange = lm.glyphRange(forCharacterRange: pillRange, actualCharacterRange: nil)
+                var hit = false
+                lm.enumerateEnclosingRects(
+                    forGlyphRange: glyphRange,
+                    withinSelectedGlyphRange: NSRange(location: NSNotFound, length: 0),
+                    in: container
+                ) { rect, stop in
+                    var box = rect
+                    box.origin.x += textView.textContainerInset.width
+                    box.origin.y += textView.textContainerInset.height
+                    if box.insetBy(dx: -4, dy: -1).contains(point) { hit = true; stop.pointee = true }
+                }
+                if hit { return url }
+            }
+            return nil
+        }
+
         func handleClick(at point: NSPoint) -> Bool {
             // Nothing renders as a clickable checkbox/footnote in plain-text
             // mode (see isOverClickTarget in makeNSView), so nothing should
             // be clickable either — otherwise clicking plain "[ ]" text
             // could still silently toggle it.
             guard let textView, !parent.plainTextMode else { return false }
+
+            // A link pill's emoji and arrow are drawn glyphs, not linked
+            // characters, so NSTextView's own link handling misses them. Treat a
+            // click anywhere on the pill capsule as a click on the link, with
+            // the same ⌘-to-open rule the delegate applies to the domain itself.
+            if let url = urlPillLink(at: point, in: textView) {
+                let commandHeld = NSApp.currentEvent?.modifierFlags.contains(.command) ?? false
+                if parent.requireModifierForLinkClick && !commandHeld {
+                    placeCaret(at: textView.characterIndexForInsertion(at: point), in: textView)
+                } else {
+                    NSWorkspace.shared.open(url)
+                }
+                return true
+            }
 
             if let checkbox = checkboxAndRect(at: point)?.checkbox {
                 let replacement = checkbox.isChecked ? " " : "x"

@@ -14,6 +14,7 @@ struct GeneralSettingsView: View {
     @AppStorage("linkPreviewTrigger") private var linkPreviewTriggerRaw = LinkPreviewTrigger.optionClick.rawValue
     @AppStorage("showTagsInTitleBar") private var showTagsInTitleBar = false
     @AppStorage("showDuePill") private var showDuePill = true
+    @AppStorage("linkDomainPills") private var linkDomainPills = true
     @AppStorage(IndexPreference.storageKey) private var indexPathRaw = ""
     @AppStorage(IndexPreference.includeSubfoldersKey) private var indexIncludeSubfolders = false
     @AppStorage("moveFocusToEditorOnEnter") private var moveFocusToEditorOnEnter = true
@@ -225,6 +226,11 @@ struct GeneralSettingsView: View {
             Section("Editor") {
                 Toggle("Show tags in title bar", isOn: $showTagsInTitleBar)
                 Toggle("Show due date pill in title bar", isOn: $showDuePill)
+                Toggle("Show links as domain pills", isOn: $linkDomainPills)
+                Text("A bare URL renders as a compact pill of just its domain. Purely visual and entirely offline — the note still holds the full URL, and it shows in full the moment your cursor enters it.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
                 Toggle("Require ⌘-click to open note links", isOn: $requireModifierForLinkClick)
                 Picker("Preview linked notes", selection: linkPreviewTrigger) {
                     ForEach(LinkPreviewTrigger.allCases) { trigger in

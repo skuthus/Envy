@@ -1,8 +1,25 @@
 import AppKit
 import EnvyCore
 
+extension NSAttributedString.Key {
+    /// Marks the full span of a bare URL collapsed to a pill (emoji slot +
+    /// domain + arrow slot). Its value is the pill's tint NSColor (full alpha);
+    /// the background pass draws a translucent capsule from it and the arrow in
+    /// the solid color, so no separate range list needs keeping in sync.
+    static let envyURLPill = NSAttributedString.Key("envyURLPill")
+
+    /// The emoji to draw in a pill's left slot, when its domain has one. Sits on
+    /// the reserved-width character just before the domain.
+    static let envyURLEmoji = NSAttributedString.Key("envyURLEmoji")
+}
+
 @MainActor
 enum MarkdownStyler {
+    /// A link pill's emoji is drawn at this fraction of the text size so a tall
+    /// emoji glyph doesn't clip against the line's top. Shared by the styler
+    /// (which reserves the emoji's slot) and HoverAwareTextView (which draws it).
+    nonisolated static let pillEmojiScale: CGFloat = 0.85
+
     private nonisolated static let wikiLinkRegex = try! NSRegularExpression(pattern: #"\[\[([^\[\]]+)\]\]"#)
     private static let boldItalicRegex = try! NSRegularExpression(pattern: #"\*\*\*([^*\n]+)\*\*\*"#)
     private static let boldRegex = try! NSRegularExpression(pattern: #"\*\*([^*\n]+)\*\*"#)
@@ -62,6 +79,31 @@ enum MarkdownStyler {
     /// unbroken rule instead of a dashed column of per-line stubs — a quote
     /// is one thing, and the rule should say so. Two quotes separated by an
     /// ordinary line stay separate.
+    /// The character range of a bare URL's *display domain* — its host with any
+    /// leading `www.` dropped — as an absolute range in the note (offset by
+    /// `base`, the URL's own start). Nil for a string with no `://host`, which
+    /// falls back to plain full-URL styling. Everything outside this range is
+    /// what gets collapsed away to leave just the pill.
+    nonisolated static func domainRange(in urlText: String, base: Int) -> NSRange? {
+        let ns = urlText as NSString
+        let sep = ns.range(of: "://")
+        guard sep.location != NSNotFound else { return nil }
+        var hostStart = sep.location + sep.length
+        var hostEnd = ns.length
+        var i = hostStart
+        while i < ns.length {
+            let c = ns.character(at: i)
+            if c == 47 || c == 63 || c == 35 { hostEnd = i; break }   // '/', '?', '#'
+            i += 1
+        }
+        if hostEnd - hostStart > 4,
+           ns.substring(with: NSRange(location: hostStart, length: 4)).lowercased() == "www." {
+            hostStart += 4
+        }
+        guard hostEnd > hostStart else { return nil }
+        return NSRange(location: base + hostStart, length: hostEnd - hostStart)
+    }
+
     nonisolated static func blockquoteBlockRanges(in text: String) -> [NSRange] {
         let nsText = text as NSString
         let full = NSRange(location: 0, length: nsText.length)
@@ -977,12 +1019,75 @@ enum MarkdownStyler {
             claimed.append(match.range)
         }
 
+        // Default on: a bare URL renders as a compact pill — an optional
+        // per-domain emoji, the domain, and a ↗ — purely visual. The note's
+        // text is the untouched full URL, and the moment the cursor enters it
+        // (or the setting is off) it shows in full as ordinary, editable text.
+        //
+        // The emoji and arrow aren't characters in the note, so their slots are
+        // reserved as extra advance width (kern) on the collapsed characters
+        // flanking the domain, and HoverAwareTextView draws the glyphs into
+        // them. The pill attribute spans emoji-slot…domain…arrow-slot so the
+        // capsule and both glyphs line up off one enclosing rect.
+        let domainPills = UserDefaults.standard.object(forKey: "linkDomainPills") as? Bool ?? true
+        let emojiMap = domainPills
+            ? DomainEmojiPreferences.loadAll(from: UserDefaults.standard.string(forKey: DomainEmojiPreferences.storageKey) ?? "")
+            : [:]
+        let arrowSlot = ("↗" as NSString).size(withAttributes: [.font: baseFont]).width + 6
+        let nsText = text as NSString
+
         for match in bareURLRegex.matches(in: text, range: full) {
             guard !isClaimed(match.range) else { continue }
-            textStorage.addAttribute(.foregroundColor, value: linkColor, range: match.range)
-            textStorage.addAttribute(.underlineStyle, value: NSUnderlineStyle.single.rawValue, range: match.range)
-            if let url = URL(string: (text as NSString).substring(with: match.range)) {
-                textStorage.addAttribute(.link, value: url, range: match.range)
+            let urlText = nsText.substring(with: match.range)
+            let url = URL(string: urlText)
+
+            if domainPills, !touches(match.range, cursorSelection),
+               let domain = Self.domainRange(in: urlText, base: match.range.location) {
+                let emoji = emojiMap[nsText.substring(with: domain).lowercased()]
+                // Keep one prefix character to reserve the emoji slot on; the
+                // rest of the scheme/www prefix collapses away.
+                let leftGap = (emoji != nil && domain.location > match.range.location) ? 1 : 0
+                let prefixCollapseLen = (domain.location - match.range.location) - leftGap
+                if prefixCollapseLen > 0 {
+                    collapse(range: NSRange(location: match.range.location, length: prefixCollapseLen),
+                             in: textStorage, text: text, font: baseFont)
+                }
+                if let emoji, leftGap == 1 {
+                    let slot = NSRange(location: domain.location - 1, length: 1)
+                    // Drawn a touch below full size (see HoverAwareTextView) so a
+                    // tall emoji glyph isn't clipped by the line; reserve the slot
+                    // at that same size so the gap to the domain stays tight.
+                    let emojiFont = NSFont.systemFont(ofSize: baseFont.pointSize * Self.pillEmojiScale)
+                    let emojiWidth = (emoji as NSString).size(withAttributes: [.font: emojiFont]).width
+                    let natural = advanceWidth(of: nsText.substring(with: slot), font: baseFont)
+                    textStorage.addAttribute(.foregroundColor, value: NSColor.clear, range: slot)
+                    textStorage.addAttribute(.kern, value: (emojiWidth + 4) - natural, range: slot)
+                    textStorage.addAttribute(.envyURLEmoji, value: emoji, range: slot)
+                }
+
+                let suffixStart = domain.location + domain.length
+                let suffixLen = (match.range.location + match.range.length) - suffixStart
+                if suffixLen > 0 {
+                    collapse(range: NSRange(location: suffixStart, length: suffixLen),
+                             in: textStorage, text: text, font: baseFont)
+                }
+                // Reserve the arrow's slot as trailing space on the domain's
+                // last character.
+                textStorage.addAttribute(.kern, value: arrowSlot, range: NSRange(location: suffixStart - 1, length: 1))
+
+                textStorage.addAttribute(.foregroundColor, value: linkColor, range: domain)
+                let pillStart = leftGap == 1 ? domain.location - 1 : domain.location
+                let pillRange = NSRange(location: pillStart, length: suffixStart - pillStart)
+                textStorage.addAttribute(.envyURLPill, value: linkColor, range: pillRange)
+                // Link only the domain, never the reserved emoji slot: NSTextView's
+                // linkTextAttributes repaint any .link range in the link color,
+                // which would override the slot's clear foreground and make its
+                // hidden character (a "/" or ".") visible left of the emoji.
+                if let url { textStorage.addAttribute(.link, value: url, range: domain) }
+            } else {
+                textStorage.addAttribute(.foregroundColor, value: linkColor, range: match.range)
+                textStorage.addAttribute(.underlineStyle, value: NSUnderlineStyle.single.rawValue, range: match.range)
+                if let url { textStorage.addAttribute(.link, value: url, range: match.range) }
             }
             claimed.append(match.range)
         }
