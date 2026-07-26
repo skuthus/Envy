@@ -1366,6 +1366,39 @@ struct SelfCheck {
             check("stale:0 is not a period", cutoff("0") == nil)
         }
 
+        // MARK: - Subfolders + move
+        do {
+            let tmp = FileManager.default.temporaryDirectory
+                .appendingPathComponent("envy-folders-\(UUID().uuidString)", isDirectory: true)
+            let fm = FileManager.default
+            for sub in ["Projects", "Projects/Work", "Reading", "Templates", ".trash", "Inbox"] {
+                try? fm.createDirectory(at: tmp.appendingPathComponent(sub), withIntermediateDirectories: true)
+            }
+            let subs = NoteStore.subfolders(in: tmp)
+            check("subfolders lists user folders, nested included",
+                  subs.contains("Projects") && subs.contains("Projects/Work") && subs.contains("Reading"))
+            check("subfolders excludes Templates, .trash and Inbox",
+                  !subs.contains("Templates") && !subs.contains(".trash") && !subs.contains("Inbox"))
+
+            let store = NoteStore(directory: tmp, includeSubfolders: true)
+            await waitForLoad(store)
+            let note = store.create(title: "Movable")
+            let moved = store.moveNote(note, toSubfolder: "Projects/Work")
+            check("moveNote relocates the file",
+                  moved != nil && fm.fileExists(atPath: tmp.appendingPathComponent("Projects/Work/Movable.md").path))
+            if let moved {
+                check("subfolderPath reports the note's folder",
+                      store.subfolderPath(of: moved) == "Projects/Work")
+                let back = store.moveNote(moved, toSubfolder: nil)
+                check("moveNote to root un-files the note",
+                      back != nil && fm.fileExists(atPath: tmp.appendingPathComponent("Movable.md").path))
+                if let back {
+                    check("a root note has no subfolder", store.subfolderPath(of: back) == nil)
+                }
+            }
+            try? fm.removeItem(at: tmp)
+        }
+
         print("")
         if failures.isEmpty {
             print("All checks passed.")

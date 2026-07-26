@@ -63,6 +63,12 @@ struct ContentView: View {
     @State var selectionAnchorID: String?
     @State var renamingNote: Note?
     @State var renameText = ""
+    @State var newFolderNote: Note?
+    @State var newFolderName = ""
+    // Set by a move, which reconciles everything it affects itself; the next
+    // store.notes change is then skipped rather than triggering a full-vault
+    // re-filter/re-sort that a move never actually changes.
+    @State var skipNotesReconcileOnce = false
     @State var editorWordCount = 0
     @State var editorCharacterCount = 0
     @State var backlinksExpanded = false
@@ -96,6 +102,16 @@ struct ContentView: View {
     @AppStorage("showDuePill") var showDuePill = true
     @AppStorage(IndexPreference.storageKey) var indexPathRaw = ""
     @AppStorage(IndexPreference.includeSubfoldersKey) var indexIncludeSubfolders = false
+    @AppStorage(FolderColorPreferences.storageKey) var folderColorsRaw = ""
+    // Folder-color state is cached, not recomputed per row: the note list is
+    // hot, and both a filesystem walk (subfolders) and a JSON decode (colors)
+    // per visible row per render would cripple a large vault. Rebuilt only on
+    // real changes — a reload, the pref changing, a move, the toggle.
+    @State var subfolderCache: [String] = []              // for the "Move to" menu
+    @State var folderColorMap: [String: Color] = [:]      // folder path -> color
+    @State var folderSwatchCache: [String: NSImage] = [:] // folder path -> menu swatch
+    @State var noteSubfolderCache: [String: String] = [:] // note id -> its folder path
+    @State var noteFolderColorCache: [String: Color] = [:]  // note id -> dot color
     @AppStorage("hasCreatedWelcomeNote") var hasCreatedWelcomeNote = false
     @AppStorage("lastSeenWhatsNewVersion") var lastSeenWhatsNewVersion = ""
     @AppStorage("moveFocusToEditorOnEnter") var moveFocusToEditorOnEnter = true
@@ -674,7 +690,14 @@ struct ContentView: View {
         }
         .onChange(of: indexIncludeSubfolders) { _, new in
             store.setIncludeSubfolders(new)
+            recomputeFolderState()
         }
+        .onChange(of: folderColorsRaw) { _, _ in
+            // Colors changed, folder list didn't — skip the filesystem walk.
+            rebuildFolderColors()
+            rebuildNoteFolderCaches()
+        }
+        .onAppear { recomputeFolderState() }
         .onChange(of: store.notes) { _, _ in
             // Fires once a reload actually finishes (folder switch, note
             // added/removed/renamed elsewhere, etc.) — falls back to the
@@ -683,6 +706,13 @@ struct ContentView: View {
             // of the active search filter (reconcileSelectionAfterNotesChange,
             // not reconcileSelection — see its own doc comment for why this
             // site specifically needs the distinction).
+            // A move already reconciled everything it touches (in
+            // moveNoteToSubfolder), so don't pay for a full-vault recompute it
+            // never actually changed.
+            if skipNotesReconcileOnce {
+                skipNotesReconcileOnce = false
+                return
+            }
             // Selection reconciliation waits for the recompute to land —
             // it reads filteredNotes, which the await is what refreshes.
             Task {
@@ -692,6 +722,10 @@ struct ContentView: View {
             recomputeInterlinks()
             recomputeNoteTitles()
             recomputeAllTags()
+            // Notes moved/added/removed — refresh the per-note folder maps only.
+            // No filesystem walk here: the folder *list* is unchanged by a note
+            // moving, and a new folder created via a move is added incrementally.
+            rebuildNoteFolderCaches()
             // Gated so ordinary editing (which fires this via the debounced
             // save) never touches the disk for templates — a notes reload
             // only changes the template list when it came from converting
@@ -745,6 +779,16 @@ struct ContentView: View {
             Button("Cancel", role: .cancel) {
                 renamingNote = nil
             }
+        }
+        .alert("New Folder", isPresented: Binding(
+            get: { newFolderNote != nil },
+            set: { if !$0 { newFolderNote = nil } }
+        )) {
+            TextField("Folder name", text: $newFolderName)
+            Button("Create") { createFolderAndMove() }
+            Button("Cancel", role: .cancel) { newFolderNote = nil }
+        } message: {
+            Text("Create a folder inside your Index and move this note into it.")
         }
     }
 

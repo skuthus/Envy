@@ -636,6 +636,78 @@ public final class NoteStore: ObservableObject {
         return url
     }
 
+    // MARK: - Subfolders (for folder-color categorisation)
+
+    /// The Index's subfolders as paths relative to its root (e.g. "Projects",
+    /// "Projects/Work"), sorted, excluding the folders that aren't user
+    /// categories: `Templates/`, any hidden `.trash/`, and `Inbox/` (which has
+    /// its own fleeting-note meaning). Only meaningful with subfolder scanning
+    /// on; the caller gates on that.
+    nonisolated public static func subfolders(in directory: URL) -> [String] {
+        let fm = FileManager.default
+        guard let enumerator = fm.enumerator(
+            at: directory,
+            includingPropertiesForKeys: [.isDirectoryKey],
+            options: [.skipsHiddenFiles]   // also skips a hidden folder's whole subtree
+        ) else { return [] }
+
+        let rootPath = directory.standardizedFileURL.path
+        var result: [String] = []
+        for case let url as URL in enumerator {
+            guard (try? url.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true else { continue }
+            let name = url.lastPathComponent
+            if name == "Templates" || name == inboxFolderName {
+                enumerator.skipDescendants()
+                continue
+            }
+            // Relative path from the Index root.
+            let full = url.standardizedFileURL.path
+            guard full.hasPrefix(rootPath + "/") else { continue }
+            result.append(String(full.dropFirst(rootPath.count + 1)))
+        }
+        return result.sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
+    }
+
+    /// The subfolder a note lives in, relative to the Index root, or nil when
+    /// it sits at the root (or, defensively, outside the Index). Used to look up
+    /// the note's folder color; `Inbox/` returns nil here so an inbox note keeps
+    /// its own dot rather than a folder color.
+    public func subfolderPath(of note: Note) -> String? {
+        let rootPath = noteDirectory.standardizedFileURL.path
+        let parent = note.url.deletingLastPathComponent().standardizedFileURL.path
+        guard parent != rootPath, parent.hasPrefix(rootPath + "/") else { return nil }
+        let relative = String(parent.dropFirst(rootPath.count + 1))
+        return relative == Self.inboxFolderName ? nil : relative
+    }
+
+    /// Moves a note into `subfolder` (a path relative to the Index root), or to
+    /// the Index root when `subfolder` is nil/empty. Creates the destination on
+    /// demand. The title is unchanged, so wiki-links pointing at it still
+    /// resolve — this only changes which folder the file sits in. Returns the
+    /// note at its new location, or nil if the move failed or it's already there.
+    @discardableResult
+    public func moveNote(_ note: Note, toSubfolder subfolder: String?) -> Note? {
+        let trimmed = subfolder?.trimmingCharacters(in: CharacterSet(charactersIn: "/ ")) ?? ""
+        let targetDir = trimmed.isEmpty
+            ? noteDirectory
+            : noteDirectory.appendingPathComponent(trimmed, isDirectory: true)
+
+        // No-op if it's already in that folder.
+        if note.url.deletingLastPathComponent().standardizedFileURL == targetDir.standardizedFileURL {
+            return note
+        }
+
+        markInternalWrite()
+        try? FileManager.default.createDirectory(at: targetDir, withIntermediateDirectories: true)
+        let destination = Self.availableURL(for: note.title, in: targetDir)
+        guard (try? FileManager.default.moveItem(at: note.url, to: destination)) != nil else { return nil }
+        let moved = Note(id: destination.path, url: destination, content: note.content, modifiedDate: note.modifiedDate)
+        if let index = notes.firstIndex(where: { $0.id == note.id }) {
+            notes[index] = moved
+        }
+        return moved
+    }
+
     /// Files a fleeting note into The Index proper — a plain move out of
     /// `Inbox/`. The note's text is untouched, so nothing about having been
     /// fleeting survives in the file.

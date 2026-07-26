@@ -21,6 +21,10 @@ struct NoteRow: View {
     /// Set for a note sitting in `Inbox/` — the one visible difference
     /// between a fleeting note and any other.
     var isFleeting: Bool = false
+    /// The color of the subfolder this note lives in, when its folder has one
+    /// assigned. Shown as a dot, unless the note is fleeting — the amber inbox
+    /// dot takes that one slot, since "unfiled" outranks a folder category.
+    var folderColor: Color? = nil
 
     var body: some View {
         HStack(spacing: 6) {
@@ -31,6 +35,11 @@ struct NoteRow: View {
             }
             if isFleeting {
                 FleetingDot(theme: theme)
+            } else if let folderColor {
+                Circle()
+                    .fill(folderColor)
+                    .frame(width: 7 * interfaceFontScale, height: 7 * interfaceFontScale)
+                    .accessibilityLabel("In a colored folder")
             }
             // The ⎈ AI-provenance mark is hidden until the feature is
             // designed. Note.aiProvenance still parses it, so restoring the

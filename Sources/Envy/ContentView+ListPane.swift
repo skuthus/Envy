@@ -115,9 +115,59 @@ extension ContentView {
     /// budget ("unable to type-check this expression in reasonable time"),
     /// the same class of problem FocusHighlight.swift's own split addressed
     /// for EditorViewNotifications.
+    /// Rebuilds the cached folder state: the subfolder list for the move menu,
+    /// the folder→color map for its swatches, and the note→color map for the
+    /// list dots. One filesystem walk + one JSON decode, run only on real
+    /// changes (reload, pref change, move, toggle) — never per row, which is
+    /// what made a large vault crawl when this was computed inline.
+    /// Everything — used on first appear and on the subfolder-scanning toggle,
+    /// where the whole picture can change at once.
+    func recomputeFolderState() {
+        reloadSubfolderList()
+        rebuildFolderColors()
+        rebuildNoteFolderCaches()
+    }
+
+    /// The one expensive part — a filesystem walk of the Index for its
+    /// subfolders. Only the folder *list* needs this, and it only changes when
+    /// folders are added or removed, so this is kept off the per-note-change
+    /// path (a move doesn't touch it; a new folder is added incrementally).
+    func reloadSubfolderList() {
+        subfolderCache = indexIncludeSubfolders ? NoteStore.subfolders(in: store.noteDirectory) : []
+    }
+
+    /// Cheap: decode the color pref and pre-render one menu swatch per colored
+    /// folder. No filesystem, no note scan.
+    func rebuildFolderColors() {
+        guard indexIncludeSubfolders else { folderColorMap = [:]; folderSwatchCache = [:]; return }
+        folderColorMap = FolderColorPreferences.loadAll(from: folderColorsRaw).mapValues { $0.color }
+        folderSwatchCache = folderColorMap.mapValues { Self.folderSwatch($0) }
+    }
+
+    /// One pass over notes (no filesystem): which subfolder each note is in (for
+    /// the move menu's disabled "current folder") and its dot color (the colored
+    /// subset). noteDirectory is already resolved and notes are enumerated from
+    /// it, so a plain prefix compare matches without re-standardizing every URL.
+    func rebuildNoteFolderCaches() {
+        guard indexIncludeSubfolders else { noteSubfolderCache = [:]; noteFolderColorCache = [:]; return }
+        let rootPrefix = store.noteDirectory.path + "/"
+        var subs: [String: String] = [:]
+        var colors: [String: Color] = [:]
+        for note in store.notes {
+            let parent = note.url.deletingLastPathComponent().path
+            guard parent.hasPrefix(rootPrefix) else { continue }
+            let relative = String(parent.dropFirst(rootPrefix.count))
+            guard !relative.isEmpty, relative != NoteStore.inboxFolderName else { continue }
+            subs[note.id] = relative
+            if let color = folderColorMap[relative] { colors[note.id] = color }
+        }
+        noteSubfolderCache = subs
+        noteFolderColorCache = colors
+    }
+
     @ViewBuilder
     private func noteRow(for note: Note) -> some View {
-        NoteRow(note: note, showPreview: showNotePreview, showDateModified: showDateModified, dateDisplayStyle: dateDisplayStyle, sortField: sortField, theme: theme, textColor: theme.fileListTextColor?.color, bold: boldFileListText, isPinned: isPinned(note), isFleeting: inboxNoteIDsCache.contains(note.id))
+        NoteRow(note: note, showPreview: showNotePreview, showDateModified: showDateModified, dateDisplayStyle: dateDisplayStyle, sortField: sortField, theme: theme, textColor: theme.fileListTextColor?.color, bold: boldFileListText, isPinned: isPinned(note), isFleeting: inboxNoteIDsCache.contains(note.id), folderColor: noteFolderColorCache[note.id])
             .padding(.vertical, listDensity.rowVerticalPadding)
             .padding(.horizontal, 8)
             .frame(maxWidth: .infinity, alignment: .leading)

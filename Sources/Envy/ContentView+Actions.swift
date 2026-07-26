@@ -396,9 +396,99 @@ extension ContentView {
         Button("Make This Note a Template") {
             convertNoteToTemplate(note)
         }
+        if indexIncludeSubfolders {
+            Menu("Move to") {
+                let current = noteSubfolderCache[note.id]
+                Button {
+                    moveNoteToSubfolder(note, nil)
+                } label: {
+                    Label("The Index", systemImage: "tray")
+                }
+                .disabled(current == nil)
+
+                if !subfolderCache.isEmpty { Divider() }
+                ForEach(subfolderCache, id: \.self) { folder in
+                    Button {
+                        moveNoteToSubfolder(note, folder)
+                    } label: {
+                        if let swatch = folderSwatchCache[folder] {
+                            Label { Text(folder) } icon: { Image(nsImage: swatch) }
+                        } else {
+                            Label(folder, systemImage: "folder")
+                        }
+                    }
+                    .disabled(current == folder)
+                }
+
+                Divider()
+                Button("New Folder…") {
+                    newFolderName = ""
+                    newFolderNote = note
+                }
+            }
+        }
         Button("Move to Trash", role: .destructive) {
             deleteNote(note)
         }
+    }
+
+    /// Creates `newFolderName` and moves `newFolderNote` into it. moveNote makes
+    /// the folder on demand, so this is just a move to a name that doesn't exist
+    /// yet. Called from the New Folder alert's Create button.
+    func createFolderAndMove() {
+        guard let note = newFolderNote else { return }
+        let name = newFolderName
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: "/", with: "-")
+        newFolderNote = nil
+        guard !name.isEmpty else { return }
+        moveNoteToSubfolder(note, name)
+    }
+
+    /// Moves a note into a subfolder (nil = the Index root) and carries the
+    /// selection with it — the move changes the note's id (its path), so a
+    /// selected note would otherwise fall out of the editor.
+    func moveNoteToSubfolder(_ note: Note, _ subfolder: String?) {
+        let wasSelected = selectedID == note.id
+        guard let moved = store.moveNote(note, toSubfolder: subfolder) else { return }
+        if wasSelected { selectedID = moved.id }
+
+        // A move changes only this note's folder — not its title, content, date
+        // or tags — so the filtered/sorted list is identical except for this one
+        // row. Update the caches for just this note (instant) instead of letting
+        // the store.notes change trigger a full re-filter/re-sort of the whole
+        // vault, which measured ~480ms at 15k notes and is entirely wasted here.
+        let trimmed = subfolder?.trimmingCharacters(in: CharacterSet(charactersIn: "/ ")) ?? ""
+        let folder: String? = trimmed.isEmpty ? nil : trimmed
+        if let idx = filteredNotesCache.firstIndex(where: { $0.id == note.id }) {
+            filteredNotesCache[idx] = moved
+        }
+        noteSubfolderCache[note.id] = nil
+        noteFolderColorCache[note.id] = nil
+        if let folder {
+            noteSubfolderCache[moved.id] = folder
+            if let color = folderColorMap[folder] { noteFolderColorCache[moved.id] = color }
+            if !subfolderCache.contains(folder) {   // a brand-new folder, added without a walk
+                subfolderCache = (subfolderCache + [folder])
+                    .sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
+            }
+        }
+        // Everything a move affects is now reconciled, so skip the full-vault
+        // recompute the store.notes change below would otherwise kick off.
+        skipNotesReconcileOnce = true
+    }
+
+    /// A small filled-circle image for a folder's color, shown beside its name
+    /// in the "Move to" menu. Not a template image, so it keeps its own color
+    /// in the menu (a tinted SF Symbol wouldn't reliably).
+    static func folderSwatch(_ color: Color, diameter: CGFloat = 10) -> NSImage {
+        let image = NSImage(size: NSSize(width: diameter, height: diameter))
+        image.lockFocus()
+        NSColor(color).setFill()
+        NSBezierPath(ovalIn: NSRect(x: 0, y: 0, width: diameter, height: diameter)).fill()
+        image.unlockFocus()
+        image.isTemplate = false
+        return image
     }
 
     @ViewBuilder
