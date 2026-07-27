@@ -247,10 +247,16 @@ enum MarkdownStyler {
             // both embed Note, matching how the plain link forms resolve.
             (range: match.range, title: WikiLink.parse(nsText.substring(with: match.range(at: 1))).target)
         }
-        guard !candidates.isEmpty else { return [] }
+        // Image embeds (![[photo.png]]) are handled by imageEmbedRanges — drop
+        // them here so a note holding only images never pays to build the
+        // whole-vault title Set below. This is the fix for image notes being
+        // slow to open: before it, every image marker still forced that
+        // O(all-titles) build, twice per selection (style + overlay pass).
+        let noteCandidates = candidates.filter { !imageExtensions.contains(($0.title as NSString).pathExtension.lowercased()) }
+        guard !noteCandidates.isEmpty else { return [] }
         let existingTitles = Set(noteTitles.map { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() })
 
-        return candidates.compactMap { candidate in
+        return noteCandidates.compactMap { candidate in
             guard existingTitles.contains(candidate.title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()) else { return nil }
             // Use NSString's own line-boundary APIs rather than hardcoding
             // "\n" as the newline byte — a note's line endings depend on
@@ -283,8 +289,16 @@ enum MarkdownStyler {
         let nsText = text as NSString
         guard nsText.length > 0, nsText.range(of: "![[").location != NSNotFound else { return nil }
         let full = NSRange(location: 0, length: nsText.length)
+        // Only note embeds get room auto-inserted (image embeds get their blank
+        // line when dropped/pasted), so skip image markers — which also avoids
+        // building the whole-vault title Set for an images-only note.
+        let matches = embedRegex.matches(in: text, range: full).filter {
+            let target = WikiLink.parse(nsText.substring(with: $0.range(at: 1))).target
+            return !imageExtensions.contains((target as NSString).pathExtension.lowercased())
+        }
+        guard !matches.isEmpty else { return nil }
         let existingTitles = Set(noteTitles.map { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() })
-        for match in embedRegex.matches(in: text, range: full) {
+        for match in matches {
             let title = WikiLink.parse(nsText.substring(with: match.range(at: 1))).target.lowercased()
             guard existingTitles.contains(title) else { continue }
             let markerLineRange = nsText.lineRange(for: match.range)
