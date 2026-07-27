@@ -315,27 +315,40 @@ enum MarkdownStyler {
     /// `key` is the raw inner reference (name plus any size), lowercased, so the
     /// styler and the overlay agree on one height-cache key even when the same
     /// image appears at two different widths.
-    static func imageEmbedRanges(in text: String) -> [(markerRange: NSRange, spacerRange: NSRange, name: String, width: CGFloat?, height: CGFloat?, key: String)] {
+    static func imageEmbedRanges(in text: String) -> [(markerRange: NSRange, spacerRange: NSRange, name: String, width: CGFloat?, height: CGFloat?, caption: String?, key: String)] {
         let nsText = text as NSString
         // Same cheap reject as embedRanges — skip the whole regex when the note
         // has no embed marker, which keeps typing in a large image-free note
         // free of any image-detection cost.
         guard nsText.range(of: "![[").location != NSNotFound else { return [] }
         let full = NSRange(location: 0, length: nsText.length)
-        var results: [(markerRange: NSRange, spacerRange: NSRange, name: String, width: CGFloat?, height: CGFloat?, key: String)] = []
+        var results: [(markerRange: NSRange, spacerRange: NSRange, name: String, width: CGFloat?, height: CGFloat?, caption: String?, key: String)] = []
         for match in embedRegex.matches(in: text, range: full) {
             let inner = nsText.substring(with: match.range(at: 1))
-            let parts = inner.split(separator: "|", maxSplits: 1, omittingEmptySubsequences: false)
-            let name = parts[0].trimmingCharacters(in: .whitespaces)
+            let segments = inner.components(separatedBy: "|")
+            let name = segments[0].trimmingCharacters(in: .whitespaces)
             guard imageExtensions.contains((name as NSString).pathExtension.lowercased()) else { continue }
 
+            // After the name: an optional numeric size ("400" or "400x300"),
+            // then any remaining text as a caption. So "photo.png|400|Beach" is
+            // width 400 + caption "Beach"; "photo.png|Beach" is just a caption;
+            // "photo.png|400" is just a width.
             var width: CGFloat?
             var height: CGFloat?
-            if parts.count == 2 {
-                let dims = parts[1].trimmingCharacters(in: .whitespaces).lowercased().split(separator: "x", maxSplits: 1)
-                if let first = dims.first, let w = Double(first) { width = CGFloat(w) }
-                if dims.count == 2, let h = Double(dims[1]) { height = CGFloat(h) }
+            var captionStart = 1
+            if segments.count > 1 {
+                let dims = segments[1].trimmingCharacters(in: .whitespaces).lowercased().split(separator: "x", maxSplits: 1)
+                if let first = dims.first, let w = Double(String(first)), dims.allSatisfy({ Double(String($0)) != nil }) {
+                    width = CGFloat(w)
+                    if dims.count == 2, let h = Double(String(dims[1])) { height = CGFloat(h) }
+                    captionStart = 2
+                }
             }
+            let captionText = segments.dropFirst(captionStart)
+                .map { $0.trimmingCharacters(in: .whitespaces) }
+                .joined(separator: " ")
+                .trimmingCharacters(in: .whitespaces)
+            let caption = captionText.isEmpty ? nil : captionText
 
             // Same blank-line-after requirement as note embeds — see
             // embedRanges for why the spacer line, not the marker line, is
@@ -346,7 +359,7 @@ enum MarkdownStyler {
             let spacerLineRange = nsText.lineRange(for: NSRange(location: afterMarkerLine, length: 0))
             guard spacerLineRange.length > 0,
                   nsText.substring(with: spacerLineRange).trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { continue }
-            results.append((match.range, spacerLineRange, name, width, height, inner.lowercased()))
+            results.append((match.range, spacerLineRange, name, width, height, caption, inner.lowercased()))
         }
         return results
     }

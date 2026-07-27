@@ -266,19 +266,91 @@ final class HoverAwareTextView: NSTextView {
     }
 }
 
-/// The inline picture for an image attachment, floated over its reserved block
-/// by the coordinator. A subclass so a right-click offers size presets, wired
-/// back through `onResize` to rewriting the `![[name|width]]` token in the note.
-final class AttachmentImageView: NSImageView {
+/// The inline block for an image attachment, floated over its reserved space by
+/// the coordinator: the picture on top, an optional caption beneath it, and a
+/// dashed "missing image" placeholder when the file can't be loaded. A right-
+/// click offers size presets, caption/rename edits, and open/reveal — each
+/// wired back to rewriting the `![[…]]` token or touching the file.
+final class AttachmentView: NSView {
+    static let captionHeight: CGFloat = 20
+    static let brokenHeight: CGFloat = 64
+
     var attachmentName: String = ""
-    /// Rewrites this image's size token; nil width clears it (original size).
     var onResize: ((CGFloat?) -> Void)?
-    /// Opens the image in Preview.
     var onOpen: (() -> Void)?
-    /// Reveals the file in Finder.
     var onReveal: (() -> Void)?
-    /// Renames the attachment (and its references) to the given base name.
     var onRename: ((String) -> Void)?
+    var onCaption: ((String) -> Void)?
+
+    private let imageView = NSImageView()
+    private let captionLabel = NSTextField(labelWithString: "")
+    private var isBroken = false
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        wantsLayer = true
+        imageView.imageScaling = .scaleProportionallyUpOrDown
+        imageView.imageAlignment = .alignTopLeft
+        imageView.imageFrameStyle = .none
+        imageView.animates = true   // play animated GIFs instead of showing frame one
+        addSubview(imageView)
+        captionLabel.font = .systemFont(ofSize: 11)
+        captionLabel.textColor = .secondaryLabelColor
+        captionLabel.alignment = .center
+        captionLabel.lineBreakMode = .byTruncatingTail
+        captionLabel.isHidden = true
+        addSubview(captionLabel)
+    }
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    var displayImage: NSImage? {
+        get { imageView.image }
+        set {
+            imageView.image = newValue
+            isBroken = (newValue == nil)
+            imageView.isHidden = isBroken
+            needsDisplay = true
+        }
+    }
+
+    var caption: String? {
+        didSet {
+            captionLabel.stringValue = caption ?? ""
+            captionLabel.isHidden = (caption?.isEmpty ?? true)
+            needsLayout = true
+        }
+    }
+
+    /// Vertical space the caption line occupies (0 when there's no caption).
+    var captionSpace: CGFloat { (caption?.isEmpty ?? true) ? 0 : Self.captionHeight }
+
+    override func layout() {
+        super.layout()
+        let cap = captionSpace
+        // Not flipped: y grows upward, so the picture sits on top and the
+        // caption in the strip beneath it.
+        imageView.frame = NSRect(x: 0, y: cap, width: bounds.width, height: max(bounds.height - cap, 0))
+        captionLabel.frame = NSRect(x: 0, y: 0, width: bounds.width, height: cap)
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        super.draw(dirtyRect)
+        guard isBroken else { return }
+        let box = NSRect(x: 0, y: captionSpace, width: bounds.width,
+                         height: max(bounds.height - captionSpace, 0)).insetBy(dx: 1, dy: 1)
+        let path = NSBezierPath(roundedRect: box, xRadius: 6, yRadius: 6)
+        path.lineWidth = 1
+        path.setLineDash([4, 3], count: 2, phase: 0)
+        NSColor.secondaryLabelColor.withAlphaComponent(0.5).setStroke()
+        path.stroke()
+        let text = "\u{26A0}\u{FE0E} Missing image: \(attachmentName)" as NSString
+        let attrs: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: 12),
+            .foregroundColor: NSColor.secondaryLabelColor
+        ]
+        let size = text.size(withAttributes: attrs)
+        text.draw(at: NSPoint(x: box.midX - size.width / 2, y: box.midY - size.height / 2), withAttributes: attrs)
+    }
 
     override func menu(for event: NSEvent) -> NSMenu? {
         let menu = NSMenu()
@@ -295,6 +367,9 @@ final class AttachmentImageView: NSImageView {
         custom.target = self
         menu.addItem(custom)
         menu.addItem(.separator())
+        let captionItem = NSMenuItem(title: "Caption\u{2026}", action: #selector(editCaption), keyEquivalent: "")
+        captionItem.target = self
+        menu.addItem(captionItem)
         let rename = NSMenuItem(title: "Rename\u{2026}", action: #selector(renameImage), keyEquivalent: "")
         rename.target = self
         menu.addItem(rename)
@@ -312,45 +387,44 @@ final class AttachmentImageView: NSImageView {
     @objc private func openImage() { onOpen?() }
     @objc private func revealImage() { onReveal?() }
 
+    @objc private func editCaption() {
+        prompt(title: "Caption", info: "Text shown under the image (blank to remove).",
+               initial: caption ?? "", button: "Set") { [weak self] in self?.onCaption?($0) }
+    }
+
     @objc private func renameImage() {
-        // Deferred past the menu-tracking runloop before the modal, same as the
-        // custom-width prompt.
-        DispatchQueue.main.async { [weak self] in
-            guard let self else { return }
-            let alert = NSAlert()
-            alert.messageText = "Rename image"
-            alert.informativeText = "New name \u{2014} the file extension is kept."
-            let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 240, height: 24))
-            field.stringValue = (self.attachmentName as NSString).deletingPathExtension
-            alert.accessoryView = field
-            alert.addButton(withTitle: "Rename")
-            alert.addButton(withTitle: "Cancel")
-            guard alert.runModal() == .alertFirstButtonReturn else { return }
-            let newBase = field.stringValue.trimmingCharacters(in: .whitespaces)
-            if !newBase.isEmpty { self.onRename?(newBase) }
+        prompt(title: "Rename image", info: "New name \u{2014} the file extension is kept.",
+               initial: (attachmentName as NSString).deletingPathExtension, button: "Rename") { [weak self] text in
+            let base = text.trimmingCharacters(in: .whitespaces)
+            if !base.isEmpty { self?.onRename?(base) }
         }
     }
 
     @objc private func resizeCustom() {
-        // Deferred out of the menu-tracking runloop before presenting a modal,
-        // so the alert never races the menu teardown.
-        DispatchQueue.main.async { [weak self] in
-            guard let self else { return }
+        prompt(title: "Image width", info: "Width in points \u{2014} leave blank for original size.",
+               initial: "", placeholder: displayImage.map { "\(Int($0.size.width))" }, button: "Set") { [weak self] text in
+            let t = text.trimmingCharacters(in: .whitespaces)
+            if t.isEmpty { self?.onResize?(nil) }
+            else if let value = Double(t), value > 0 { self?.onResize?(CGFloat(value)) }
+        }
+    }
+
+    /// A one-field modal prompt. Deferred past the menu-tracking runloop before
+    /// presenting, so the alert never races the menu teardown.
+    private func prompt(title: String, info: String, initial: String, placeholder: String? = nil,
+                        button: String, done: @escaping (String) -> Void) {
+        DispatchQueue.main.async {
             let alert = NSAlert()
-            alert.messageText = "Image width"
-            alert.informativeText = "Width in points \u{2014} leave blank for original size."
-            let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 200, height: 24))
-            if let w = self.image?.size.width { field.placeholderString = "\(Int(w))" }
+            alert.messageText = title
+            alert.informativeText = info
+            let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 240, height: 24))
+            field.stringValue = initial
+            if let placeholder { field.placeholderString = placeholder }
             alert.accessoryView = field
-            alert.addButton(withTitle: "Set")
+            alert.addButton(withTitle: button)
             alert.addButton(withTitle: "Cancel")
             guard alert.runModal() == .alertFirstButtonReturn else { return }
-            let text = field.stringValue.trimmingCharacters(in: .whitespaces)
-            if text.isEmpty {
-                self.onResize?(nil)
-            } else if let value = Double(text), value > 0 {
-                self.onResize?(CGFloat(value))
-            }
+            done(field.stringValue)
         }
     }
 }
@@ -908,7 +982,7 @@ struct MarkdownTextView: NSViewRepresentable {
         /// Pooled NSImageViews for inline image attachments — same pooling
         /// rationale as embeds and checkboxes, but plain image views since an
         /// image needs no SwiftUI state of its own.
-        private var imageOverlayViews: [AttachmentImageView] = []
+        private var imageOverlayViews: [AttachmentView] = []
         /// Decoded attachment images, keyed by filename. Attachments are
         /// immutable once written (a new paste gets a fresh name), so a name is
         /// a safe cache key — and this is what keeps updateImageOverlays from
@@ -2036,12 +2110,7 @@ struct MarkdownTextView: NSViewRepresentable {
             layoutManager.ensureLayout(forCharacterRange: NSRange(location: 0, length: min(lastEnd, textLength)))
 
             while imageOverlayViews.count < images.count {
-                let iv = AttachmentImageView()
-                iv.imageScaling = .scaleProportionallyUpOrDown
-                iv.imageAlignment = .alignTopLeft
-                iv.imageFrameStyle = .none
-                iv.animates = true   // play animated GIFs instead of showing frame one
-                iv.wantsLayer = true
+                let iv = AttachmentView()
                 textView.addSubview(iv)
                 imageOverlayViews.append(iv)
             }
@@ -2054,43 +2123,57 @@ struct MarkdownTextView: NSViewRepresentable {
                 let image = images[index]
                 // Decode from disk once and cache — this runs on every restyle
                 // (i.e. every keystroke), and re-reading/decoding the file each
-                // time is what made typing next to an image lag. Only touch the
+                // time is what made typing near an image lag. Only touch the
                 // view when the slot is actually showing a different picture.
                 let loaded = attachmentImage(image.name, store: store)
-                if iv.attachmentName != image.name {
-                    iv.image = loaded
+                // Update the view when the slot shows a different picture *or*
+                // when the same one has appeared/vanished on disk — the latter is
+                // what flips a just-deleted image to the missing placeholder.
+                if iv.attachmentName != image.name || (iv.displayImage == nil) != (loaded == nil) {
+                    iv.displayImage = loaded
                     iv.attachmentName = image.name
                     iv.toolTip = image.name
                 }
+                if iv.caption != image.caption { iv.caption = image.caption }
 
                 // Display width: the explicit token, else the image's own
-                // width — both capped to the column so a large photo can't
-                // overflow. Height: the explicit `|WxH` height, else derived
-                // from the image's aspect ratio at that width.
-                let intrinsicWidth = loaded?.size.width ?? containerWidth
-                let intrinsicHeight = loaded?.size.height ?? intrinsicWidth
-                let aspect = intrinsicWidth > 0 ? intrinsicHeight / intrinsicWidth : 0.66
-                let displayWidth = min(image.width ?? intrinsicWidth, containerWidth)
-                let displayHeight = image.height ?? (displayWidth * aspect)
-                updateImageHeight(for: image.key, to: displayHeight, in: textView)
+                // width — both capped to the column. Height: the explicit
+                // `|WxH`, else the aspect ratio at that width; a missing file
+                // gets a fixed placeholder box. Plus the caption strip, so the
+                // reserved block fits picture and caption together.
+                let displayWidth: CGFloat
+                let imageHeight: CGFloat
+                if let loaded {
+                    let aspect = loaded.size.width > 0 ? loaded.size.height / loaded.size.width : 0.66
+                    displayWidth = min(image.width ?? loaded.size.width, containerWidth)
+                    imageHeight = image.height ?? (displayWidth * aspect)
+                } else {
+                    displayWidth = min(image.width ?? 320, containerWidth)
+                    imageHeight = AttachmentView.brokenHeight
+                }
+                updateImageHeight(for: image.key, to: imageHeight + iv.captionSpace, in: textView)
 
-                // Resize/open hang off the specific picture, capturing its name
-                // and where its marker currently sits so the right ![[...]] gets
-                // rewritten even when the same image appears more than once.
+                // Resize/caption/rename/open hang off the specific picture,
+                // capturing its name and where its marker sits so the right
+                // ![[...]] gets rewritten even with the image embedded twice.
                 let markerLocation = image.markerRange.location
                 let name = image.name
                 iv.onResize = { [weak self] width in
                     self?.rewriteImageSize(name: name, near: markerLocation, width: width, in: textView)
                 }
-                iv.onOpen = { NSWorkspace.shared.open(store.attachmentURL(forName: name)) }
-                iv.onReveal = { NSWorkspace.shared.activateFileViewerSelecting([store.attachmentURL(forName: name)]) }
+                iv.onCaption = { [weak self] text in
+                    self?.setImageCaption(name: name, near: markerLocation, caption: text, in: textView)
+                }
                 iv.onRename = { [weak self] newBase in
                     self?.renameAttachment(oldName: name, near: markerLocation, newBase: newBase, in: textView)
                 }
+                iv.onOpen = { NSWorkspace.shared.open(store.attachmentURL(forName: name)) }
+                iv.onReveal = { NSWorkspace.shared.activateFileViewerSelecting([store.attachmentURL(forName: name)]) }
 
                 let glyphRange = layoutManager.glyphRange(forCharacterRange: image.spacerRange, actualCharacterRange: nil)
                 let lineRect = layoutManager.lineFragmentRect(forGlyphAt: glyphRange.location, effectiveRange: nil)
                 iv.frame = NSRect(x: origin.x, y: lineRect.origin.y + origin.y, width: displayWidth, height: lineRect.height)
+                iv.needsLayout = true
                 iv.isHidden = false
             }
         }
@@ -2100,8 +2183,19 @@ struct MarkdownTextView: NSViewRepresentable {
         /// per-keystroke re-decode that made editing near an image lag.
         @MainActor
         private func attachmentImage(_ name: String, store: NoteStore) -> NSImage? {
+            let url = store.attachmentURL(forName: name)
+            // Stat first — cheap, and it's what lets a file deleted while the
+            // note is open flip to the missing-image placeholder promptly rather
+            // than serving a decode cached from before the deletion. (Also spares
+            // the repeated failed NSImage load a truly missing file used to cost
+            // every keystroke.) A stat is orders of magnitude cheaper than the
+            // decode this still caches, so the hot path stays fast.
+            guard FileManager.default.fileExists(atPath: url.path) else {
+                imageCache[name] = nil
+                return nil
+            }
             if let cached = imageCache[name] { return cached }
-            let loaded = NSImage(contentsOf: store.attachmentURL(forName: name))
+            let loaded = NSImage(contentsOf: url)
             if let loaded { imageCache[name] = loaded }
             return loaded
         }
@@ -2131,8 +2225,32 @@ struct MarkdownTextView: NSViewRepresentable {
                 .filter { $0.name == name }
             guard let target = candidates.min(by: { abs($0.markerRange.location - location) < abs($1.markerRange.location - location) })
                 ?? candidates.first else { return }
-            let newInner = width.map { "\(name)|\(Int($0))" } ?? name
-            let replacement = "![[\(newInner)]]"
+            let replacement = "![[\(Self.imageInner(name: name, width: width, height: nil, caption: target.caption))]]"
+            guard textView.shouldChangeText(in: target.markerRange, replacementString: replacement) else { return }
+            textView.textStorage?.replaceCharacters(in: target.markerRange, with: replacement)
+            textView.didChangeText()
+        }
+
+        /// Assembles the inner of an `![[…]]` image reference from its parts —
+        /// `name`, optional size, optional caption — so the size/caption/rename
+        /// rewrites all round-trip the pieces they're not changing.
+        nonisolated static func imageInner(name: String, width: CGFloat?, height: CGFloat?, caption: String?) -> String {
+            var inner = name
+            if let width, let height { inner += "|\(Int(width))x\(Int(height))" }
+            else if let width { inner += "|\(Int(width))" }
+            if let caption, !caption.isEmpty { inner += "|\(caption)" }
+            return inner
+        }
+
+        /// Sets (or clears, when blank) the caption of the `![[name…]]` marker
+        /// nearest the captured location, keeping its size token.
+        @MainActor
+        func setImageCaption(name: String, near location: Int, caption: String, in textView: NSTextView) {
+            let candidates = MarkdownStyler.imageEmbedRanges(in: textView.string).filter { $0.name == name }
+            guard let target = candidates.min(by: { abs($0.markerRange.location - location) < abs($1.markerRange.location - location) })
+                ?? candidates.first else { return }
+            let trimmed = caption.trimmingCharacters(in: .whitespacesAndNewlines)
+            let replacement = "![[\(Self.imageInner(name: name, width: target.width, height: target.height, caption: trimmed.isEmpty ? nil : trimmed))]]"
             guard textView.shouldChangeText(in: target.markerRange, replacementString: replacement) else { return }
             textView.textStorage?.replaceCharacters(in: target.markerRange, with: replacement)
             textView.didChangeText()
@@ -2159,11 +2277,7 @@ struct MarkdownTextView: NSViewRepresentable {
                 .filter { $0.name == oldName }
                 .sorted { $0.markerRange.location > $1.markerRange.location }
             for image in targets {
-                let sizeSuffix: String
-                if let w = image.width, let h = image.height { sizeSuffix = "|\(Int(w))x\(Int(h))" }
-                else if let w = image.width { sizeSuffix = "|\(Int(w))" }
-                else { sizeSuffix = "" }
-                let replacement = "![[\(finalName)\(sizeSuffix)]]"
+                let replacement = "![[\(Self.imageInner(name: finalName, width: image.width, height: image.height, caption: image.caption))]]"
                 guard textView.shouldChangeText(in: image.markerRange, replacementString: replacement) else { continue }
                 textStorage.replaceCharacters(in: image.markerRange, with: replacement)
                 textView.didChangeText()
