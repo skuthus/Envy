@@ -170,7 +170,7 @@ enum WelcomeContent {
 
     Turn on Settings → General → "Show items in subfolders" and Envy also lists notes nested in your folders, all in the one flat list. Everything below only appears once this is on.
 
-    - **Color a folder** in Settings → General → Folder Colors, and every note inside it shows a dot in that color — after the title by default, or before it if you flip "Show the folder dot after the title" — so you can see which pile a note is in at a glance. (Inbox notes are marked with an amber `!` on the left instead; that's the one special folder.)
+    - **Color a folder** in Settings → General → Folder Colors, and every note inside it shows a marker — a dot in that color, or the folder's **name** as a chip, your choice under "Show a note's folder as" — so you can see which pile a note is in at a glance. It sits after the title by default (flip "Show the folder marker after the title" to move it left). (Inbox notes are marked with an amber `!` on the left instead; that's the one special folder.)
     - **File a note** by right-clicking it → **Move to →**: the Index root, any subfolder (shown with its color), or **New Folder…** to make one on the spot. It's a real file move — the title doesn't change, so `[[links]]` still resolve.
     - The color is a preference, never written into a note. The category — which folder a note is in — lives on disk and is fully portable; only the tint is Envy's.
 

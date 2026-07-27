@@ -1,6 +1,19 @@
 import SwiftUI
 import EnvyCore
 
+/// How a note's subfolder is shown in the list row.
+enum FolderListDisplay: String, CaseIterable, Identifiable {
+    case dot, name, off
+    var id: String { rawValue }
+    var label: String {
+        switch self {
+        case .dot: return "Colored dot"
+        case .name: return "Folder name"
+        case .off: return "Nothing"
+        }
+    }
+}
+
 struct NoteRow: View {
     @Environment(\.interfaceFontScale) private var interfaceFontScale
     let note: Note
@@ -25,10 +38,16 @@ struct NoteRow: View {
     /// assigned. Shown as a dot, unless the note is fleeting — the amber inbox
     /// dot takes that one slot, since "unfiled" outranks a folder category.
     var folderColor: Color? = nil
-    /// When true the colored-folder dot sits just after the title instead of
+    /// When true the folder indicator sits just after the title instead of
     /// before it. The Inbox mark is unaffected — it always leads, since it's a
     /// different kind of signal ("unfiled") than a folder category.
     var dotTrailing: Bool = false
+    /// The note's subfolder as a relative path ("Projects" or "Projects/Ideas"),
+    /// for the "Folder name" display. nil for a root or Inbox note.
+    var folderName: String? = nil
+    /// How the subfolder shows in the list — a colored dot, a labelled chip, or
+    /// nothing.
+    var folderDisplay: FolderListDisplay = .dot
 
     var body: some View {
         HStack(spacing: 6) {
@@ -38,7 +57,7 @@ struct NoteRow: View {
                     .foregroundStyle(textColor ?? Color.secondary)
             }
             fleetingMark
-            if !dotTrailing { folderDot }
+            if !dotTrailing { folderIndicator }
             // The ⎈ AI-provenance mark is hidden until the feature is
             // designed. Note.aiProvenance still parses it, so restoring the
             // badge is re-adding this block — nothing downstream was removed.
@@ -52,7 +71,7 @@ struct NoteRow: View {
                 .foregroundStyle(textColor ?? Color.primary)
                 .fontWeight(bold ? .bold : nil)
                 .layoutPriority(1)
-            if dotTrailing { folderDot }
+            if dotTrailing { folderIndicator }
             if showPreview && !note.preview.isEmpty {
                 Text(note.preview)
                     .font(.system(size: 11 * interfaceFontScale))
@@ -82,16 +101,35 @@ struct NoteRow: View {
         }
     }
 
-    /// The colored-folder dot, on whichever side `dotTrailing` chooses. Gated on
+    /// The subfolder indicator, on whichever side `dotTrailing` chooses. Gated on
     /// `!isFleeting` so a fleeting note only ever shows the "!" — the two never
-    /// stack. Empty (no spacing) when the note's folder has no colour.
+    /// stack. A colored dot (only for a colored folder), a labelled chip (for any
+    /// subfolder, tinted to its color when it has one), or nothing.
     @ViewBuilder
-    private var folderDot: some View {
-        if !isFleeting, let folderColor {
-            Circle()
-                .fill(folderColor)
-                .frame(width: 7 * interfaceFontScale, height: 7 * interfaceFontScale)
-                .accessibilityLabel("In a colored folder")
+    private var folderIndicator: some View {
+        if !isFleeting {
+            switch folderDisplay {
+            case .off:
+                EmptyView()
+            case .dot:
+                if let folderColor {
+                    Circle()
+                        .fill(folderColor)
+                        .frame(width: 7 * interfaceFontScale, height: 7 * interfaceFontScale)
+                        .accessibilityLabel("In a colored folder")
+                }
+            case .name:
+                if let folderName {
+                    Text(folderName)
+                        .font(.system(size: 10 * interfaceFontScale))
+                        .lineLimit(1)
+                        .foregroundStyle(folderColor ?? Color.secondary)
+                        .padding(.horizontal, 5 * interfaceFontScale)
+                        .padding(.vertical, 1)
+                        .background((folderColor ?? Color.secondary).opacity(0.15), in: Capsule())
+                        .help(folderName)
+                }
+            }
         }
     }
 

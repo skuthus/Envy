@@ -167,7 +167,7 @@ extension ContentView {
 
     @ViewBuilder
     private func noteRow(for note: Note) -> some View {
-        NoteRow(note: note, showPreview: showNotePreview, showDateModified: showDateModified, dateDisplayStyle: dateDisplayStyle, sortField: sortField, theme: theme, textColor: theme.fileListTextColor?.color, bold: boldFileListText, isPinned: isPinned(note), isFleeting: inboxNoteIDsCache.contains(note.id), folderColor: noteFolderColorCache[note.id], dotTrailing: noteDotTrailing)
+        NoteRow(note: note, showPreview: showNotePreview, showDateModified: showDateModified, dateDisplayStyle: dateDisplayStyle, sortField: sortField, theme: theme, textColor: theme.fileListTextColor?.color, bold: boldFileListText, isPinned: isPinned(note), isFleeting: inboxNoteIDsCache.contains(note.id), folderColor: noteFolderColorCache[note.id], dotTrailing: noteDotTrailing, folderName: noteSubfolderCache[note.id], folderDisplay: FolderListDisplay(rawValue: folderListDisplayRaw) ?? .dot)
             .padding(.vertical, listDensity.rowVerticalPadding)
             .padding(.horizontal, 8)
             .frame(maxWidth: .infinity, alignment: .leading)

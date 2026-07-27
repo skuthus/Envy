@@ -94,6 +94,7 @@ struct ContentView: View {
     @AppStorage("backgroundBlurStrength") var backgroundBlurStrengthRaw = BlurStrength.strong.rawValue
     @AppStorage("showNotePreview") var showNotePreview = false
     @AppStorage("noteDotTrailing") var noteDotTrailing = true
+    @AppStorage("folderListDisplay") var folderListDisplayRaw = FolderListDisplay.dot.rawValue
     @AppStorage("showDateModified") var showDateModified = true
     @AppStorage("showDueSort") var showDueSort = true
     @AppStorage("dateDisplayStyle") var dateDisplayStyleRaw = DateDisplayStyle.smart.rawValue

@@ -6,6 +6,7 @@ import EnvyCore
 struct GeneralSettingsView: View {
     @AppStorage("showNotePreview") private var showNotePreview = false
     @AppStorage("noteDotTrailing") private var noteDotTrailing = true
+    @AppStorage("folderListDisplay") private var folderListDisplayRaw = FolderListDisplay.dot.rawValue
     @AppStorage("showDateModified") private var showDateModified = true
     @AppStorage("newNotesStartInInbox") private var newNotesStartInInbox = false
     @AppStorage("showInboxInMainList") private var showInboxInMainList = true
@@ -48,6 +49,13 @@ struct GeneralSettingsView: View {
         Binding(
             get: { DateDisplayStyle(rawValue: dateDisplayStyleRaw) ?? .smart },
             set: { dateDisplayStyleRaw = $0.rawValue }
+        )
+    }
+
+    private var folderListDisplay: Binding<FolderListDisplay> {
+        Binding(
+            get: { FolderListDisplay(rawValue: folderListDisplayRaw) ?? .dot },
+            set: { folderListDisplayRaw = $0.rawValue }
         )
     }
 
@@ -253,8 +261,15 @@ struct GeneralSettingsView: View {
                 Text("Notes waiting in Inbox/ appear alongside the rest, marked with a dot. Turn this off to keep them out of the way until you go looking with \u{201C}inbox:\u{201D}.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                Toggle("Show the folder dot after the title", isOn: $noteDotTrailing)
-                Text("A colored-folder dot sits just after the title by default. Turn this off to move it back to the left, before the title. The Inbox mark always stays on the left.")
+                Picker("Show a note's folder as", selection: folderListDisplay) {
+                    ForEach(FolderListDisplay.allCases) { Text($0.label).tag($0) }
+                }
+                .disabled(!indexIncludeSubfolders)
+                Text("For a note in a subfolder: a dot in the folder's color, the folder's name as a chip, or nothing. Needs \u{201C}Show items in subfolders.\u{201D}")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Toggle("Show the folder marker after the title", isOn: $noteDotTrailing)
+                Text("A note's folder dot or name chip sits just after the title by default. Turn this off to move it back to the left, before the title. The Inbox mark always stays on the left.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
