@@ -62,7 +62,11 @@ struct TagChipView: View {
 /// then repaint on their own.
 @MainActor
 enum TagColorPanel {
-    private final class Target: NSObject {
+    // @MainActor because AppKit's colour-panel target-action always fires on
+    // the main thread — a nested class doesn't inherit the enclosing enum's
+    // isolation, so without this the @objc handler reads NSColorPanel.color
+    // (main-actor-isolated) from a nonisolated context and warns.
+    @MainActor private final class Target: NSObject {
         var tag: String = ""
         @objc func changed(_ sender: NSColorPanel) {
             let raw = UserDefaults.standard.string(forKey: TagColorPreferences.storageKey) ?? ""
