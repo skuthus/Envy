@@ -134,7 +134,7 @@ enum WelcomeContent {
     Type `inbox:` followed by whatever you're thinking and press Return. The note is captured, the box resets to a bare `inbox:` ready for the next thought, and you never leave where you were.
 
     - Fleeting notes live in an `Inbox` folder inside The Index. That's the whole mechanism — an ordinary `.md` file that happens to sit there. Drag one out in Finder and it's filed, exactly as if you'd pressed Submit.
-    - They carry an amber dot in the note list, and the count beside the search box says how many are waiting. Click it to review; click it again to come back.
+    - They carry a bold amber `!` on the left in the note list, and the count beside the search box says how many are waiting. Click it to review; click it again to come back.
     - Opening one shows **Submit Note** (files it into The Index) and **Delete Note** in its title bar. Both move you to the next one waiting, so working through a backlog is a run of decisions rather than a series of round trips.
     - Titling is usually the real work — a capture arrives called "fix the thing", and deciding what it's actually about is most of what reviewing means. Click the title to rename it before you file it.
     - Settings → General → "New notes start in the Inbox" sends everything you write there first, so nothing joins your permanent collection without you deciding it should.
@@ -163,7 +163,7 @@ enum WelcomeContent {
 
     Turn on Settings → General → "Show items in subfolders" and Envy also lists notes nested in your folders, all in the one flat list. Everything below only appears once this is on.
 
-    - **Color a folder** in Settings → General → Folder Colors, and every note inside it shows a dot in that color in the list — so you can see which pile a note is in at a glance. (Inbox notes keep their amber dot; that's the one special folder.)
+    - **Color a folder** in Settings → General → Folder Colors, and every note inside it shows a dot in that color — after the title by default, or before it if you flip "Show the folder dot after the title" — so you can see which pile a note is in at a glance. (Inbox notes are marked with an amber `!` on the left instead; that's the one special folder.)
     - **File a note** by right-clicking it → **Move to →**: the Index root, any subfolder (shown with its color), or **New Folder…** to make one on the spot. It's a real file move — the title doesn't change, so `[[links]]` still resolve.
     - The color is a preference, never written into a note. The category — which folder a note is in — lives on disk and is fully portable; only the tint is Envy's.
 

@@ -265,7 +265,6 @@ struct NoteEditorView: View {
             // at full size instead, growing the title bar's height to fit.
             FlowLayout(spacing: 6, lineSpacing: 6) {
                 if let onSubmitFleeting, let onDeleteFleeting {
-                    FleetingDot(theme: theme)
                     Button("Submit Note", action: onSubmitFleeting)
                         .help("File this note into The Index")
                     Button("Delete Note", role: .destructive, action: onDeleteFleeting)

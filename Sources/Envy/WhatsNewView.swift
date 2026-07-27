@@ -28,12 +28,12 @@ struct WhatsNewView: View {
             }
 
             VStack(spacing: 10) {
-                Image(systemName: "folder.fill")
+                Image(systemName: "exclamationmark.circle.fill")
                     .font(.system(size: 44))
                     .foregroundStyle(EnvyBrand.mark)
-                Text("Color Your Folders")
+                Text("A Cleaner Note List")
                     .font(.title3.bold())
-                Text("Organize by pile, if you like \u{2014} a second axis alongside tags. Turn on \u{201C}Show items in subfolders\u{201D} in Settings, color any folder, and every note inside it shows a dot in that color, so you can see which pile it\u{2019}s in at a glance. Right-click a note \u{203A} Move to \u{2192} to file it into a folder or make a new one on the spot.\n\nTags got color too \u{2014} right-click a tag chip. And this release is faster where it counts: the note list stays snappy past 15,000 notes. Plus \u{2318}\u{2325}N to split a selection into its own note, ==highlight== marking, a stale: search, and clean domain pills for bare links.")
+                Text("Two small touches to the list. A colored-folder dot now sits just after a note\u{2019}s title instead of before it \u{2014} easier to read against the title, and it keeps the left edge clean. Prefer it on the left? There\u{2019}s a toggle in Settings.\n\nAnd your Inbox marks itself with a bold amber ! instead of a dot. Now that folders can be any color, a folder dot could blend with the old amber Inbox dot \u{2014} so a fleeting note gets a mark that\u{2019}s plainly not a dot, and the two never collide, even if you color a folder amber.")
                     .font(.body)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)

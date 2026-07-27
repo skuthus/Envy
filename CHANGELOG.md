@@ -2,6 +2,11 @@
 
 Also published at [envynote.app/changelog.html](https://envynote.app/changelog.html).
 
+## 1.7.1 — July 26, 2026
+
+- **Folder dots moved next to the title.** A colored-folder dot now sits just after the note's title instead of before it — easier to read against the title, and it keeps the left edge clean. Prefer it on the left? Settings → General → "Show the folder dot after the title" puts it back.
+- **The Inbox now marks itself with a `!`, not a dot.** Now that folders can be any color, a colored folder dot could blend with the old amber Inbox dot. Fleeting notes instead carry a bold amber `!` on the left — a mark that's plainly not a folder dot, so the two never collide. (The `!` shows only in the list now, not the editor title bar, where the Submit/Delete buttons already say it.)
+
 ## 1.7.0 — July 22, 2026
 
 - **Color-coded folders.** If you think in piles, subfolders inside your Index are now a second way to organize, alongside tags. Turn on Settings → General → "Show items in subfolders," then give any folder a color in the new "Folder Colors" section — every note inside it shows a dot in that color in the list, so you can see which pile each note belongs to at a glance. Right-click a note → **Move to →** to file it into a folder (with its color swatch shown), pull it back to the Index root, or make a **New Folder…** on the spot. A move is a plain file move: the note's title is unchanged, so wiki-links still resolve, and the color is a preference — the file only knows which folder it's in, so it stays portable. An Inbox note keeps its amber fleeting dot; that's still the one special folder.

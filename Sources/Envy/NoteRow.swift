@@ -25,6 +25,10 @@ struct NoteRow: View {
     /// assigned. Shown as a dot, unless the note is fleeting — the amber inbox
     /// dot takes that one slot, since "unfiled" outranks a folder category.
     var folderColor: Color? = nil
+    /// When true the colored-folder dot sits just after the title instead of
+    /// before it. The Inbox mark is unaffected — it always leads, since it's a
+    /// different kind of signal ("unfiled") than a folder category.
+    var dotTrailing: Bool = false
 
     var body: some View {
         HStack(spacing: 6) {
@@ -33,14 +37,8 @@ struct NoteRow: View {
                     .font(.system(size: 10 * interfaceFontScale))
                     .foregroundStyle(textColor ?? Color.secondary)
             }
-            if isFleeting {
-                FleetingDot(theme: theme)
-            } else if let folderColor {
-                Circle()
-                    .fill(folderColor)
-                    .frame(width: 7 * interfaceFontScale, height: 7 * interfaceFontScale)
-                    .accessibilityLabel("In a colored folder")
-            }
+            fleetingMark
+            if !dotTrailing { folderDot }
             // The ⎈ AI-provenance mark is hidden until the feature is
             // designed. Note.aiProvenance still parses it, so restoring the
             // badge is re-adding this block — nothing downstream was removed.
@@ -54,6 +52,7 @@ struct NoteRow: View {
                 .foregroundStyle(textColor ?? Color.primary)
                 .fontWeight(bold ? .bold : nil)
                 .layoutPriority(1)
+            if dotTrailing { folderDot }
             if showPreview && !note.preview.isEmpty {
                 Text(note.preview)
                     .font(.system(size: 11 * interfaceFontScale))
@@ -69,6 +68,30 @@ struct NoteRow: View {
                     .fontWeight(bold ? .bold : nil)
                     .lineLimit(1)
             }
+        }
+    }
+
+    /// The Inbox mark (amber "!"), for a fleeting note. Always leads the title,
+    /// independent of the folder-dot side, because "unfiled" is a different
+    /// signal than a folder colour. Empty for a filed note — and an empty
+    /// builder adds no HStack spacing, so a filed note lays out unchanged.
+    @ViewBuilder
+    private var fleetingMark: some View {
+        if isFleeting {
+            FleetingDot(theme: theme)
+        }
+    }
+
+    /// The colored-folder dot, on whichever side `dotTrailing` chooses. Gated on
+    /// `!isFleeting` so a fleeting note only ever shows the "!" — the two never
+    /// stack. Empty (no spacing) when the note's folder has no colour.
+    @ViewBuilder
+    private var folderDot: some View {
+        if !isFleeting, let folderColor {
+            Circle()
+                .fill(folderColor)
+                .frame(width: 7 * interfaceFontScale, height: 7 * interfaceFontScale)
+                .accessibilityLabel("In a colored folder")
         }
     }
 

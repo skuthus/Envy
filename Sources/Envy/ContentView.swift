@@ -93,6 +93,7 @@ struct ContentView: View {
     @Environment(\.colorScheme) private var colorScheme
     @AppStorage("backgroundBlurStrength") var backgroundBlurStrengthRaw = BlurStrength.strong.rawValue
     @AppStorage("showNotePreview") var showNotePreview = false
+    @AppStorage("noteDotTrailing") var noteDotTrailing = true
     @AppStorage("showDateModified") var showDateModified = true
     @AppStorage("showDueSort") var showDueSort = true
     @AppStorage("dateDisplayStyle") var dateDisplayStyleRaw = DateDisplayStyle.smart.rawValue

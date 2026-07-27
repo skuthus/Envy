@@ -5,6 +5,7 @@ import EnvyCore
 
 struct GeneralSettingsView: View {
     @AppStorage("showNotePreview") private var showNotePreview = false
+    @AppStorage("noteDotTrailing") private var noteDotTrailing = true
     @AppStorage("showDateModified") private var showDateModified = true
     @AppStorage("newNotesStartInInbox") private var newNotesStartInInbox = false
     @AppStorage("showInboxInMainList") private var showInboxInMainList = true
@@ -250,6 +251,10 @@ struct GeneralSettingsView: View {
                     .foregroundStyle(.secondary)
                 Toggle("Show fleeting notes in the list", isOn: $showInboxInMainList)
                 Text("Notes waiting in Inbox/ appear alongside the rest, marked with a dot. Turn this off to keep them out of the way until you go looking with \u{201C}inbox:\u{201D}.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Toggle("Show the folder dot after the title", isOn: $noteDotTrailing)
+                Text("A colored-folder dot sits just after the title by default. Turn this off to move it back to the left, before the title. The Inbox mark always stays on the left.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
