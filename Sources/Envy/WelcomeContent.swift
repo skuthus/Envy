@@ -44,6 +44,7 @@ enum WelcomeContent {
     - `*italic*` becomes *italic*
     - `***bold italic***` combines both
     - `~~strikethrough~~` becomes ~~strikethrough~~
+    - `==highlight==` marks text with a background, like ==this==
     - Select some text and press **⌘B** or **⌘I** to bold or italicize it directly, no typing asterisks by hand. Press again to undo it.
 
     ### 💻 Code
@@ -98,6 +99,8 @@ enum WelcomeContent {
 
     **Search your links, too.** `link:Note Title` finds every note that points at another; `orphan:` surfaces notes with no links in or out. Wrap words in `"quotes"` for an exact phrase.
 
+    **Split a note in two.** When a note has quietly grown to hold two ideas, select the part that wants to stand alone and press **⌥⌘N**. It becomes a note of its own, with a `[[link]]` left in its place — the title taken from the selection's first line. One idea per note, applied after the fact.
+
     ## 📆 Due Dates
 
     Write `@04-16-26` (or `@2026-04-16`) anywhere in a note, like this: Finish the quarterly report @04-16-26
@@ -121,6 +124,8 @@ enum WelcomeContent {
     Search `tag:work` to see every note tagged that way — it's not case-sensitive, and partial names work too: `tag:techn` matches `#technology`.
 
     Combine it with regular search words, like `tag:work meeting`, to narrow further to tagged notes that also mention "meeting".
+
+    Turn on Settings → General → "Show tags in title bar" and a note's tags show as chips beside its title. **Right-click a chip to give the tag a color** — every note carrying that tag then shows it in that color. The color belongs to the tag, not the note: it's a preference, so your `#tag` on disk is untouched and stays portable.
 
     ## 💡 Fleeting Notes
 
@@ -152,11 +157,25 @@ enum WelcomeContent {
 
     Two limits, so nothing surprises you: images and attachments don't come across (you'll see an `[image omitted]` marker), and Apple Notes checklists arrive as ordinary bullet lists — Apple doesn't hand over the checkbox ticks, so there's nothing to import.
 
+    ## 📁 Folders & Colors
+
+    Envy keeps everything in one folder — The Index — so you never *have* to file anything. But if you think in piles, subfolders are a second, color-coded way to organize, sitting alongside tags rather than replacing them.
+
+    Turn on Settings → General → "Show items in subfolders" and Envy also lists notes nested in your folders, all in the one flat list. Everything below only appears once this is on.
+
+    - **Color a folder** in Settings → General → Folder Colors, and every note inside it shows a dot in that color in the list — so you can see which pile a note is in at a glance. (Inbox notes keep their amber dot; that's the one special folder.)
+    - **File a note** by right-clicking it → **Move to →**: the Index root, any subfolder (shown with its color), or **New Folder…** to make one on the spot. It's a real file move — the title doesn't change, so `[[links]]` still resolve.
+    - The color is a preference, never written into a note. The category — which folder a note is in — lives on disk and is fully portable; only the tint is Envy's.
+
+    **Folders or tags?** Both. A note lives in one folder (a single "which pile") but can carry many tags (cross-cutting "what's it about"). They're different axes, and a note can use both at once.
+
     ## 📅 Searching by Date
 
     Search `date:today` or `date:yesterday` for notes modified that day, or `date:week` / `date:month` for the last 7 or 30 days.
 
     An exact date works too, in whichever format you'd naturally type it: `date:2026-04-15`, `date:4-15-26`, and `date:04-15-2026` all mean the same day.
+
+    `stale:` is the flip side — notes you *haven't* touched. Bare `stale:` means the last six months; `stale:week`, `stale:month`, `stale:year`, or `stale:90` (days) narrow it, and `-stale:` excludes. Pair it with `orphan:` — `orphan: stale:` surfaces notes that are both disconnected and forgotten.
 
     ## 🗂️ The Index
 

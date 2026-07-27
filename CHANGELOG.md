@@ -2,6 +2,16 @@
 
 Also published at [envynote.app/changelog.html](https://envynote.app/changelog.html).
 
+## 1.7.0 — July 22, 2026
+
+- **Color-coded folders.** If you think in piles, subfolders inside your Index are now a second way to organize, alongside tags. Turn on Settings → General → "Show items in subfolders," then give any folder a color in the new "Folder Colors" section — every note inside it shows a dot in that color in the list, so you can see which pile each note belongs to at a glance. Right-click a note → **Move to →** to file it into a folder (with its color swatch shown), pull it back to the Index root, or make a **New Folder…** on the spot. A move is a plain file move: the note's title is unchanged, so wiki-links still resolve, and the color is a preference — the file only knows which folder it's in, so it stays portable. An Inbox note keeps its amber fleeting dot; that's still the one special folder.
+- **Colored tags.** Right-click a tag chip in the title bar to give the tag a color — a preset or any color you pick. Every note carrying that tag shows it in that color, because the color belongs to the tag, not the note. Like folder colors, it's a preference, so your `#tag` on disk is untouched. Tag chips also wrap onto their own rows now instead of scrunching together when a note has several.
+- **Bare URLs render as domain pills.** A plain `https://…` collapses to a compact pill of just its domain (`example.com ↗`) so long links read cleanly — purely visual, with the full URL still in the file and shown again the moment your cursor enters it. Right-click a pill to give a domain an emoji (📰, 🐙…) that marks every link to it. Entirely offline: nothing about the page is fetched. Toggle it in Settings → General → "Show links as domain pills."
+- **Extract a selection into its own note.** Select the part of a note that's outgrown it and press `⌥⌘N` — it becomes a note of its own with a `[[link]]` left in its place. The "one idea per note" split, done to writing you've already got. Also under File → Extract Selection to New Note.
+- **`==highlight==`** marks text with a background, the `==` fading away like every other marker once your cursor leaves.
+- **`stale:` search** — the complement of `date:`, for notes you *haven't* touched. Bare `stale:` is six months; `stale:week`/`month`/`year`/`N` (days) narrow it, `-stale:` excludes. `orphan: stale:` finds the real backlog: disconnected and forgotten.
+- Faster and quieter under the hood: cut per-keystroke and per-mouse-move work on the hot paths, made the note list snappy at 15,000+ notes (including instant folder moves), and the build is now warning-free.
+
 ## 1.6.0 — July 22, 2026
 
 - **Import from Apple Notes.** Envy runs on your Mac, so it can't be what you reach for in a queue or on a walk — Apple Notes can. Use it as the net and bring the catch home: Settings → Import, choose which Apple Notes folder is your outbox, and press **Import Now** (or ⌥⌘I from anywhere). Everything in that folder arrives as Markdown, and each original is moved to a folder you name so it never arrives twice — the folder itself is the queue, so Envy stores nothing about what it has already seen.

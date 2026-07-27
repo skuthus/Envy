@@ -28,12 +28,12 @@ struct WhatsNewView: View {
             }
 
             VStack(spacing: 10) {
-                Image(systemName: "square.and.arrow.down")
+                Image(systemName: "folder.fill")
                     .font(.system(size: 44))
                     .foregroundStyle(EnvyBrand.mark)
-                Text("Capture Anywhere, Keep It Here")
+                Text("Color Your Folders")
                     .font(.title3.bold())
-                Text("Jot on your phone in Apple Notes, then pull it into Envy when you sit down. Envy reads one folder you choose and files each note into your Inbox \u{2014} or straight into The Index, your call \u{2014} then moves the original aside so nothing arrives twice.\n\nIt is import only: notes come in, nothing is ever sent back, and there is no syncing. It is also off until you turn it on \u{2014} until then Envy never touches Apple Notes at all \u{2014} and it only ever runs when you ask, from Settings \u{203A} Import or \u{2318}\u{2325}I.")
+                Text("Organize by pile, if you like \u{2014} a second axis alongside tags. Turn on \u{201C}Show items in subfolders\u{201D} in Settings, color any folder, and every note inside it shows a dot in that color, so you can see which pile it\u{2019}s in at a glance. Right-click a note \u{203A} Move to \u{2192} to file it into a folder or make a new one on the spot.\n\nTags got color too \u{2014} right-click a tag chip. And this release is faster where it counts: the note list stays snappy past 15,000 notes. Plus \u{2318}\u{2325}N to split a selection into its own note, ==highlight== marking, a stale: search, and clean domain pills for bare links.")
                     .font(.body)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
