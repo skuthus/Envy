@@ -304,9 +304,9 @@ enum MarkdownStyler {
     }
 
     /// Image file extensions an `![[...]]` embed is rendered as a picture for,
-    /// rather than as a note transclusion. Anything else falls through to the
-    /// note-title embed path (which needs a matching note) or to inert text.
-    static let imageExtensions: Set<String> = ["png", "jpg", "jpeg", "gif", "webp", "heic", "heif", "tiff", "tif", "bmp"]
+    /// rather than as a note transclusion. Shared with EnvyCore so the `img:`
+    /// search operator and this renderer agree on what counts as an image.
+    static let imageExtensions = Note.imageAttachmentExtensions
 
     /// The image counterpart to `embedRanges`: `![[photo.png]]`,
     /// `![[photo.png|300]]` (width), or `![[photo.png|300x200]]` (width×height),

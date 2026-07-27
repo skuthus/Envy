@@ -1326,6 +1326,10 @@ public final class NoteStore: ObservableObject {
         var excludeAiCondition: AIFilter?
         var isInboxOnly = false
         var isInboxExcluded = false
+        var isImageOnly = false
+        var isImageExcluded = false
+        var isEmbedOnly = false
+        var isEmbedExcluded = false
         var linkFilter: String?
         var excludeLinks: [String] = []
         var isOrphanOnly = false
@@ -1360,6 +1364,21 @@ public final class NoteStore: ObservableObject {
                 isTodoExcluded = true
             } else if token == "todo:" {
                 isTodoOnly = true
+            } else if token == "-img:" {
+                isImageExcluded = true
+            } else if token.hasPrefix("img:") {
+                // Bare "img:" scopes to notes holding an image attachment;
+                // trailing text searches within them, same shape as inbox:.
+                isImageOnly = true
+                let rest = String(token.dropFirst("img:".count))
+                if !rest.isEmpty { freeTerms.append(rest) }
+            } else if token == "-embed:" {
+                isEmbedExcluded = true
+            } else if token.hasPrefix("embed:") {
+                // Bare "embed:" scopes to notes that transclude another note.
+                isEmbedOnly = true
+                let rest = String(token.dropFirst("embed:".count))
+                if !rest.isEmpty { freeTerms.append(rest) }
             } else if token.hasPrefix("-ai:") {
                 if excludeAiCondition == nil {
                     excludeAiCondition = AIFilter.parse(String(token.dropFirst("-ai:".count)))
@@ -1465,6 +1484,7 @@ public final class NoteStore: ObservableObject {
         }
 
         let hasOperator = isInboxOnly || isInboxExcluded
+            || isImageOnly || isImageExcluded || isEmbedOnly || isEmbedExcluded
             || linkFilter != nil || !excludeLinks.isEmpty || isOrphanOnly || isLinkedOnly
             || isTodoOnly || isTodoExcluded || tagFilter != nil || !excludeTags.isEmpty
             || dateFilter != nil
@@ -1498,6 +1518,10 @@ public final class NoteStore: ObservableObject {
             // pressing Submit does.
             if isInboxOnly, !Self.isInInboxFolder(note) { return nil }
             if isInboxExcluded, Self.isInInboxFolder(note) { return nil }
+            if isImageOnly, !note.hasImageEmbed { return nil }
+            if isImageExcluded, note.hasImageEmbed { return nil }
+            if isEmbedOnly, !note.hasNoteEmbed { return nil }
+            if isEmbedExcluded, note.hasNoteEmbed { return nil }
             if let linkFilter, !note.wikiLinks.contains(linkFilter) { return nil }
             if !excludeLinks.isEmpty, note.wikiLinks.contains(where: { excludeLinks.contains($0) }) { return nil }
             let noteIsOrphan = note.wikiLinks.isEmpty && !linkedToTitles.contains(note.lowercasedTitle)

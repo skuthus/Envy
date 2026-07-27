@@ -54,6 +54,7 @@ private final class NoteDerivedCache: @unchecked Sendable {
     private var _tags: Set<String>?
     private var _wikiLinks: Set<String>?
     private var _hasUncheckedTask: Bool?
+    private var _embedKinds: (image: Bool, note: Bool)?
     private var _preview: String?
     private var _activeDueDates: [Date]?
     private var _aiProvenance: AIProvenance?
@@ -112,6 +113,31 @@ private final class NoteDerivedCache: @unchecked Sendable {
                 let title = WikiLink.parse(String(content[range])).target.lowercased()
                 return title.isEmpty ? nil : title
             })
+        }
+    }
+
+    /// Whether the note contains an image embed and/or a note-transclusion
+    /// embed — both `![[...]]`, told apart by whether the target's extension is
+    /// an image. Computed in one pass and memoized, behind a cheap substring
+    /// early-out so the majority of notes (no `![[` at all) pay nothing. Backs
+    /// the `img:` and `embed:` search operators.
+    var embedKinds: (image: Bool, note: Bool) {
+        memoized(&_embedKinds) {
+            guard content.contains("![[") else { return (false, false) }
+            var hasImage = false, hasNote = false
+            let matches = Note.embedRegex.matches(in: content, range: NSRange(content.startIndex..., in: content))
+            for match in matches {
+                guard let range = Range(match.range(at: 1), in: content) else { continue }
+                let inner = content[range]
+                let name = inner.split(separator: "|", maxSplits: 1, omittingEmptySubsequences: false).first.map(String.init) ?? String(inner)
+                if Note.imageAttachmentExtensions.contains((name as NSString).pathExtension.lowercased()) {
+                    hasImage = true
+                } else {
+                    hasNote = true
+                }
+                if hasImage && hasNote { break }
+            }
+            return (hasImage, hasNote)
         }
     }
 
@@ -292,6 +318,18 @@ public struct Note: Identifiable, Sendable {
     /// Whether this note has at least one still-unchecked task-list item —
     /// backs the "todo:" search operator.
     public var hasUncheckedTask: Bool { cache.hasUncheckedTask }
+
+    /// Whether the note embeds at least one image — backs the `img:` operator.
+    public var hasImageEmbed: Bool { cache.embedKinds.image }
+    /// Whether the note transcludes at least one other note — backs `embed:`.
+    public var hasNoteEmbed: Bool { cache.embedKinds.note }
+
+    /// The `![[...]]` embed marker, and the file extensions that make one an
+    /// image rather than a note transclusion. The single source of truth for
+    /// that distinction — MarkdownStyler's rendering reads the same set, so
+    /// search and the editor never disagree on what counts as an image.
+    fileprivate static let embedRegex = try! NSRegularExpression(pattern: #"!\[\[([^\[\]]+)\]\]"#)
+    public static let imageAttachmentExtensions: Set<String> = ["png", "jpg", "jpeg", "gif", "webp", "heic", "heif", "tiff", "tif", "bmp"]
 
     fileprivate static let uncheckedTaskRegex = try! NSRegularExpression(
         pattern: #"^\s*(?:[-*+][ \t]+)?\[ \][ \t]+"#, options: [.anchorsMatchLines]
