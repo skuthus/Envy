@@ -235,6 +235,12 @@ enum MarkdownStyler {
     /// would reserve a large block of blank space under half-typed text.
     static func embedRanges(in text: String, noteTitles: [String]) -> [(markerRange: NSRange, spacerRange: NSRange, title: String)] {
         let nsText = text as NSString
+        // Cheap reject before the regex: a substring search for the marker is
+        // far cheaper than running the pattern over the whole note, and this
+        // runs up to four times per keystroke (here and imageEmbedRanges, each
+        // in both style() and the overlay pass). Most notes — including most
+        // large ones — have no "![[" at all and skip the scan entirely.
+        guard nsText.range(of: "![[").location != NSNotFound else { return [] }
         let full = NSRange(location: 0, length: nsText.length)
         let candidates = embedRegex.matches(in: text, range: full).map { match in
             // Target, not raw body: ![[Note|alias]] and ![[Note#Heading]]
@@ -275,7 +281,7 @@ enum MarkdownStyler {
     /// front.
     static func embedRoomInsertion(in text: String, noteTitles: [String]) -> (at: Int, text: String)? {
         let nsText = text as NSString
-        guard nsText.length > 0 else { return nil }
+        guard nsText.length > 0, nsText.range(of: "![[").location != NSNotFound else { return nil }
         let full = NSRange(location: 0, length: nsText.length)
         let existingTitles = Set(noteTitles.map { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() })
         for match in embedRegex.matches(in: text, range: full) {
@@ -295,6 +301,54 @@ enum MarkdownStyler {
             }
         }
         return nil
+    }
+
+    /// Image file extensions an `![[...]]` embed is rendered as a picture for,
+    /// rather than as a note transclusion. Anything else falls through to the
+    /// note-title embed path (which needs a matching note) or to inert text.
+    static let imageExtensions: Set<String> = ["png", "jpg", "jpeg", "gif", "webp", "heic", "heif", "tiff", "tif", "bmp"]
+
+    /// The image counterpart to `embedRanges`: `![[photo.png]]`,
+    /// `![[photo.png|300]]` (width), or `![[photo.png|300x200]]` (width×height),
+    /// each requiring a blank line after it exactly like a note embed — that
+    /// blank line's rect is the reserved block the thumbnail floats over.
+    /// `key` is the raw inner reference (name plus any size), lowercased, so the
+    /// styler and the overlay agree on one height-cache key even when the same
+    /// image appears at two different widths.
+    static func imageEmbedRanges(in text: String) -> [(markerRange: NSRange, spacerRange: NSRange, name: String, width: CGFloat?, height: CGFloat?, key: String)] {
+        let nsText = text as NSString
+        // Same cheap reject as embedRanges — skip the whole regex when the note
+        // has no embed marker, which keeps typing in a large image-free note
+        // free of any image-detection cost.
+        guard nsText.range(of: "![[").location != NSNotFound else { return [] }
+        let full = NSRange(location: 0, length: nsText.length)
+        var results: [(markerRange: NSRange, spacerRange: NSRange, name: String, width: CGFloat?, height: CGFloat?, key: String)] = []
+        for match in embedRegex.matches(in: text, range: full) {
+            let inner = nsText.substring(with: match.range(at: 1))
+            let parts = inner.split(separator: "|", maxSplits: 1, omittingEmptySubsequences: false)
+            let name = parts[0].trimmingCharacters(in: .whitespaces)
+            guard imageExtensions.contains((name as NSString).pathExtension.lowercased()) else { continue }
+
+            var width: CGFloat?
+            var height: CGFloat?
+            if parts.count == 2 {
+                let dims = parts[1].trimmingCharacters(in: .whitespaces).lowercased().split(separator: "x", maxSplits: 1)
+                if let first = dims.first, let w = Double(first) { width = CGFloat(w) }
+                if dims.count == 2, let h = Double(dims[1]) { height = CGFloat(h) }
+            }
+
+            // Same blank-line-after requirement as note embeds — see
+            // embedRanges for why the spacer line, not the marker line, is
+            // what a block gets pinned to.
+            let markerLineRange = nsText.lineRange(for: match.range)
+            let afterMarkerLine = markerLineRange.location + markerLineRange.length
+            guard afterMarkerLine < nsText.length else { continue }
+            let spacerLineRange = nsText.lineRange(for: NSRange(location: afterMarkerLine, length: 0))
+            guard spacerLineRange.length > 0,
+                  nsText.substring(with: spacerLineRange).trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { continue }
+            results.append((match.range, spacerLineRange, name, width, height, inner.lowercased()))
+        }
+        return results
     }
 
     /// The range within `newText` that actually differs from `oldText`, found
@@ -593,6 +647,10 @@ enum MarkdownStyler {
         /// Measured content height per embed title. Missing means "not laid
         /// out yet" and falls back to embedHeight.
         embedHeights: [String: CGFloat] = [:],
+        /// Measured display height per image reference (keyed by
+        /// imageEmbedRanges' `key`). Missing means "not measured yet" and falls
+        /// back to embedHeight, same first-frame placeholder as a note embed.
+        imageHeights: [String: CGFloat] = [:],
         // Which "![[...]]" markers are real embeds vs. still-being-typed
         // text — see embedRanges(in:noteTitles:) above for why this can't
         // just be "any syntactically valid span."
@@ -727,6 +785,64 @@ enum MarkdownStyler {
                 textStorage.addAttribute(.paragraphStyle, value: paragraphStyle, range: embed.spacerRange)
                 claimed.append(embed.markerRange)
                 claimed.append(embed.spacerRange)
+            }
+
+            // Image attachments — `![[photo.png]]`. Same marker treatment as a
+            // note embed (brackets collapse, the filename shows in link colour
+            // as the editable/resizable text), and the same blank-spacer block
+            // reservation — but the block holds a floated NSImageView instead of
+            // a nested note (see updateImageOverlays in MarkdownTextView). Gated
+            // on allowsEmbeds too, so previews/popovers show the plain reference
+            // rather than reserving a picture-sized hole they never fill.
+            for image in imageEmbedRanges(in: text) {
+                guard !isClaimed(image.markerRange) else { continue }
+
+                let markerOpen = NSRange(location: image.markerRange.location, length: 3)
+                let markerClose = NSRange(location: image.markerRange.location + image.markerRange.length - 2, length: 2)
+                let innerRange = NSRange(
+                    location: markerOpen.location + markerOpen.length,
+                    length: image.markerRange.length - markerOpen.length - markerClose.length
+                )
+                // The "|300" size hint collapses away with the brackets when the
+                // marker isn't revealed — at rest you just see the filename, and
+                // hover/cursor-in reveals the full reference (dimmed like the
+                // brackets) to edit the size by hand.
+                let body = text as NSString
+                let pipe = body.range(of: "|", options: [], range: innerRange)
+                let hasSize = pipe.location != NSNotFound
+                let nameRange = hasSize
+                    ? NSRange(location: innerRange.location, length: pipe.location - innerRange.location)
+                    : innerRange
+                let sizeRange = hasSize
+                    ? NSRange(location: pipe.location, length: innerRange.location + innerRange.length - pipe.location)
+                    : NSRange(location: 0, length: 0)
+
+                let revealed = image.markerRange == revealedLinkRange || touches(image.markerRange, cursorSelection)
+                if revealed {
+                    textStorage.removeAttribute(.kern, range: image.markerRange)
+                    textStorage.addAttribute(.foregroundColor, value: markerColor, range: markerOpen)
+                    textStorage.addAttribute(.foregroundColor, value: markerColor, range: markerClose)
+                    if hasSize { textStorage.addAttribute(.foregroundColor, value: markerColor, range: sizeRange) }
+                } else {
+                    collapse(range: markerOpen, in: textStorage, text: text, font: baseFont)
+                    collapse(range: markerClose, in: textStorage, text: text, font: baseFont)
+                    if hasSize { collapse(range: sizeRange, in: textStorage, text: text, font: baseFont) }
+                }
+                if nameRange.length > 0 {
+                    textStorage.addAttribute(.foregroundColor, value: linkColor, range: nameRange)
+                    textStorage.addAttribute(.underlineStyle, value: NSUnderlineStyle.single.rawValue, range: nameRange)
+                    let encoded = image.name.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? image.name
+                    if let url = URL(string: "envy-image:///\(encoded)") {
+                        textStorage.addAttribute(.link, value: url, range: revealed ? image.markerRange : nameRange)
+                    }
+                }
+                let reservedHeight = imageHeights[image.key] ?? Self.embedHeight
+                let paragraphStyle = NSMutableParagraphStyle()
+                paragraphStyle.minimumLineHeight = reservedHeight
+                paragraphStyle.maximumLineHeight = reservedHeight
+                textStorage.addAttribute(.paragraphStyle, value: paragraphStyle, range: image.spacerRange)
+                claimed.append(image.markerRange)
+                claimed.append(image.spacerRange)
             }
         }
 

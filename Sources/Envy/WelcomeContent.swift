@@ -85,6 +85,12 @@ enum WelcomeContent {
 
     - Type `->`, `<-`, or `=>` and the last character lands as an arrow instead — →, ←, ⇒. Skipped inside code, where the same characters usually mean something else.
 
+    ### 🖼️ Images
+
+    - **Drag an image onto a note**, or paste one (a screenshot, a copied picture) — it appears inline. The original file is left untouched; Envy keeps its own copy in a hidden `.attachments` folder beside your notes, and the note just holds a plain `![[picture.png]]` reference, so everything stays portable.
+    - **Right-click an image** to resize it (Small/Medium/Large, or a custom width), rename it, open it in Preview, or reveal the file in Finder. At rest the reference reads as just the filename; click into it to see and edit the full `![[picture.png|400]]`.
+    - PNG, JPEG, GIF (animated), HEIC, WebP, TIFF, and BMP all work.
+
     ## 🔗 Linking Notes
 
     `[[Note Title]]` links work throughout Envy, not just in the list above. Here's one to a small companion note: [[Example Linked Note]]

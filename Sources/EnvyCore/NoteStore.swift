@@ -708,6 +708,90 @@ public final class NoteStore: ObservableObject {
         return moved
     }
 
+    // MARK: - Attachments
+
+    /// Where image attachments live: a hidden folder at the Index root.
+    /// Dot-prefixed so the note scan's `.skipsHiddenFiles` ignores it
+    /// everywhere automatically — the same trick `.trash` uses — meaning a
+    /// stored image never shows up as a note or as a colorable subfolder, with
+    /// no exclusion code to maintain.
+    public nonisolated static let attachmentsFolderName = ".attachments"
+
+    /// The folder attachments are stored in (created lazily on first write).
+    public var attachmentsDirectory: URL {
+        noteDirectory.appendingPathComponent(Self.attachmentsFolderName, isDirectory: true)
+    }
+
+    /// Resolves an attachment reference (the bare filename from `![[photo.png]]`)
+    /// to its file on disk. Names are unique within `.attachments`, so a
+    /// reference resolves the same from any note wherever it sits — mirroring
+    /// how a wiki-link resolves by title across the whole Index.
+    public func attachmentURL(forName name: String) -> URL {
+        attachmentsDirectory.appendingPathComponent(name)
+    }
+
+    /// Copies an external file into `.attachments`, leaving the original where
+    /// it is, and returns the stored filename to reference as `![[name]]` (nil
+    /// on failure). Copy, not move, is deliberate: a file dragged from
+    /// Downloads/Desktop stays put and the vault gets its own duplicate.
+    @discardableResult
+    public func copyAttachment(from source: URL) -> String? {
+        let dir = attachmentsDirectory
+        markInternalWrite()
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let name = Self.availableAttachmentName(source.lastPathComponent, in: dir)
+        guard (try? FileManager.default.copyItem(at: source, to: dir.appendingPathComponent(name))) != nil else { return nil }
+        return name
+    }
+
+    /// Writes raw image data (e.g. pasted from the clipboard, which has no
+    /// source file to copy) into `.attachments` as `base.ext`, returning the
+    /// stored filename.
+    @discardableResult
+    public func saveAttachment(data: Data, base: String, ext: String) -> String? {
+        let dir = attachmentsDirectory
+        markInternalWrite()
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let cleaned = base.trimmingCharacters(in: .whitespacesAndNewlines)
+        let name = Self.availableAttachmentName("\(cleaned.isEmpty ? "Pasted image" : cleaned).\(ext)", in: dir)
+        guard (try? data.write(to: dir.appendingPathComponent(name))) != nil else { return nil }
+        return name
+    }
+
+    /// Renames an attachment file, de-duping the target name, and returns the
+    /// name it actually landed under (nil if the source is missing or the move
+    /// failed). Callers update the `![[...]]` references themselves.
+    @discardableResult
+    public func renameAttachment(from oldName: String, to newName: String) -> String? {
+        let dir = attachmentsDirectory
+        let source = dir.appendingPathComponent(oldName)
+        guard FileManager.default.fileExists(atPath: source.path) else { return nil }
+        markInternalWrite()
+        let finalName = Self.availableAttachmentName(newName, in: dir)
+        guard finalName != oldName else { return oldName }
+        guard (try? FileManager.default.moveItem(at: source, to: dir.appendingPathComponent(finalName))) != nil else { return nil }
+        return finalName
+    }
+
+    /// Extension-preserving de-dup (unlike `uniqueFilename`, which forces
+    /// `.md`): "photo.png" → "photo.png", then "photo (2).png", … so an
+    /// attachment keeps its real type.
+    nonisolated static func availableAttachmentName(_ filename: String, in directory: URL) -> String {
+        let ns = filename as NSString
+        let ext = ns.pathExtension
+        let base = (ns.deletingPathExtension as String)
+            .replacingOccurrences(of: "/", with: "-")
+            .replacingOccurrences(of: ":", with: "-")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let safeBase = base.isEmpty ? "attachment" : base
+        let existing = Set((try? FileManager.default.contentsOfDirectory(atPath: directory.path)) ?? [])
+        func assembled(_ b: String) -> String { ext.isEmpty ? b : "\(b).\(ext)" }
+        guard existing.contains(assembled(safeBase)) else { return assembled(safeBase) }
+        var counter = 2
+        while existing.contains(assembled("\(safeBase) (\(counter))")) { counter += 1 }
+        return assembled("\(safeBase) (\(counter))")
+    }
+
     /// Files a fleeting note into The Index proper — a plain move out of
     /// `Inbox/`. The note's text is untouched, so nothing about having been
     /// fleeting survives in the file.

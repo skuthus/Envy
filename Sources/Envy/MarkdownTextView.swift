@@ -147,6 +147,10 @@ final class HoverAwareTextView: NSTextView {
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         window?.acceptsMouseMovedEvents = true
+        // Accept dropped image files and raw image data so a picture can be
+        // dragged straight onto a note. No-op where attachmentStore is nil
+        // (read-only previews) — the drop handlers bail without it.
+        registerForDraggedTypes([.fileURL, .png, .tiff])
     }
 
     override func mouseMoved(with event: NSEvent) {
@@ -164,6 +168,190 @@ final class HoverAwareTextView: NSTextView {
         super.mouseExited(with: event)
         onHoverExit?()
         NSCursor.iBeam.set()
+    }
+
+    // MARK: - Image drop & paste
+
+    /// The vault to file attachments into. Set by the coordinator; nil on
+    /// read-only previews, which is what confines image drop/paste to the real
+    /// editing surfaces.
+    var attachmentStore: NoteStore?
+
+    override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
+        imageDragIsAcceptable(sender) ? .copy : super.draggingEntered(sender)
+    }
+
+    override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation {
+        imageDragIsAcceptable(sender) ? .copy : super.draggingUpdated(sender)
+    }
+
+    override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        handleImageDrop(sender) || super.performDragOperation(sender)
+    }
+
+    override func paste(_ sender: Any?) {
+        if pasteImage() { return }
+        super.paste(sender)
+    }
+
+    /// True when a drag carries something we'd attach — an image file or raw
+    /// image data — so the drag shows the copy cursor over the note.
+    private func imageDragIsAcceptable(_ sender: NSDraggingInfo) -> Bool {
+        guard attachmentStore != nil, isEditable else { return false }
+        let pb = sender.draggingPasteboard
+        if let urls = pb.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL],
+           urls.contains(where: { MarkdownStyler.imageExtensions.contains($0.pathExtension.lowercased()) }) {
+            return true
+        }
+        return pb.availableType(from: [.png, .tiff]) != nil
+    }
+
+    /// Copies a dropped image file (leaving the original where it is) or writes
+    /// dropped image data into the vault, then inserts the reference at the
+    /// drop point.
+    private func handleImageDrop(_ sender: NSDraggingInfo) -> Bool {
+        guard let store = attachmentStore, isEditable else { return false }
+        let pb = sender.draggingPasteboard
+        let stored: String?
+        if let urls = pb.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL],
+           let file = urls.first(where: { MarkdownStyler.imageExtensions.contains($0.pathExtension.lowercased()) }) {
+            stored = store.copyAttachment(from: file)
+        } else {
+            stored = imageNameFromData(on: pb, store: store)
+        }
+        guard let name = stored else { return false }
+        // Land it where the cursor is, not wherever the caret last sat.
+        let point = convert(sender.draggingLocation, from: nil)
+        setSelectedRange(NSRange(location: characterIndexForInsertion(at: point), length: 0))
+        insertImageReference(name)
+        return true
+    }
+
+    /// Pastes a screenshot or copied image — image data with no text on the
+    /// board. Anything carrying text falls through to the normal text paste, so
+    /// this never hijacks a plain paste.
+    private func pasteImage() -> Bool {
+        guard let store = attachmentStore, isEditable else { return false }
+        let pb = NSPasteboard.general
+        if let text = pb.string(forType: .string), !text.isEmpty { return false }
+        guard let name = imageNameFromData(on: pb, store: store) else { return false }
+        insertImageReference(name)
+        return true
+    }
+
+    /// Pulls PNG (or TIFF, re-encoded to PNG) image data off a pasteboard and
+    /// stores it, returning the saved filename.
+    private func imageNameFromData(on pb: NSPasteboard, store: NoteStore) -> String? {
+        if let data = pb.data(forType: .png) {
+            return store.saveAttachment(data: data, base: "Pasted image", ext: "png")
+        }
+        if let tiff = pb.data(forType: .tiff),
+           let png = NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]) {
+            return store.saveAttachment(data: png, base: "Pasted image", ext: "png")
+        }
+        return nil
+    }
+
+    /// Inserts `![[name]]` on its own line with the blank line after that the
+    /// block renderer reserves its room on — the same shape a note embed needs.
+    private func insertImageReference(_ name: String) {
+        let selection = selectedRange()
+        let ns = string as NSString
+        let needsLeadingBreak = selection.location > 0 && ns.character(at: selection.location - 1) != 10
+        let insertion = "\(needsLeadingBreak ? "\n" : "")![[\(name)]]\n\n"
+        guard shouldChangeText(in: selection, replacementString: insertion) else { return }
+        textStorage?.replaceCharacters(in: selection, with: insertion)
+        didChangeText()
+        setSelectedRange(NSRange(location: selection.location + (insertion as NSString).length, length: 0))
+    }
+}
+
+/// The inline picture for an image attachment, floated over its reserved block
+/// by the coordinator. A subclass so a right-click offers size presets, wired
+/// back through `onResize` to rewriting the `![[name|width]]` token in the note.
+final class AttachmentImageView: NSImageView {
+    var attachmentName: String = ""
+    /// Rewrites this image's size token; nil width clears it (original size).
+    var onResize: ((CGFloat?) -> Void)?
+    /// Opens the image in Preview.
+    var onOpen: (() -> Void)?
+    /// Reveals the file in Finder.
+    var onReveal: (() -> Void)?
+    /// Renames the attachment (and its references) to the given base name.
+    var onRename: ((String) -> Void)?
+
+    override func menu(for event: NSEvent) -> NSMenu? {
+        let menu = NSMenu()
+        for (label, width) in [("Small", CGFloat(240)), ("Medium", CGFloat(400)), ("Large", CGFloat(640))] {
+            let item = NSMenuItem(title: label, action: #selector(resizeToPreset(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = width
+            menu.addItem(item)
+        }
+        let original = NSMenuItem(title: "Original size", action: #selector(resizeToOriginal), keyEquivalent: "")
+        original.target = self
+        menu.addItem(original)
+        let custom = NSMenuItem(title: "Custom width\u{2026}", action: #selector(resizeCustom), keyEquivalent: "")
+        custom.target = self
+        menu.addItem(custom)
+        menu.addItem(.separator())
+        let rename = NSMenuItem(title: "Rename\u{2026}", action: #selector(renameImage), keyEquivalent: "")
+        rename.target = self
+        menu.addItem(rename)
+        let open = NSMenuItem(title: "Open in Preview", action: #selector(openImage), keyEquivalent: "")
+        open.target = self
+        menu.addItem(open)
+        let reveal = NSMenuItem(title: "Reveal in Finder", action: #selector(revealImage), keyEquivalent: "")
+        reveal.target = self
+        menu.addItem(reveal)
+        return menu
+    }
+
+    @objc private func resizeToPreset(_ sender: NSMenuItem) { onResize?(sender.representedObject as? CGFloat) }
+    @objc private func resizeToOriginal() { onResize?(nil) }
+    @objc private func openImage() { onOpen?() }
+    @objc private func revealImage() { onReveal?() }
+
+    @objc private func renameImage() {
+        // Deferred past the menu-tracking runloop before the modal, same as the
+        // custom-width prompt.
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            let alert = NSAlert()
+            alert.messageText = "Rename image"
+            alert.informativeText = "New name \u{2014} the file extension is kept."
+            let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 240, height: 24))
+            field.stringValue = (self.attachmentName as NSString).deletingPathExtension
+            alert.accessoryView = field
+            alert.addButton(withTitle: "Rename")
+            alert.addButton(withTitle: "Cancel")
+            guard alert.runModal() == .alertFirstButtonReturn else { return }
+            let newBase = field.stringValue.trimmingCharacters(in: .whitespaces)
+            if !newBase.isEmpty { self.onRename?(newBase) }
+        }
+    }
+
+    @objc private func resizeCustom() {
+        // Deferred out of the menu-tracking runloop before presenting a modal,
+        // so the alert never races the menu teardown.
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            let alert = NSAlert()
+            alert.messageText = "Image width"
+            alert.informativeText = "Width in points \u{2014} leave blank for original size."
+            let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 200, height: 24))
+            if let w = self.image?.size.width { field.placeholderString = "\(Int(w))" }
+            alert.accessoryView = field
+            alert.addButton(withTitle: "Set")
+            alert.addButton(withTitle: "Cancel")
+            guard alert.runModal() == .alertFirstButtonReturn else { return }
+            let text = field.stringValue.trimmingCharacters(in: .whitespaces)
+            if text.isEmpty {
+                self.onResize?(nil)
+            } else if let value = Double(text), value > 0 {
+                self.onResize?(CGFloat(value))
+            }
+        }
     }
 }
 
@@ -382,6 +570,10 @@ struct MarkdownTextView: NSViewRepresentable {
     func makeNSView(context: Context) -> NSScrollView {
         let textView = HoverAwareTextView()
         textView.delegate = context.coordinator
+        // Only the real editing surfaces get a store (the main editor, pinned
+        // popup, template editor) — so image drop/paste is naturally confined
+        // to them and never fires in a read-only wikilink preview.
+        textView.attachmentStore = store
         textView.isRichText = false
         textView.isEditable = isEditable
         textView.isSelectable = true
@@ -443,7 +635,7 @@ struct MarkdownTextView: NSViewRepresentable {
             if plainTextMode {
                 MarkdownStyler.clearFormatting(textStorage: textStorage, text: text, theme: theme, fontSizeAdjustment: fontZoom)
             } else {
-                MarkdownStyler.style(textStorage: textStorage, text: text, theme: theme, searchQuery: searchQuery, fontSizeAdjustment: fontZoom, allowsEmbeds: allowsEmbeds, embedHeights: context.coordinator.embedHeights, noteTitles: noteTitles)
+                MarkdownStyler.style(textStorage: textStorage, text: text, theme: theme, searchQuery: searchQuery, fontSizeAdjustment: fontZoom, allowsEmbeds: allowsEmbeds, embedHeights: context.coordinator.embedHeights, imageHeights: context.coordinator.imageHeights, noteTitles: noteTitles)
             }
         }
         context.coordinator.updateOverlays(in: textView)
@@ -558,6 +750,7 @@ struct MarkdownTextView: NSViewRepresentable {
                         fontSizeAdjustment: fontZoom,
                         allowsEmbeds: allowsEmbeds,
                         embedHeights: context.coordinator.embedHeights,
+                        imageHeights: context.coordinator.imageHeights,
                         noteTitles: noteTitles
                     )
                 }
@@ -712,6 +905,15 @@ struct MarkdownTextView: NSViewRepresentable {
         // re-run its onChange handlers, so a retyped title could keep
         // showing the *previous* title's content).
         private var embedOverlayViews: [NSHostingView<AnyView>] = []
+        /// Pooled NSImageViews for inline image attachments — same pooling
+        /// rationale as embeds and checkboxes, but plain image views since an
+        /// image needs no SwiftUI state of its own.
+        private var imageOverlayViews: [AttachmentImageView] = []
+        /// Decoded attachment images, keyed by filename. Attachments are
+        /// immutable once written (a new paste gets a fresh name), so a name is
+        /// a safe cache key — and this is what keeps updateImageOverlays from
+        /// re-decoding the file on every keystroke.
+        private var imageCache: [String: NSImage] = [:]
         /// The floating pill drawn over the "⎈" provenance line when
         /// signature protection is on — a single view (one signature per
         /// note), created lazily. Hidden when protection is off or the note
@@ -737,6 +939,11 @@ struct MarkdownTextView: NSViewRepresentable {
         /// the styler reserves. Keyed by title rather than by index so it
         /// survives embeds being added, removed or reordered.
         var embedHeights: [String: CGFloat] = [:]
+
+        /// Measured display height per image reference (keyed by
+        /// imageEmbedRanges' `key`), feeding the styler's block reservation the
+        /// same way embedHeights does for note embeds.
+        var imageHeights: [String: CGFloat] = [:]
 
         /// Last height handed to onContentHeightChange, so an unchanged
         /// layout doesn't re-trigger the host's restyle.
@@ -1474,6 +1681,7 @@ struct MarkdownTextView: NSViewRepresentable {
                 restyleRange: window,
                 allowsEmbeds: parent.allowsEmbeds,
                 embedHeights: embedHeights,
+                imageHeights: imageHeights,
                 noteTitles: parent.noteTitles
             )
             lastRestyleCursorLocation = textView.selectedRange().location
@@ -1565,6 +1773,7 @@ struct MarkdownTextView: NSViewRepresentable {
             updateBlockquoteRules(in: textView)
             updateCheckboxOverlays(in: textView)
             updateEmbedOverlays(in: textView)
+            updateImageOverlays(in: textView)
             updateSignaturePill(in: textView)
         }
 
@@ -1804,6 +2013,163 @@ struct MarkdownTextView: NSViewRepresentable {
             }
         }
 
+        /// Floats an NSImageView over each `![[photo.png]]` block — the image
+        /// counterpart to updateEmbedOverlays. The picture is loaded from the
+        /// vault's `.attachments` folder; its display width is the `|width`
+        /// token or the image's own width, capped to the text column; its
+        /// height (aspect-derived, or the `|WxH` token) is fed back through
+        /// updateImageHeight so the styler reserves exactly that much room.
+        @MainActor
+        func updateImageOverlays(in textView: NSTextView) {
+            guard let layoutManager = textView.layoutManager, let textContainer = textView.textContainer else { return }
+            guard !parent.plainTextMode, parent.allowsEmbeds, let store = parent.store else {
+                imageOverlayViews.forEach { $0.isHidden = true }
+                return
+            }
+            let images = MarkdownStyler.imageEmbedRanges(in: textView.string)
+            guard !images.isEmpty else {
+                imageOverlayViews.forEach { $0.isHidden = true }
+                return
+            }
+            let textLength = (textView.string as NSString).length
+            let lastEnd = images.map { $0.spacerRange.location + $0.spacerRange.length }.max() ?? textLength
+            layoutManager.ensureLayout(forCharacterRange: NSRange(location: 0, length: min(lastEnd, textLength)))
+
+            while imageOverlayViews.count < images.count {
+                let iv = AttachmentImageView()
+                iv.imageScaling = .scaleProportionallyUpOrDown
+                iv.imageAlignment = .alignTopLeft
+                iv.imageFrameStyle = .none
+                iv.animates = true   // play animated GIFs instead of showing frame one
+                iv.wantsLayer = true
+                textView.addSubview(iv)
+                imageOverlayViews.append(iv)
+            }
+
+            let origin = textView.textContainerOrigin
+            let containerWidth = max(textContainer.size.width, 100)
+
+            for (index, iv) in imageOverlayViews.enumerated() {
+                guard index < images.count else { iv.isHidden = true; continue }
+                let image = images[index]
+                // Decode from disk once and cache — this runs on every restyle
+                // (i.e. every keystroke), and re-reading/decoding the file each
+                // time is what made typing next to an image lag. Only touch the
+                // view when the slot is actually showing a different picture.
+                let loaded = attachmentImage(image.name, store: store)
+                if iv.attachmentName != image.name {
+                    iv.image = loaded
+                    iv.attachmentName = image.name
+                    iv.toolTip = image.name
+                }
+
+                // Display width: the explicit token, else the image's own
+                // width — both capped to the column so a large photo can't
+                // overflow. Height: the explicit `|WxH` height, else derived
+                // from the image's aspect ratio at that width.
+                let intrinsicWidth = loaded?.size.width ?? containerWidth
+                let intrinsicHeight = loaded?.size.height ?? intrinsicWidth
+                let aspect = intrinsicWidth > 0 ? intrinsicHeight / intrinsicWidth : 0.66
+                let displayWidth = min(image.width ?? intrinsicWidth, containerWidth)
+                let displayHeight = image.height ?? (displayWidth * aspect)
+                updateImageHeight(for: image.key, to: displayHeight, in: textView)
+
+                // Resize/open hang off the specific picture, capturing its name
+                // and where its marker currently sits so the right ![[...]] gets
+                // rewritten even when the same image appears more than once.
+                let markerLocation = image.markerRange.location
+                let name = image.name
+                iv.onResize = { [weak self] width in
+                    self?.rewriteImageSize(name: name, near: markerLocation, width: width, in: textView)
+                }
+                iv.onOpen = { NSWorkspace.shared.open(store.attachmentURL(forName: name)) }
+                iv.onReveal = { NSWorkspace.shared.activateFileViewerSelecting([store.attachmentURL(forName: name)]) }
+                iv.onRename = { [weak self] newBase in
+                    self?.renameAttachment(oldName: name, near: markerLocation, newBase: newBase, in: textView)
+                }
+
+                let glyphRange = layoutManager.glyphRange(forCharacterRange: image.spacerRange, actualCharacterRange: nil)
+                let lineRect = layoutManager.lineFragmentRect(forGlyphAt: glyphRange.location, effectiveRange: nil)
+                iv.frame = NSRect(x: origin.x, y: lineRect.origin.y + origin.y, width: displayWidth, height: lineRect.height)
+                iv.isHidden = false
+            }
+        }
+
+        /// The decoded image for an attachment name, decoding from disk only on
+        /// the first request and serving the cache after — the fix for the
+        /// per-keystroke re-decode that made editing near an image lag.
+        @MainActor
+        private func attachmentImage(_ name: String, store: NoteStore) -> NSImage? {
+            if let cached = imageCache[name] { return cached }
+            let loaded = NSImage(contentsOf: store.attachmentURL(forName: name))
+            if let loaded { imageCache[name] = loaded }
+            return loaded
+        }
+
+        /// Records an image's measured display height and, if it changed,
+        /// restyles so the reserved block matches — the image twin of
+        /// updateEmbedHeight, clamped to the same bounds.
+        @MainActor
+        func updateImageHeight(for key: String, to height: CGFloat, in textView: NSTextView) {
+            let clamped = min(max(height, MarkdownStyler.minimumEmbedHeight), MarkdownStyler.maximumEmbedHeight)
+            guard abs((imageHeights[key] ?? 0) - clamped) > 1 else { return }
+            imageHeights[key] = clamped
+            DispatchQueue.main.async { [weak self] in
+                guard let self, let textView = self.textView else { return }
+                self.restyle(textView)
+            }
+        }
+
+        /// Rewrites the size token of the `![[name...]]` marker nearest the
+        /// captured location — `![[name]]` → `![[name|width]]`, or drops the
+        /// token entirely when width is nil (original size). Edits the note
+        /// text, so the change is saved like any other and re-renders at the
+        /// new size on the next restyle.
+        @MainActor
+        func rewriteImageSize(name: String, near location: Int, width: CGFloat?, in textView: NSTextView) {
+            let candidates = MarkdownStyler.imageEmbedRanges(in: textView.string)
+                .filter { $0.name == name }
+            guard let target = candidates.min(by: { abs($0.markerRange.location - location) < abs($1.markerRange.location - location) })
+                ?? candidates.first else { return }
+            let newInner = width.map { "\(name)|\(Int($0))" } ?? name
+            let replacement = "![[\(newInner)]]"
+            guard textView.shouldChangeText(in: target.markerRange, replacementString: replacement) else { return }
+            textView.textStorage?.replaceCharacters(in: target.markerRange, with: replacement)
+            textView.didChangeText()
+        }
+
+        /// Renames an attachment on disk and rewrites every `![[oldName...]]`
+        /// reference in the current note to the new name, keeping each one's
+        /// size token. References in other notes, if any, aren't touched — an
+        /// attachment is normally embedded in just the one note.
+        @MainActor
+        func renameAttachment(oldName: String, near location: Int, newBase: String, in textView: NSTextView) {
+            guard let store = parent.store else { return }
+            let ext = (oldName as NSString).pathExtension
+            let cleaned = newBase.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !cleaned.isEmpty else { return }
+            let desired = ext.isEmpty ? cleaned : "\(cleaned).\(ext)"
+            guard let finalName = store.renameAttachment(from: oldName, to: desired), finalName != oldName else { return }
+            imageCache[oldName] = nil
+            guard let textStorage = textView.textStorage else { return }
+
+            // Rewrite matching markers back-to-front so earlier ranges keep
+            // their locations as the replacements change lengths.
+            let targets = MarkdownStyler.imageEmbedRanges(in: textView.string)
+                .filter { $0.name == oldName }
+                .sorted { $0.markerRange.location > $1.markerRange.location }
+            for image in targets {
+                let sizeSuffix: String
+                if let w = image.width, let h = image.height { sizeSuffix = "|\(Int(w))x\(Int(h))" }
+                else if let w = image.width { sizeSuffix = "|\(Int(w))" }
+                else { sizeSuffix = "" }
+                let replacement = "![[\(finalName)\(sizeSuffix)]]"
+                guard textView.shouldChangeText(in: image.markerRange, replacementString: replacement) else { continue }
+                textStorage.replaceCharacters(in: image.markerRange, with: replacement)
+                textView.didChangeText()
+            }
+        }
+
         /// Draws the "⎈" provenance line as a non-editable pill (and hides
         /// its underlying text) when signature protection is on. The veto in
         /// shouldChangeTextIn is what actually makes the range uneditable;
@@ -1995,6 +2361,23 @@ struct MarkdownTextView: NSViewRepresentable {
                 let encoded = url.path.hasPrefix("/") ? String(url.path.dropFirst()) : url.path
                 let slug = encoded.removingPercentEncoding ?? encoded
                 jumpToHeading(slug: slug, in: textView)
+                return true
+            }
+
+            // An image reference opens the picture in Preview. Honours the
+            // modifier setting so a plain click can still place the caret to
+            // edit the reference (e.g. to change its size by hand).
+            if url.scheme == "envy-image" {
+                let commandHeld = NSApp.currentEvent?.modifierFlags.contains(.command) ?? false
+                if parent.requireModifierForLinkClick && !commandHeld {
+                    placeCaret(at: charIndex, in: textView)
+                    return true
+                }
+                let encoded = url.path.hasPrefix("/") ? String(url.path.dropFirst()) : url.path
+                let name = encoded.removingPercentEncoding ?? encoded
+                if let store = parent.store {
+                    NSWorkspace.shared.open(store.attachmentURL(forName: name))
+                }
                 return true
             }
 
