@@ -2,6 +2,12 @@
 
 Also published at [envynote.app/changelog.html](https://envynote.app/changelog.html).
 
+## 1.8.2 — July 28, 2026
+
+- **Envy now opens properly when you sign in.** With Envy in your Login Items, a sign-in launch could come up as just the menu bar eye — clicking it did nothing, and only a quit-and-reopen recovered. The window now appears on its own shortly after login, and every summon path (hotkey, menu bar, Dock) can recreate it if it's ever missing.
+- **Summon always lands in front.** The summon hotkey could intermittently bring the window up *behind* the app you were using — a race against macOS's activation handling. The window now claims the top of the stack regardless.
+- **No more dialogs for image captions and widths.** Right-click an image → Caption… or Custom width… now drops your cursor straight into the marker's slot — you type in the note itself, existing value pre-selected. Rename… keeps its confirm step (it moves a real file and updates references everywhere) but is now a small popover at the image with the name pre-selected — typing starts immediately. Return commits, Esc cancels.
+
 ## 1.8.1 — July 28, 2026
 
 The optimization update: faster where you feel it, safer where you don't.

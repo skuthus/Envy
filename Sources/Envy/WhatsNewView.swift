@@ -28,12 +28,12 @@ struct WhatsNewView: View {
             }
 
             VStack(spacing: 10) {
-                Image(systemName: "bolt")
+                Image(systemName: "macwindow")
                     .font(.system(size: 44))
                     .foregroundStyle(EnvyBrand.mark)
-                Text("The Optimization Update")
+                Text("Reliably There")
                     .font(.title3.bold())
-                Text("Clicking through your notes is now noticeably snappier \u{2014} the editor no longer rebuilds itself on every switch, so notes appear instantly even in a vault of 15,000. Under the hood, saves are coordinated much more carefully: an edit made moments before a rename, move, or delete now follows the note wherever it goes, never lost, never leaving a stray file behind.\n\nAlso new: pin an Option-click peek to keep it open as its own floating window (as many as you like, drag-resizable), pop any note straight out of the list with right-click \u{2192} Pop Out, and insert images by sight with \u{21E7}\u{2318}I \u{2014} a thumbnail grid of every picture in your vault.")
+                Text("Two fixes for how Envy shows up: launching at sign-in now actually opens the window (no more lonely menu bar eye that ignores your clicks), and the summon hotkey always lands the window in front of whatever you were doing \u{2014} it could previously slip behind.\n\nImage editing lost its dialogs, too: right-click an image \u{2192} Caption or Custom width now drops your cursor straight into the note text to type, and Rename is a small popover at the image with the name pre-selected. No more clicking into a box in the middle of the screen.")
                     .font(.body)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
