@@ -28,12 +28,12 @@ struct WhatsNewView: View {
             }
 
             VStack(spacing: 10) {
-                Image(systemName: "exclamationmark.circle.fill")
+                Image(systemName: "photo")
                     .font(.system(size: 44))
                     .foregroundStyle(EnvyBrand.mark)
-                Text("A Cleaner Note List")
+                Text("Pictures in Your Notes")
                     .font(.title3.bold())
-                Text("Two small touches to the list. A colored-folder dot now sits just after a note\u{2019}s title instead of before it \u{2014} easier to read against the title, and it keeps the left edge clean. Prefer it on the left? There\u{2019}s a toggle in Settings.\n\nAnd your Inbox marks itself with a bold amber ! instead of a dot. Now that folders can be any color, a folder dot could blend with the old amber Inbox dot \u{2014} so a fleeting note gets a mark that\u{2019}s plainly not a dot, and the two never collide, even if you color a folder amber.")
+                Text("Drag an image onto a note, or paste one \u{2014} a screenshot, a copied picture \u{2014} and it appears inline. The original stays put; Envy keeps its own copy in a hidden folder beside your notes, and the note just holds a plain ![[picture.png]] reference, so everything stays portable and nothing is fetched from the network.\n\nSize it, caption it, or right-click to resize / rename / open in Preview. Two new searches come with it: \u{201C}img:\u{201D} finds every note holding a picture, \u{201C}embed:\u{201D} every note that embeds another. And you can now show a note\u{2019}s folder name in the list, not just a colored dot.")
                     .font(.body)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)

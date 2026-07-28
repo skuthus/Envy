@@ -2,6 +2,15 @@
 
 Also published at [envynote.app/changelog.html](https://envynote.app/changelog.html).
 
+## 1.8.0 — July 27, 2026
+
+- **Images in your notes.** Drag an image onto a note, or paste one (a screenshot, a copied picture), and it appears inline. The original file is left untouched — Envy keeps its own copy in a hidden `.attachments` folder beside your notes, and the note just holds a plain `![[picture.png]]` reference, so everything stays portable and nothing is fetched from the network. PNG, JPEG, GIF (animated), HEIC, WebP, TIFF, and BMP all work.
+- **Size and caption.** Add a size with `![[picture.png|400]]` (width) or `![[picture.png|400x300]]` (width×height), and a caption with `![[picture.png|400|My caption]]` — the caption sits under the image and, being plain text, is searchable like anything else. At rest the reference reads as just the filename; click into it to see and edit the full thing.
+- **Right-click an image** to resize it (Small / Medium / Large / custom width), add a caption, rename it (references update to match), open it in Preview, or reveal the file in Finder. A missing file shows a clear placeholder instead of a blank.
+- **`img:` and `embed:` search** — `img:` finds every note holding an image, `embed:` every note that embeds another note. Both take trailing words (`img: diagram`) and negate (`-img:`), and combine with everything else (`img: stale:`).
+- **See a note's folder in the list** — Settings → General → Note List → "Show a note's folder as": a colored dot (default), the folder's **name** as a chip, or nothing.
+- Faster where it counts: opening a note that holds an image is no longer slowed by an unnecessary whole-vault title scan, and the build stays warning-free.
+
 ## 1.7.1 — July 26, 2026
 
 - **Folder dots moved next to the title.** A colored-folder dot now sits just after the note's title instead of before it — easier to read against the title, and it keeps the left edge clean. Prefer it on the left? Settings → General → "Show the folder dot after the title" puts it back.
