@@ -2,9 +2,18 @@
 
 Also published at [envynote.app/changelog.html](https://envynote.app/changelog.html).
 
-## 1.8.1 — July 27, 2026
+## 1.8.1 — July 28, 2026
 
+The optimization update: faster where you feel it, safer where you don't.
+
+- **Snappier note switching.** Clicking a note in the list no longer tears down and rebuilds the whole editor — the note appears instantly, with no blank flash, even in a vault of 15,000 notes. Typing in a note that embeds another note is smoother too (a whole-vault title scan that ran on every keystroke is now cached).
+- **Your edits follow the note.** Saves are debounced for smoothness, and that brief window is now coordinated with everything else: type and immediately rename, move, convert to template, or delete a note, and the edit lands wherever the note went — never lost, and never leaving a stray copy of the file at the old location.
+- **Pinned floating notes.** Option-click a `[[link]]` to peek at it, then click the pin to keep it open as its own floating window — as many as you like. Drag any edge to resize (the size sticks), move them anywhere, and they politely hide when you switch apps and return when you come back. Click the filled pin to close one.
+- **Pop Out.** Right-click any note in the list → **Pop Out** to open it directly in a floating window, no peek required. Editing the same note in two places now stays in sync — each window commits its edits the moment you click away from it.
 - **Insert an image by sight, not by name.** Press `⇧⌘I` in the editor (or right-click → **Insert Image…**) to open a grid of thumbnails of every image in your vault — filter by name, click one, and it drops in at your cursor. Just the thing when the file is a screenshot with a name you'd never remember.
+- **Renaming an image now updates every note that embeds it**, not just the one you renamed it from — sizes and captions preserved.
+- **Safer moves.** Moving a note into a folder that already has a note with the same name is refused instead of quietly renaming it to "Name (2)" — a hidden title change that would have silently re-aimed every `[[link]]` pointing at either note.
+- Clicking a **Suggested** interlink now works even if you were typing a moment before; images now render in peeks and floating notes; a note whose move to trash fails no longer vanishes from the list; assorted smaller fixes from a full code audit.
 
 ## 1.8.0 — July 27, 2026
 

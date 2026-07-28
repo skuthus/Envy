@@ -28,12 +28,12 @@ struct WhatsNewView: View {
             }
 
             VStack(spacing: 10) {
-                Image(systemName: "photo")
+                Image(systemName: "bolt")
                     .font(.system(size: 44))
                     .foregroundStyle(EnvyBrand.mark)
-                Text("Pictures in Your Notes")
+                Text("The Optimization Update")
                     .font(.title3.bold())
-                Text("Drag an image onto a note, or paste one \u{2014} a screenshot, a copied picture \u{2014} and it appears inline. The original stays put; Envy keeps its own copy in a hidden folder beside your notes, and the note just holds a plain ![[picture.png]] reference, so everything stays portable and nothing is fetched from the network.\n\nSize it, caption it, or right-click to resize / rename / open in Preview. Two new searches come with it: \u{201C}img:\u{201D} finds every note holding a picture, \u{201C}embed:\u{201D} every note that embeds another. And you can now show a note\u{2019}s folder name in the list, not just a colored dot.")
+                Text("Clicking through your notes is now noticeably snappier \u{2014} the editor no longer rebuilds itself on every switch, so notes appear instantly even in a vault of 15,000. Under the hood, saves are coordinated much more carefully: an edit made moments before a rename, move, or delete now follows the note wherever it goes, never lost, never leaving a stray file behind.\n\nAlso new: pin an Option-click peek to keep it open as its own floating window (as many as you like, drag-resizable), pop any note straight out of the list with right-click \u{2192} Pop Out, and insert images by sight with \u{21E7}\u{2318}I \u{2014} a thumbnail grid of every picture in your vault.")
                     .font(.body)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)

@@ -101,6 +101,8 @@ enum WelcomeContent {
 
     Hold **⌥** (Option) and click a link instead to peek at it without leaving where you are — a small floating preview opens, and you can click straight into it to edit right there. Works on backlinks too. Settings → General can turn this off or change the trigger.
 
+    **Pin a peek to keep it.** Click the pin in a peek's corner and it becomes its own floating note — open as many as you like, drag them anywhere, resize from any edge (the size sticks for the next one). They tuck away when you switch to another app and return with you; click the filled pin to close one. You can also skip the peek entirely: right-click any note in the list and choose **Pop Out**.
+
     The footer's **Interlinks** panel shows everything connected to the note you're reading, side by side: the notes it links out to, the notes that link back to it, and *Suggested* links — other notes you've mentioned by name but haven't linked yet, each a click away from wiring up.
 
     **Renaming a note updates its links everywhere.** Rename a note (click its title, or right-click it in the list) and every `[[link]]` and `![[embed]]` pointing to it across your notes is rewritten to the new name, so nothing breaks — and if you gave a link your own wording with `|`, that wording is left alone.
