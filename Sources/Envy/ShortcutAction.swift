@@ -102,6 +102,7 @@ enum ShortcutAction: String, CaseIterable, Identifiable {
     case unpinFromMenuBar
     case importFromAppleNotes
     case extractToNote
+    case insertImage
 
     var id: String { rawValue }
 
@@ -128,6 +129,7 @@ enum ShortcutAction: String, CaseIterable, Identifiable {
         case .unpinFromMenuBar: "Unpin Note from Menu Bar (works from any app)"
         case .importFromAppleNotes: "Import from Apple Notes"
         case .extractToNote: "Extract Selection to New Note"
+        case .insertImage: "Insert Image"
         }
     }
 
@@ -184,6 +186,10 @@ enum ShortcutAction: String, CaseIterable, Identifiable {
             // ⌥⌘N — it makes a new note, so it sits beside the other "new"
             // shortcuts rather than the formatting ones.
             ShortcutBinding(character: "n", keyCode: kVK_ANSI_N, modifiers: SwiftUI.EventModifiers([.command, .option]).rawValue)
+        case .insertImage:
+            // ⇧⌘I — "I for Image," kept distinct from ⌘I (Italic) and ⌥⌘I
+            // (Import from Apple Notes) by the shift.
+            ShortcutBinding(character: "i", keyCode: kVK_ANSI_I, modifiers: SwiftUI.EventModifiers([.command, .shift]).rawValue)
         }
     }
 }

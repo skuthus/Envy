@@ -96,6 +96,11 @@ struct EnvyApp: App {
                 }
                 .keyboardShortcut(binding(for: .extractToNote).keyEquivalent, modifiers: binding(for: .extractToNote).eventModifiers)
 
+                Button("Insert Image\u{2026}") {
+                    NotificationCenter.default.post(name: .insertImageRequested, object: nil)
+                }
+                .keyboardShortcut(binding(for: .insertImage).keyEquivalent, modifiers: binding(for: .insertImage).eventModifiers)
+
                 Divider()
 
                 Button("Import from Apple Notes") {

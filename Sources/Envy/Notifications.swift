@@ -12,6 +12,7 @@ extension Notification.Name {
     static let boldSelectionRequested = Notification.Name("boldSelectionRequested")
     static let italicSelectionRequested = Notification.Name("italicSelectionRequested")
     static let extractToNoteRequested = Notification.Name("extractToNoteRequested")
+    static let insertImageRequested = Notification.Name("insertImageRequested")
     static let openSettingsRequested = Notification.Name("openSettingsRequested")
     static let togglePlainTextModeRequested = Notification.Name("togglePlainTextModeRequested")
     static let restoreDeletedNoteRequested = Notification.Name("restoreDeletedNoteRequested")

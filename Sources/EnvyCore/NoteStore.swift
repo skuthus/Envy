@@ -773,6 +773,21 @@ public final class NoteStore: ObservableObject {
         return finalName
     }
 
+    /// Every image in the `.attachments` folder, newest first — for the
+    /// "Insert Image" picker, so a picture can be chosen by sight rather than
+    /// by remembering its (often meaningless) filename.
+    public func imageAttachments() -> [URL] {
+        let dir = attachmentsDirectory
+        guard let items = try? FileManager.default.contentsOfDirectory(
+            at: dir, includingPropertiesForKeys: [.contentModificationDateKey], options: [.skipsHiddenFiles]) else { return [] }
+        func modified(_ url: URL) -> Date {
+            (try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
+        }
+        return items
+            .filter { Note.imageAttachmentExtensions.contains($0.pathExtension.lowercased()) }
+            .sorted { modified($0) > modified($1) }
+    }
+
     /// Extension-preserving de-dup (unlike `uniqueFilename`, which forces
     /// `.md`): "photo.png" → "photo.png", then "photo (2).png", … so an
     /// attachment keeps its real type.

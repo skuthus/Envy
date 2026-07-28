@@ -88,6 +88,7 @@ enum WelcomeContent {
     ### 🖼️ Images
 
     - **Drag an image onto a note**, or paste one (a screenshot, a copied picture) — it appears inline. The original file is left untouched; Envy keeps its own copy in a hidden `.attachments` folder beside your notes, and the note just holds a plain `![[picture.png]]` reference, so everything stays portable.
+    - **Insert one you already have** — press `⇧⌘I` (or right-click → Insert Image) to open a grid of thumbnails of every image in your vault. Filter by name, click one, and it drops in at your cursor — handy when the file is a screenshot with a name you'd never remember.
     - **Right-click an image** to resize it (Small/Medium/Large, or a custom width), add a **caption**, rename it, open it in Preview, or reveal the file in Finder. At rest the reference reads as just the filename; click into it to see and edit the full `![[picture.png|400|A caption]]`. A caption sits under the image and is plain text in the note, so it's searchable like anything else. If a referenced file goes missing, you'll see a clear placeholder instead of a blank.
     - PNG, JPEG, GIF (animated), HEIC, WebP, TIFF, and BMP all work.
     - Find them later with `img:` — every note holding a picture. `embed:` does the same for notes that embed another note. Both take trailing words (`img: diagram`) and negate (`-img:`).

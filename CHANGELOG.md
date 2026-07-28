@@ -2,6 +2,10 @@
 
 Also published at [envynote.app/changelog.html](https://envynote.app/changelog.html).
 
+## 1.8.1 — July 27, 2026
+
+- **Insert an image by sight, not by name.** Press `⇧⌘I` in the editor (or right-click → **Insert Image…**) to open a grid of thumbnails of every image in your vault — filter by name, click one, and it drops in at your cursor. Just the thing when the file is a screenshot with a name you'd never remember.
+
 ## 1.8.0 — July 27, 2026
 
 - **Images in your notes.** Drag an image onto a note, or paste one (a screenshot, a copied picture), and it appears inline. The original file is left untouched — Envy keeps its own copy in a hidden `.attachments` folder beside your notes, and the note just holds a plain `![[picture.png]]` reference, so everything stays portable and nothing is fetched from the network. PNG, JPEG, GIF (animated), HEIC, WebP, TIFF, and BMP all work.

@@ -254,7 +254,7 @@ final class HoverAwareTextView: NSTextView {
 
     /// Inserts `![[name]]` on its own line with the blank line after that the
     /// block renderer reserves its room on — the same shape a note embed needs.
-    private func insertImageReference(_ name: String) {
+    func insertImageReference(_ name: String) {
         let selection = selectedRange()
         let ns = string as NSString
         let needsLeadingBreak = selection.location > 0 && ns.character(at: selection.location - 1) != 10
@@ -1006,6 +1006,7 @@ struct MarkdownTextView: NSViewRepresentable {
         nonisolated(unsafe) private var boldObserver: NSObjectProtocol?
         nonisolated(unsafe) private var italicObserver: NSObjectProtocol?
         nonisolated(unsafe) private var extractObserver: NSObjectProtocol?
+        nonisolated(unsafe) private var insertImageObserver: NSObjectProtocol?
         // Registered once the text view exists, in makeNSView below.
         nonisolated(unsafe) var frameObserver: NSObjectProtocol?
 
@@ -1062,12 +1063,22 @@ struct MarkdownTextView: NSViewRepresentable {
             extractObserver = NotificationCenter.default.addObserver(forName: .extractToNoteRequested, object: nil, queue: .main) { [weak self] _ in
                 MainActor.assumeIsolated { self?.extractSelectionToNote() }
             }
+            insertImageObserver = NotificationCenter.default.addObserver(forName: .insertImageRequested, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated {
+                    // Only the focused editor responds, so the shortcut can't
+                    // open the picker on the pinned popup and the main window at
+                    // once — the right-click path targets its own view directly.
+                    guard let self, let tv = self.textView, tv.window?.firstResponder === tv else { return }
+                    self.presentImagePicker()
+                }
+            }
         }
 
         deinit {
             if let boldObserver { NotificationCenter.default.removeObserver(boldObserver) }
             if let italicObserver { NotificationCenter.default.removeObserver(italicObserver) }
             if let extractObserver { NotificationCenter.default.removeObserver(extractObserver) }
+            if let insertImageObserver { NotificationCenter.default.removeObserver(insertImageObserver) }
             if let frameObserver { NotificationCenter.default.removeObserver(frameObserver) }
         }
 
@@ -2400,7 +2411,32 @@ struct MarkdownTextView: NSViewRepresentable {
         /// gesture that colors a tag. NSTextView calls this to let the delegate
         /// amend its context menu, passing the clicked character index, so the
         /// link (and thus the domain) is read straight from the attribute run.
+        /// Opens the thumbnail picker of everything in `.attachments` and inserts
+        /// the chosen `![[name]]` at the caret — so a picture can be added by
+        /// sight, without remembering its filename. Confined to the real editor
+        /// (has a store, editable); previews/embeds have no store and no-op.
+        @MainActor
+        func presentImagePicker() {
+            guard let store = parent.store, let textView = self.textView, textView.isEditable else { return }
+            ImageAttachmentPicker.shared.present(images: store.imageAttachments(), on: textView.window) { [weak textView] name in
+                guard let textView else { return }
+                textView.window?.makeFirstResponder(textView)
+                textView.insertImageReference(name)
+            }
+        }
+
+        @objc func insertImageMenuAction() { presentImagePicker() }
+
         func textView(_ textView: NSTextView, menu: NSMenu, for event: NSEvent, at charIndex: Int) -> NSMenu? {
+            // Offer "Insert Image…" on the real editor's own right-click menu,
+            // above whatever else the menu holds.
+            if parent.store != nil, textView.isEditable {
+                let insert = NSMenuItem(title: "Insert Image\u{2026}", action: #selector(insertImageMenuAction), keyEquivalent: "")
+                insert.target = self
+                menu.insertItem(insert, at: 0)
+                menu.insertItem(.separator(), at: 1)
+            }
+
             guard UserDefaults.standard.object(forKey: "linkDomainPills") as? Bool ?? true,
                   let storage = textView.textStorage,
                   charIndex >= 0, charIndex < storage.length,
