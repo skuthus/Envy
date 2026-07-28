@@ -225,7 +225,11 @@ struct WikilinkPreviewContentView: View {
                 noteTitles: noteTitles
             )
         }
-        .frame(width: 320, height: 240)
+        // Fills the panel rather than pinning a fixed size, so the content
+        // grows and shrinks with a drag-resize (the panel is .resizable and
+        // carries its own minSize). minWidth/minHeight mirror that floor so the
+        // layout never collapses tighter than the window can go.
+        .frame(minWidth: 200, maxWidth: .infinity, minHeight: 150, maxHeight: .infinity)
         .background(WindowAccessor { hostWindow = $0 })
         // The panel's real title bar is hidden (titleVisibility = .hidden,
         // transparent) but its .fullSizeContentView style still leaves
@@ -263,12 +267,44 @@ struct WikilinkPreviewContentView: View {
     }
 }
 
+/// Where a resized peek's dimensions are remembered, so the next one opens at
+/// the size you last dragged it to — the same "one preferred size, last drag
+/// wins" persistence the menu-bar pinned note uses (its own separate keys).
+private let peekPanelWidthKey = "wikilinkPeekWidth"
+private let peekPanelHeightKey = "wikilinkPeekHeight"
+
 /// A borderless panel that's still allowed to become key on click — needed
 /// so the embedded text view can actually receive keyboard input once the
 /// preview is clicked into edit mode. Plain borderless NSPanels default
-/// canBecomeKey to false.
+/// canBecomeKey to false. It also remembers its own size: a drag-resize
+/// (didEndLiveResize, which fires once when the drag finishes rather than
+/// continuously mid-drag) writes width/height back to the shared keys so the
+/// next peek — pinned or not — opens at that size. Observing its own
+/// notification keeps this working after the peek is adopted by
+/// PinnedPeekManager, without a delegate that would have to be handed off too.
 private final class PreviewPanel: NSPanel {
     override var canBecomeKey: Bool { true }
+    // nonisolated(unsafe): read once from the (nonisolated) deinit to unregister
+    // — the panel is torn down on the main thread and nothing else races it.
+    nonisolated(unsafe) private var resizeObserver: NSObjectProtocol?
+
+    func persistSizeOnResize() {
+        resizeObserver = NotificationCenter.default.addObserver(
+            forName: NSWindow.didEndLiveResizeNotification, object: self, queue: .main
+        ) { [weak self] _ in
+            // queue: .main guarantees this runs on the main thread; assumeIsolated
+            // lets us touch the window's main-actor `frame` without a warning.
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                UserDefaults.standard.set(self.frame.width, forKey: peekPanelWidthKey)
+                UserDefaults.standard.set(self.frame.height, forKey: peekPanelHeightKey)
+            }
+        }
+    }
+
+    deinit {
+        if let resizeObserver { NotificationCenter.default.removeObserver(resizeObserver) }
+    }
 }
 
 /// Delivers the click that re-focuses the panel to the control under it too, so
@@ -359,6 +395,18 @@ final class WikilinkPreviewController: NSObject {
 
     private static let panelSize = NSSize(width: 320, height: 240)
 
+    /// The size a new peek opens at: whatever the last drag-resize saved, or
+    /// the default until one has been resized. Read fresh each time so a resize
+    /// carries to the next peek within the same session too.
+    private static var persistedPeekSize: NSSize {
+        let w = UserDefaults.standard.double(forKey: peekPanelWidthKey)
+        let h = UserDefaults.standard.double(forKey: peekPanelHeightKey)
+        return NSSize(
+            width: w > 0 ? w : panelSize.width,
+            height: h > 0 ? h : panelSize.height
+        )
+    }
+
     /// Refreshed on every option-click rather than once at init — the same
     /// Coordinator/controller pair persists across theme changes etc. while
     /// the note stays open.
@@ -429,7 +477,7 @@ final class WikilinkPreviewController: NSObject {
         // being a real titled window under the hood.
         let panel = PreviewPanel(
             contentRect: frame,
-            styleMask: [.titled, .nonactivatingPanel, .fullSizeContentView],
+            styleMask: [.titled, .resizable, .nonactivatingPanel, .fullSizeContentView],
             backing: .buffered,
             defer: false
         )
@@ -442,6 +490,8 @@ final class WikilinkPreviewController: NSObject {
         panel.level = .floating
         panel.hasShadow = true
         panel.isReleasedWhenClosed = false
+        panel.minSize = NSSize(width: 200, height: 150)
+        panel.persistSizeOnResize()
         panel.backgroundColor = theme.resolvedBackgroundColor
         let content = WikilinkPreviewContentView(
             store: store,
@@ -488,7 +538,7 @@ final class WikilinkPreviewController: NSObject {
         guard let window = view.window, let screen = window.screen else { return nil }
         let rectInWindow = view.convert(anchorRect, to: nil)
         let rectOnScreen = window.convertToScreen(rectInWindow)
-        let size = Self.panelSize
+        let size = Self.persistedPeekSize
         let gap: CGFloat = 4
         let visible = screen.visibleFrame
 
