@@ -65,6 +65,14 @@ struct NoteEditorView: View {
     /// app is active), so a change that arrives while Envy is backgrounded
     /// doesn't burn its brief highlight before anyone's looking.
     @State private var highlightTrigger = 0
+    /// The note whose content the external-change watcher below currently
+    /// considers "loaded." This view is now reused across note switches (no
+    /// per-note .id() in ContentView), so a noteID change and its consequent
+    /// note?.content change both fire in the same batch; this marker lets the
+    /// content watcher tell "the note itself changed under me" (a switch,
+    /// handled by switchNote) apart from "the open note's file changed" (an
+    /// external edit to flash) regardless of which onChange SwiftUI runs first.
+    @State private var contentWatchNoteID: String
 
     private var note: Note? {
         store.notes.first { $0.id == noteID }
@@ -121,6 +129,7 @@ struct NoteEditorView: View {
         _content = State(initialValue: initialNote?.content ?? "")
         _lastSyncedContent = State(initialValue: initialNote?.content ?? "")
         _titleText = State(initialValue: initialNote?.title ?? "")
+        _contentWatchNoteID = State(initialValue: noteID)
     }
 
     var body: some View {
@@ -187,7 +196,22 @@ struct NoteEditorView: View {
         // save time (see scheduleSave), so the second guard correctly reads
         // the situation as local-edits-in-flight rather than adopting our
         // own echo as if it were an external change.
+        // Reused across note switches now (ContentView no longer gives this an
+        // .id(noteID)), so a new note has to be loaded into the same instance
+        // in place rather than by recreation — which is exactly what makes
+        // clicking through the list snappy (no editor teardown/rebuild flash).
+        .onChange(of: noteID) { oldID, newID in
+            switchNote(from: oldID, to: newID)
+        }
         .onChange(of: note?.content) { _, newContent in
+            // The note itself just changed under us (a switch) — switchNote
+            // owns loading the new content; ignore this as if it were an
+            // external file edit, whichever order the two onChanges ran in.
+            guard noteID == contentWatchNoteID else {
+                contentWatchNoteID = noteID
+                lastSyncedContent = note?.content ?? content
+                return
+            }
             guard let newContent, newContent != content else {
                 if let newContent { lastSyncedContent = newContent }
                 return
@@ -342,6 +366,47 @@ struct NoteEditorView: View {
             guard !Task.isCancelled else { return }
             onStatsChange(wordCount, characterCount)
         }
+    }
+
+    /// Loads a different note into this reused editor in place of recreating
+    /// it. Flushes any unsaved edits to the note being left first (its pending
+    /// debounced save would otherwise be cancelled by the next keystroke in the
+    /// new note — DebouncedSave.schedule cancels the prior task), then pulls the
+    /// new note's content/title in and bumps externalReloadToken so
+    /// MarkdownTextView swaps its NSTextView text (and, seeing the note id
+    /// change, resets undo/scroll/selection). No highlight flash — this is a
+    /// deliberate switch, not an external edit to flag.
+    private func switchNote(from oldID: String, to newID: String) {
+        flushPendingSave(forNoteID: oldID)
+        let newNote = store.notes.first { $0.id == newID }
+        let newContent = newNote?.content ?? ""
+        statsTask?.cancel()
+        isEditingTitle = false
+        pendingHighlightRange = nil
+        titleText = newNote?.title ?? ""
+        content = newContent
+        lastSyncedContent = newContent
+        contentWatchNoteID = newID
+        externalReloadToken += 1
+        onStatsChange(
+            newContent.split { $0.isWhitespace || $0.isNewline }.count,
+            newContent.count
+        )
+    }
+
+    /// Commits the leaving note's in-flight edits synchronously before the
+    /// switch, so nothing is lost to the debounce being replaced. Compares
+    /// against the note's own stored content (not lastSyncedContent, which the
+    /// content watcher may have already re-pointed at the incoming note mid-
+    /// switch) so a note with no unsaved edits writes nothing.
+    private func flushPendingSave(forNoteID id: String) {
+        saveTask?.cancel()
+        saveTask = nil
+        guard let leaving = store.notes.first(where: { $0.id == id }),
+              content != leaving.content else { return }
+        var updated = leaving
+        updated.content = content
+        store.save(updated)
     }
 
     private func scheduleSave(_ newValue: String) {

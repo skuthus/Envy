@@ -86,12 +86,18 @@ extension ContentView {
                             editorCharacterCount = characters
                         }
                     )
-                    // Forces a fresh NoteEditorView (and its underlying NSTextView)
-                    // per note instead of patching the same instance in place —
-                    // patching relied on noteID and content always updating in the
-                    // same render pass, which isn't guaranteed and could show one
-                    // note's content inside another's editor.
-                    .id(selectedID)
+                    // Deliberately NOT .id(selectedID): giving it one recreated
+                    // the whole NoteEditorView + NSTextView per note switch,
+                    // which flashed the editor blank for a couple of frames on
+                    // every click. It's reused across notes now and swaps
+                    // content in place — NoteEditorView.switchNote handles the
+                    // per-note reset (flush the old note's save, load the new
+                    // content, reset undo/scroll), and MarkdownTextView keys the
+                    // in-place text replacement off the note id changing. The
+                    // old "one note's content inside another's editor" race that
+                    // .id() guarded against is gone: switchNote loads the new
+                    // content in the same step that signals the swap, so they
+                    // can't arrive a render apart.
                 } else {
                     ContentUnavailableView("No Note Selected", systemImage: "note.text")
                 }

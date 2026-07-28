@@ -761,6 +761,7 @@ struct MarkdownTextView: NSViewRepresentable {
         context.coordinator.lastPlainTextMode = plainTextMode
         context.coordinator.lastExternalReloadToken = externalReloadToken
         context.coordinator.lastHighlightTrigger = highlightTrigger
+        context.coordinator.lastNoteID = currentNoteID
         return scrollView
     }
 
@@ -798,10 +799,27 @@ struct MarkdownTextView: NSViewRepresentable {
         var justReplacedText = false
         if context.coordinator.lastExternalReloadToken != externalReloadToken {
             context.coordinator.lastExternalReloadToken = externalReloadToken
+            // A note *switch* (same reused text view now showing a different
+            // note) vs. an external edit to the note already open. The switch
+            // is what removing the per-note .id() in ContentView routes through
+            // here instead of a fresh makeNSView — so it has to reproduce the
+            // clean-slate that recreation used to give for free: cursor home,
+            // scroll to top, undo history dropped (so ⌘Z can't reach into the
+            // previous note), and the per-note overlay height caches cleared.
+            let isSwitch = context.coordinator.lastNoteID != currentNoteID
+            context.coordinator.lastNoteID = currentNoteID
             let cursor = textView.selectedRange()
             textView.string = text
-            let clampedLocation = min(cursor.location, (text as NSString).length)
-            textView.setSelectedRange(NSRange(location: clampedLocation, length: 0))
+            if isSwitch {
+                textView.setSelectedRange(NSRange(location: 0, length: 0))
+                textView.undoManager?.removeAllActions()
+                context.coordinator.embedHeights.removeAll()
+                context.coordinator.imageHeights.removeAll()
+                textView.scroll(NSPoint(x: 0, y: 0))
+            } else {
+                let clampedLocation = min(cursor.location, (text as NSString).length)
+                textView.setSelectedRange(NSRange(location: clampedLocation, length: 0))
+            }
             justReplacedText = true
         }
 
@@ -916,6 +934,13 @@ struct MarkdownTextView: NSViewRepresentable {
         var lastProtectAISignature: Bool = false
         var lastExternalReloadToken: Int = 0
         var lastHighlightTrigger: Int = 0
+        /// The note this text view is currently showing, so updateNSView can
+        /// tell a genuine note *switch* (reuse the same view for a different
+        /// note — reset undo/scroll/selection, no diff flash) apart from an
+        /// external edit to the note already open (clamp the cursor, flash the
+        /// change). Set in makeNSView to the first note; only the main editor
+        /// ever changes it, since preview/embed views each show one fixed note.
+        var lastNoteID: String?
         private var highlightFadeTask: Task<Void, Never>?
 
         private var cachedText: String = ""
