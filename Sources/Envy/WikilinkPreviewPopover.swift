@@ -88,7 +88,7 @@ struct WikilinkPreviewContentView: View {
     var onPin: () -> Void
 
     @State private var isEditable: Bool
-    @State private var isPinned = false
+    @State private var isPinned: Bool
     @State private var hostWindow: NSWindow?
     @State private var content: String
     @State private var saveTask: Task<Void, Never>?
@@ -108,7 +108,8 @@ struct WikilinkPreviewContentView: View {
         noteTitles: [String],
         onNavigate: @escaping (String) -> Void,
         onEditableActivated: @escaping () -> Void,
-        onPin: @escaping () -> Void
+        onPin: @escaping () -> Void,
+        initiallyPinned: Bool = false
     ) {
         self.store = store
         self.noteID = noteID
@@ -124,6 +125,10 @@ struct WikilinkPreviewContentView: View {
         _content = State(initialValue: initial?.content ?? "")
         _lastSyncedContent = State(initialValue: initial?.content ?? "")
         _isEditable = State(initialValue: false)
+        // A pop-out starts already pinned (its own standing window from the
+        // moment it opens); an option-click peek starts unpinned until the pin
+        // button promotes it.
+        _isPinned = State(initialValue: initiallyPinned)
     }
 
     var body: some View {
@@ -222,6 +227,14 @@ struct WikilinkPreviewContentView: View {
                     isEditable = true
                     onEditableActivated()
                 },
+                // Without the store the text view has no attachmentStore, so
+                // ![[image.png]] can't be resolved out of .attachments and
+                // images (and note embeds) render as broken placeholders — the
+                // pop-out/peek is a real editing surface, so it gets the same
+                // store the main editor does. currentNoteID gives embeds the
+                // same "is this note open elsewhere" context too.
+                store: store,
+                currentNoteID: noteID,
                 noteTitles: noteTitles
             )
         }
@@ -272,6 +285,46 @@ struct WikilinkPreviewContentView: View {
 /// wins" persistence the menu-bar pinned note uses (its own separate keys).
 private let peekPanelWidthKey = "wikilinkPeekWidth"
 private let peekPanelHeightKey = "wikilinkPeekHeight"
+private let defaultPeekPanelSize = NSSize(width: 320, height: 240)
+
+/// The size a new peek/pop-out opens at: whatever the last drag-resize saved,
+/// or the default until one has been resized. Read fresh each time so a resize
+/// carries to the next one within the same session too.
+private var persistedPeekSize: NSSize {
+    let w = UserDefaults.standard.double(forKey: peekPanelWidthKey)
+    let h = UserDefaults.standard.double(forKey: peekPanelHeightKey)
+    return NSSize(
+        width: w > 0 ? w : defaultPeekPanelSize.width,
+        height: h > 0 ? h : defaultPeekPanelSize.height
+    )
+}
+
+/// The floating panel chrome shared by the transient option-click peek and a
+/// directly popped-out pinned note, so the two can't drift apart: resizable,
+/// floating, no visible title bar, remembers its own size. Callers position it
+/// and set its contentView.
+@MainActor
+private func makePeekPanel(frame: NSRect, backgroundColor: NSColor) -> PreviewPanel {
+    let panel = PreviewPanel(
+        contentRect: frame,
+        styleMask: [.titled, .resizable, .nonactivatingPanel, .fullSizeContentView],
+        backing: .buffered,
+        defer: false
+    )
+    panel.titlebarAppearsTransparent = true
+    panel.titleVisibility = .hidden
+    panel.standardWindowButton(.closeButton)?.isHidden = true
+    panel.standardWindowButton(.miniaturizeButton)?.isHidden = true
+    panel.standardWindowButton(.zoomButton)?.isHidden = true
+    panel.isFloatingPanel = true
+    panel.level = .floating
+    panel.hasShadow = true
+    panel.isReleasedWhenClosed = false
+    panel.minSize = NSSize(width: 200, height: 150)
+    panel.persistSizeOnResize()
+    panel.backgroundColor = backgroundColor
+    return panel
+}
 
 /// A borderless panel that's still allowed to become key on click — needed
 /// so the embedded text view can actually receive keyboard input once the
@@ -393,20 +446,6 @@ final class WikilinkPreviewController: NSObject {
     private var currentlyOpenNoteID: String?
     private var onNavigate: ((String) -> Void)?
 
-    private static let panelSize = NSSize(width: 320, height: 240)
-
-    /// The size a new peek opens at: whatever the last drag-resize saved, or
-    /// the default until one has been resized. Read fresh each time so a resize
-    /// carries to the next peek within the same session too.
-    private static var persistedPeekSize: NSSize {
-        let w = UserDefaults.standard.double(forKey: peekPanelWidthKey)
-        let h = UserDefaults.standard.double(forKey: peekPanelHeightKey)
-        return NSSize(
-            width: w > 0 ? w : panelSize.width,
-            height: h > 0 ? h : panelSize.height
-        )
-    }
-
     /// Refreshed on every option-click rather than once at init — the same
     /// Coordinator/controller pair persists across theme changes etc. while
     /// the note stays open.
@@ -475,24 +514,7 @@ final class WikilinkPreviewController: NSObject {
         // hidden — so it reads as a plain rounded card, not a window with
         // chrome, while still getting the rounded corners that come from
         // being a real titled window under the hood.
-        let panel = PreviewPanel(
-            contentRect: frame,
-            styleMask: [.titled, .resizable, .nonactivatingPanel, .fullSizeContentView],
-            backing: .buffered,
-            defer: false
-        )
-        panel.titlebarAppearsTransparent = true
-        panel.titleVisibility = .hidden
-        panel.standardWindowButton(.closeButton)?.isHidden = true
-        panel.standardWindowButton(.miniaturizeButton)?.isHidden = true
-        panel.standardWindowButton(.zoomButton)?.isHidden = true
-        panel.isFloatingPanel = true
-        panel.level = .floating
-        panel.hasShadow = true
-        panel.isReleasedWhenClosed = false
-        panel.minSize = NSSize(width: 200, height: 150)
-        panel.persistSizeOnResize()
-        panel.backgroundColor = theme.resolvedBackgroundColor
+        let panel = makePeekPanel(frame: frame, backgroundColor: theme.resolvedBackgroundColor)
         let content = WikilinkPreviewContentView(
             store: store,
             noteID: note.id,
@@ -538,7 +560,7 @@ final class WikilinkPreviewController: NSObject {
         guard let window = view.window, let screen = window.screen else { return nil }
         let rectInWindow = view.convert(anchorRect, to: nil)
         let rectOnScreen = window.convertToScreen(rectInWindow)
-        let size = Self.persistedPeekSize
+        let size = persistedPeekSize
         let gap: CGFloat = 4
         let visible = screen.visibleFrame
 
@@ -661,6 +683,57 @@ final class PinnedPeekManager {
         panel.isMovableByWindowBackground = true
         panels.append(panel)
         installObserversIfNeeded()
+    }
+
+    /// Pops a note straight out into its own floating window — the "Pop Out"
+    /// list context-menu action — skipping the option-click-then-pin dance. It's
+    /// the same resizable, self-persisting panel a pinned peek uses (via
+    /// makePeekPanel) and the same content view, just created already pinned and
+    /// adopted immediately, so it lives and behaves identically to one you pin
+    /// by hand. Cascaded off the key window so successive pop-outs don't stack
+    /// exactly on top of each other.
+    func openFloating(
+        note: Note,
+        store: NoteStore,
+        theme: Theme,
+        requireModifierForLinkClick: Bool,
+        showDuePill: Bool,
+        showTagsInTitleBar: Bool,
+        noteTitles: [String],
+        onNavigate: @escaping (String) -> Void
+    ) {
+        let size = persistedPeekSize
+        let host = NSApp.keyWindow ?? NSApp.mainWindow
+        let anchor = host?.frame ?? host?.screen?.visibleFrame ?? NSScreen.main?.visibleFrame ?? NSRect(x: 200, y: 200, width: size.width, height: size.height)
+        let cascade = CGFloat(panels.count % 8) * 26
+        var origin = NSPoint(
+            x: anchor.midX - size.width / 2 + cascade,
+            y: anchor.midY - size.height / 2 - cascade
+        )
+        if let visible = (host?.screen ?? NSScreen.main)?.visibleFrame {
+            origin.x = min(max(origin.x, visible.minX), visible.maxX - size.width)
+            origin.y = min(max(origin.y, visible.minY), visible.maxY - size.height)
+        }
+        let frame = NSRect(origin: origin, size: size)
+
+        let panel = makePeekPanel(frame: frame, backgroundColor: theme.resolvedBackgroundColor)
+        let content = WikilinkPreviewContentView(
+            store: store,
+            noteID: note.id,
+            theme: theme,
+            requireModifierForLinkClick: requireModifierForLinkClick,
+            showDuePill: showDuePill,
+            showTagsInTitleBar: showTagsInTitleBar,
+            noteTitles: noteTitles,
+            onNavigate: onNavigate,
+            onEditableActivated: {},
+            onPin: {},
+            initiallyPinned: true
+        )
+        panel.contentView = FirstMouseHostingView(rootView: content)
+        panel.setFrame(frame, display: true)
+        panel.makeKeyAndOrderFront(nil)
+        adopt(panel)
     }
 
     private func installObserversIfNeeded() {

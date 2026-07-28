@@ -378,6 +378,23 @@ extension ContentView {
 
     // MARK: - Context menus
 
+    /// Opens the note in its own resizable floating window (the same standing
+    /// panel a pinned wikilink peek uses), so it can sit alongside whatever's in
+    /// the main editor. Navigating a link inside it drives the main editor,
+    /// matching how the peek behaves.
+    func popOutNote(_ note: Note) {
+        PinnedPeekManager.shared.openFloating(
+            note: note,
+            store: store,
+            theme: theme,
+            requireModifierForLinkClick: requireModifierForLinkClick,
+            showDuePill: showDuePill,
+            showTagsInTitleBar: showTagsInTitleBar,
+            noteTitles: noteTitlesByRecencyCache,
+            onNavigate: { navigateToNote(titled: $0) }
+        )
+    }
+
     @ViewBuilder
     func singleContextMenuItems(for note: Note) -> some View {
         Button(isPinned(note) ? "Unpin Note" : "Pin Note") {
@@ -385,6 +402,9 @@ extension ContentView {
         }
         Button(isMenuBarPinned(note) ? "Unpin from Menu Bar" : "Pin to Menu Bar") {
             toggleMenuBarPin(note)
+        }
+        Button("Pop Out") {
+            popOutNote(note)
         }
         Button("Rename") {
             renameText = note.title
