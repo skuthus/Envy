@@ -60,6 +60,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         // every summon path), so the window is adopted whenever it appears.
         let window = resolveMainWindow()
         window?.makeKeyAndOrderFront(nil)
+        // Windowless launch (sign-in login item): give SwiftUI a moment to
+        // create the window on its own; if it still hasn't, request it via
+        // the reopen machinery — so signing in shows Envy the same way every
+        // other launch does, instead of a menu-bar eye with nothing behind it.
+        if window == nil {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+                guard let self, self.resolveMainWindow() == nil else { return }
+                self.requestMainWindowCreation()
+            }
+        }
 
         // A SwiftUI .commands keyboardShortcut here loses to AppKit's own
         // default key handling (Return zooms the window; Option+Up/Down are
@@ -353,13 +363,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         window.backgroundColor = .windowBackgroundColor
     }
 
-    /// The WindowGroup window's signature: a real, titled, main-capable
-    /// window — which excludes the status-bar item's window (borderless,
-    /// can't become main) and every floating peek/pinned NSPanel, exactly
-    /// the impostors a raw NSApp.windows.first could hand back.
+    /// The WindowGroup window's signature: a real, titled window that isn't a
+    /// panel — which excludes the status-bar item's window (borderless) and
+    /// every floating peek/pinned NSPanel, exactly the impostors a raw
+    /// NSApp.windows.first could hand back. Deliberately NOT checking
+    /// canBecomeMain: its answer is entangled with visibility state, and a
+    /// sign-in launch can hand us the window while the app is still hidden.
     @MainActor
     static func isMainWindowCandidate(_ window: NSWindow) -> Bool {
-        !(window is NSPanel) && window.canBecomeMain && window.styleMask.contains(.titled)
+        !(window is NSPanel) && window.styleMask.contains(.titled)
     }
 
     /// The main window, resolved late if launch captured nil (login-item
@@ -392,9 +404,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         updateStatusItemIcon()
     }
 
+    /// A sign-in (login item) launch can complete without SwiftUI ever
+    /// creating the WindowGroup window at all — the menu bar eye is there,
+    /// but there's no window to summon, and only SwiftUI can build its own
+    /// scene. The one lever it answers is the app-reopen event, the same
+    /// machinery as a Dock click (see applicationShouldHandleReopen, which
+    /// returns true in the windowless state precisely so SwiftUI builds the
+    /// window); asking NSWorkspace to "open" the already-running app
+    /// delivers exactly that event without launching a second instance. The
+    /// became-key observer then adopts the new window the moment it exists.
+    @MainActor
+    private func requestMainWindowCreation() {
+        NSApp.activate(ignoringOtherApps: true)
+        NSWorkspace.shared.openApplication(at: Bundle.main.bundleURL, configuration: NSWorkspace.OpenConfiguration())
+    }
+
     @MainActor
     func toggleWindow() {
-        guard let window = resolveMainWindow() else { return }
+        guard let window = resolveMainWindow() else {
+            requestMainWindowCreation()
+            return
+        }
         // window.isVisible rather than NSApp.isActive && window.isKeyWindow —
         // this only needs to know whether the window itself is currently on
         // screen, independent of the app's broader activation state, which
@@ -423,7 +453,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     /// can't drift apart.
     @MainActor
     func summonMainWindow() {
-        guard let window = resolveMainWindow() else { return }
+        guard let window = resolveMainWindow() else {
+            requestMainWindowCreation()
+            return
+        }
         captureFrontmostForRestore()
         NSApp.activate(ignoringOtherApps: true)
         // A window hidden by orderOut isn't miniaturized, but one the user
@@ -461,6 +494,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     /// window that already exists.
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         guard !flag else { return true }
+        // Windowless (a sign-in launch where SwiftUI never built the
+        // WindowGroup window): return true so SwiftUI's default reopen
+        // handling creates it — this is the very event
+        // requestMainWindowCreation synthesizes, so swallowing it here
+        // would make the recovery path a no-op. With a window alive, claim
+        // the reopen and reuse it as before.
+        guard resolveMainWindow() != nil else { return true }
         summonMainWindow()
         return false
     }
