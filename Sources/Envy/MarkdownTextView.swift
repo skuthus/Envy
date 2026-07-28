@@ -280,7 +280,11 @@ final class AttachmentView: NSView {
     var onOpen: (() -> Void)?
     var onReveal: (() -> Void)?
     var onRename: ((String) -> Void)?
-    var onCaption: ((String) -> Void)?
+    /// Jump the editor's cursor into the marker's caption / width slot —
+    /// inline editing in the note text itself, replacing the modal prompts
+    /// these actions used to raise (see menu(for:) below).
+    var onEditCaption: (() -> Void)?
+    var onEditWidth: (() -> Void)?
 
     private let imageView = NSImageView()
     private let captionLabel = NSTextField(labelWithString: "")
@@ -387,45 +391,59 @@ final class AttachmentView: NSView {
     @objc private func openImage() { onOpen?() }
     @objc private func revealImage() { onReveal?() }
 
+    // Caption and width need no dialog at all — both are just text in the
+    // marker (`![[name|400|caption]]`), so the menu item drops the cursor
+    // straight into the right slot and you type in the note itself. Deferred
+    // past the menu-tracking runloop, same as the old prompt was.
     @objc private func editCaption() {
-        prompt(title: "Caption", info: "Text shown under the image (blank to remove).",
-               initial: caption ?? "", button: "Set") { [weak self] in self?.onCaption?($0) }
-    }
-
-    @objc private func renameImage() {
-        prompt(title: "Rename image", info: "New name \u{2014} the file extension is kept.",
-               initial: (attachmentName as NSString).deletingPathExtension, button: "Rename") { [weak self] text in
-            let base = text.trimmingCharacters(in: .whitespaces)
-            if !base.isEmpty { self?.onRename?(base) }
-        }
+        DispatchQueue.main.async { [weak self] in self?.onEditCaption?() }
     }
 
     @objc private func resizeCustom() {
-        prompt(title: "Image width", info: "Width in points \u{2014} leave blank for original size.",
-               initial: "", placeholder: displayImage.map { "\(Int($0.size.width))" }, button: "Set") { [weak self] text in
-            let t = text.trimmingCharacters(in: .whitespaces)
-            if t.isEmpty { self?.onResize?(nil) }
-            else if let value = Double(t), value > 0 { self?.onResize?(CGFloat(value)) }
-        }
+        DispatchQueue.main.async { [weak self] in self?.onEditWidth?() }
     }
 
-    /// A one-field modal prompt. Deferred past the menu-tracking runloop before
-    /// presenting, so the alert never races the menu teardown.
-    private func prompt(title: String, info: String, initial: String, placeholder: String? = nil,
-                        button: String, done: @escaping (String) -> Void) {
-        DispatchQueue.main.async {
-            let alert = NSAlert()
-            alert.messageText = title
-            alert.informativeText = info
-            let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 240, height: 24))
-            field.stringValue = initial
-            if let placeholder { field.placeholderString = placeholder }
-            alert.accessoryView = field
-            alert.addButton(withTitle: button)
-            alert.addButton(withTitle: "Cancel")
-            guard alert.runModal() == .alertFirstButtonReturn else { return }
-            done(field.stringValue)
-        }
+    /// Rename genuinely needs a commit step — it moves a real file and
+    /// rewrites references across the vault, so edited marker text can't be
+    /// silently treated as a rename. But it doesn't need to be modal: a small
+    /// popover anchored at the image, field pre-focused and pre-selected, so
+    /// typing starts immediately. Return commits, Esc or clicking away cancels.
+    private var renamePopover: NSPopover?
+
+    @objc private func renameImage() {
+        DispatchQueue.main.async { [weak self] in self?.presentRenamePopover() }
+    }
+
+    private func presentRenamePopover() {
+        renamePopover?.close()
+        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 220, height: 24))
+        field.stringValue = (attachmentName as NSString).deletingPathExtension
+        field.placeholderString = "New name"
+        field.target = self
+        field.action = #selector(commitRename(_:))
+
+        let container = NSView(frame: NSRect(x: 0, y: 0, width: 244, height: 48))
+        field.frame = NSRect(x: 12, y: 12, width: 220, height: 24)
+        container.addSubview(field)
+
+        let controller = NSViewController()
+        controller.view = container
+        let popover = NSPopover()
+        popover.behavior = .transient
+        popover.contentViewController = controller
+        renamePopover = popover
+        popover.show(relativeTo: bounds, of: self, preferredEdge: .maxY)
+        // First responder only lands once the popover's window exists —
+        // making the field key is what selects its text, so typing replaces
+        // the old name with zero extra clicks.
+        DispatchQueue.main.async { field.window?.makeFirstResponder(field) }
+    }
+
+    @objc private func commitRename(_ sender: NSTextField) {
+        let base = sender.stringValue.trimmingCharacters(in: .whitespaces)
+        renamePopover?.close()
+        renamePopover = nil
+        if !base.isEmpty { onRename?(base) }
     }
 }
 
@@ -2219,8 +2237,11 @@ struct MarkdownTextView: NSViewRepresentable {
                 iv.onResize = { [weak self] width in
                     self?.rewriteImageSize(name: name, near: markerLocation, width: width, in: textView)
                 }
-                iv.onCaption = { [weak self] text in
-                    self?.setImageCaption(name: name, near: markerLocation, caption: text, in: textView)
+                iv.onEditCaption = { [weak self] in
+                    self?.beginInlineImageEdit(name: name, near: markerLocation, slot: .caption, in: textView)
+                }
+                iv.onEditWidth = { [weak self] in
+                    self?.beginInlineImageEdit(name: name, near: markerLocation, slot: .width, in: textView)
                 }
                 iv.onRename = { [weak self] newBase in
                     self?.renameAttachment(oldName: name, near: markerLocation, newBase: newBase, in: textView)
@@ -2300,24 +2321,67 @@ struct MarkdownTextView: NSViewRepresentable {
             return inner
         }
 
-        /// Sets (or clears, when blank) the caption of the `![[name…]]` marker
-        /// nearest the captured location, keeping its size token.
+        /// Which part of an image marker an inline edit targets.
+        enum ImageMarkerSlot { case width, caption }
+
+        /// Drops the cursor straight into the marker's width or caption slot —
+        /// the "no dialog at all" replacement for the modal caption/width
+        /// prompts. The marker is rewritten into a canonical
+        /// `![[name|width|caption]]` shape with the slot's `|` present (an
+        /// empty slot parses identically to an absent one, so the intermediate
+        /// state renders the same), then the slot's current text is selected —
+        /// typing replaces it, in the note itself, exactly like the
+        /// click-into-the-marker editing the feature already teaches.
         @MainActor
-        func setImageCaption(name: String, near location: Int, caption: String, in textView: NSTextView) {
+        func beginInlineImageEdit(name: String, near location: Int, slot: ImageMarkerSlot, in textView: NSTextView) {
             let candidates = MarkdownStyler.imageEmbedRanges(in: textView.string).filter { $0.name == name }
             guard let target = candidates.min(by: { abs($0.markerRange.location - location) < abs($1.markerRange.location - location) })
                 ?? candidates.first else { return }
-            let trimmed = caption.trimmingCharacters(in: .whitespacesAndNewlines)
-            let replacement = "![[\(Self.imageInner(name: name, width: target.width, height: target.height, caption: trimmed.isEmpty ? nil : trimmed))]]"
-            guard textView.shouldChangeText(in: target.markerRange, replacementString: replacement) else { return }
-            textView.textStorage?.replaceCharacters(in: target.markerRange, with: replacement)
-            textView.didChangeText()
+
+            let widthToken: String
+            if let w = target.width, let h = target.height { widthToken = "\(Int(w))x\(Int(h))" }
+            else if let w = target.width { widthToken = "\(Int(w))" }
+            else { widthToken = "" }
+            let caption = target.caption ?? ""
+
+            // Build the canonical marker while tracking where the slot's text
+            // lands (NSString lengths — names and captions can be non-ASCII).
+            var inner = name
+            var slotStart = 0
+            var slotLength = 0
+            switch slot {
+            case .width:
+                inner += "|"
+                slotStart = 3 + (inner as NSString).length
+                inner += widthToken
+                slotLength = (widthToken as NSString).length
+                if !caption.isEmpty { inner += "|\(caption)" }
+            case .caption:
+                if !widthToken.isEmpty { inner += "|\(widthToken)" }
+                inner += "|"
+                slotStart = 3 + (inner as NSString).length
+                inner += caption
+                slotLength = (caption as NSString).length
+            }
+
+            let replacement = "![[\(inner)]]"
+            if replacement != (textView.string as NSString).substring(with: target.markerRange) {
+                guard textView.shouldChangeText(in: target.markerRange, replacementString: replacement) else { return }
+                textView.textStorage?.replaceCharacters(in: target.markerRange, with: replacement)
+                textView.didChangeText()
+            }
+
+            textView.window?.makeFirstResponder(textView)
+            let selection = NSRange(location: target.markerRange.location + slotStart, length: slotLength)
+            textView.setSelectedRange(selection)
+            textView.scrollRangeToVisible(selection)
         }
 
         /// Renames an attachment on disk and rewrites every `![[oldName...]]`
-        /// reference in the current note to the new name, keeping each one's
-        /// size token. References in other notes, if any, aren't touched — an
-        /// attachment is normally embedded in just the one note.
+        /// reference in the current note's live text to the new name, keeping
+        /// each one's size token. The store's own renameAttachment rewrites
+        /// references across every *other* note (and this note's saved copy —
+        /// the live rewrite here converges with it on the next save).
         @MainActor
         func renameAttachment(oldName: String, near location: Int, newBase: String, in textView: NSTextView) {
             guard let store = parent.store else { return }
