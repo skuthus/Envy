@@ -50,9 +50,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         NSApp.activate(ignoringOtherApps: true)
         AppearanceMode.applyStored()
 
-        let window = NSApp.windows.first
-        mainWindow = window
-        window?.delegate = self
+        // resolveMainWindow, not a one-shot NSApp.windows.first capture: when
+        // Envy launches as a login item during sign-in, SwiftUI often hasn't
+        // created the WindowGroup window yet by the time this runs — the old
+        // capture left mainWindow nil forever, and every later summon fell
+        // back to a raw windows.first that could be the status-bar window or
+        // a floating panel, so nothing visibly opened until a full relaunch.
+        // Resolution is lazy now (here, in the key observer below, and in
+        // every summon path), so the window is adopted whenever it appears.
+        let window = resolveMainWindow()
         window?.makeKeyAndOrderFront(nil)
 
         // A SwiftUI .commands keyboardShortcut here loses to AppKit's own
@@ -72,7 +78,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 event.charactersIgnoringModifiers == binding.character && EventModifiers(relevant) == binding.eventModifiers
             }
             if matches(ShortcutPreferences.binding(for: .centerWindow, raw: raw)) {
-                NSApp.windows.first?.center()
+                // The key window (the one the user is actually looking at,
+                // main or a floating note), not a raw windows.first that
+                // could be the status-bar window.
+                NSApp.keyWindow?.center()
                 return nil
             }
             if matches(ShortcutPreferences.binding(for: .focusNextArea, raw: raw)) {
@@ -106,7 +115,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             // because Notification itself isn't Sendable — same guarantee.
             nonisolated(unsafe) let object = note.object
             MainActor.assumeIsolated {
-                guard let self, let window = object as? NSWindow, window === self.mainWindow else { return }
+                guard let self, let window = object as? NSWindow else { return }
+                // Late adoption for the login-item launch: the WindowGroup
+                // window that didn't exist at didFinishLaunching announces
+                // itself here the first time it becomes key.
+                if self.mainWindow == nil, Self.isMainWindowCandidate(window) {
+                    self.adoptMainWindow(window)
+                    return
+                }
+                guard window === self.mainWindow else { return }
                 Self.applyWindowChrome(to: window)
             }
         }
@@ -336,9 +353,48 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         window.backgroundColor = .windowBackgroundColor
     }
 
+    /// The WindowGroup window's signature: a real, titled, main-capable
+    /// window — which excludes the status-bar item's window (borderless,
+    /// can't become main) and every floating peek/pinned NSPanel, exactly
+    /// the impostors a raw NSApp.windows.first could hand back.
+    @MainActor
+    static func isMainWindowCandidate(_ window: NSWindow) -> Bool {
+        !(window is NSPanel) && window.canBecomeMain && window.styleMask.contains(.titled)
+    }
+
+    /// The main window, resolved late if launch captured nil (login-item
+    /// launch at sign-in — see applicationDidFinishLaunching). Adopts the
+    /// first qualifying window it finds so delegate wiring and chrome are
+    /// never skipped just because the window arrived after launch.
+    @MainActor
+    @discardableResult
+    private func resolveMainWindow() -> NSWindow? {
+        if let mainWindow { return mainWindow }
+        // Prefer the window actually titled "Envy" — the About and What's New
+        // scenes are also titled, main-capable windows, and NSApp.windows
+        // order is arbitrary enough (state restoration, scene creation) that
+        // "first candidate" could adopt one of them. The WindowGroup declares
+        // its title explicitly (see EnvyApp), so the string is dependable even
+        // when the title bar itself is hidden.
+        let candidates = NSApp.windows.filter(Self.isMainWindowCandidate)
+        guard let candidate = candidates.first(where: { $0.title == "Envy" }) ?? candidates.first else { return nil }
+        adoptMainWindow(candidate)
+        return candidate
+    }
+
+    /// One place for everything "this is now the main window" implies, so
+    /// launch-time and late adoption can't drift apart.
+    @MainActor
+    private func adoptMainWindow(_ window: NSWindow) {
+        mainWindow = window
+        window.delegate = self
+        Self.applyWindowChrome(to: window)
+        updateStatusItemIcon()
+    }
+
     @MainActor
     func toggleWindow() {
-        guard let window = NSApp.windows.first else { return }
+        guard let window = resolveMainWindow() else { return }
         // window.isVisible rather than NSApp.isActive && window.isKeyWindow —
         // this only needs to know whether the window itself is currently on
         // screen, independent of the app's broader activation state, which
@@ -367,7 +423,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     /// can't drift apart.
     @MainActor
     func summonMainWindow() {
-        guard let window = mainWindow ?? NSApp.windows.first else { return }
+        guard let window = resolveMainWindow() else { return }
         captureFrontmostForRestore()
         NSApp.activate(ignoringOtherApps: true)
         // A window hidden by orderOut isn't miniaturized, but one the user
@@ -375,6 +431,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         // restore that — it would come back as a Dock tile that never opens.
         if window.isMiniaturized { window.deminiaturize(nil) }
         window.makeKeyAndOrderFront(nil)
+        // Belt and suspenders for macOS's cooperative activation: the
+        // activate() above is a *request*, and when the grant lands after
+        // makeKeyAndOrderFront the window ends up ordered front only within
+        // Envy's own layer — visibly BEHIND the still-active app. That's a
+        // race, so it bit intermittently. orderFrontRegardless puts the
+        // window above other apps' windows independent of activation state,
+        // and the deferred re-assert one turn later catches the case where
+        // the first activation request was coalesced away entirely.
+        window.orderFrontRegardless()
+        DispatchQueue.main.async { [weak self, weak window] in
+            guard let self, let window, self.mainWindow === window, window.isVisible else { return }
+            if !NSApp.isActive {
+                NSApp.activate(ignoringOtherApps: true)
+                window.makeKeyAndOrderFront(nil)
+            }
+        }
         NotificationCenter.default.post(name: .summonRequested, object: nil)
         performAeroSpaceHandoff(forWindowNumber: window.windowNumber)
         updateStatusItemIcon()
