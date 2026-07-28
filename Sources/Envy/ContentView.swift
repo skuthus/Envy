@@ -464,7 +464,7 @@ struct ContentView: View {
         interlinksGeneration += 1
         let generation = interlinksGeneration
         guard showBacklinks, let selectedID,
-              let currentNote = store.notes.first(where: { $0.id == selectedID })
+              let currentNote = store.note(withID: selectedID)
         else {
             currentBacklinkNotesCache = []
             currentForwardLinkedNotesCache = []
@@ -497,21 +497,25 @@ struct ContentView: View {
         }
     }
 
-    /// Wraps a suggested match's exact occurrence in "[[...]]" and saves —
-    /// the only thing that ever mutates a note's text from a suggestion,
-    /// and only on this explicit click. Re-resolves the note fresh from
-    /// the store rather than trusting a captured copy, since the
-    /// suggestion could be a little stale (a background recompute racing
-    /// a fast edit) — if the exact substring's moved or changed underneath
-    /// it, this just quietly does nothing rather than corrupting the text.
+    /// Asks the main editor to wrap the suggested occurrence in "[[...]]" —
+    /// routed through the same notification-command pattern as Insert Image
+    /// rather than editing a store copy here. The store-copy approach raced
+    /// the editor: with unsaved edits in flight, the editor refused to adopt
+    /// the store's rewritten content and its next debounced save silently
+    /// overwrote it — clicking "Link" did nothing. The editor applies the
+    /// wrap to its live text instead, so it lands regardless of save timing
+    /// (and re-validates the occurrence itself if typing has moved it).
     func acceptSuggestedLink(_ suggestion: SuggestedLink) {
-        guard let noteID = selectedID, var note = store.notes.first(where: { $0.id == noteID }) else { return }
-        let nsContent = note.content as NSString
-        guard suggestion.range.location + suggestion.range.length <= nsContent.length else { return }
-        let occurrence = nsContent.substring(with: suggestion.range)
-        guard occurrence.caseInsensitiveCompare(suggestion.title) == .orderedSame else { return }
-        note.content = nsContent.replacingCharacters(in: suggestion.range, with: "[[\(occurrence)]]")
-        store.save(note)
+        guard let noteID = selectedID else { return }
+        NotificationCenter.default.post(
+            name: .acceptSuggestedLinkRequested,
+            object: noteID,
+            userInfo: [
+                "title": suggestion.title,
+                "location": suggestion.range.location,
+                "length": suggestion.range.length
+            ]
+        )
     }
 
     // Split out of `body` — the full modifier chain in one expression (this

@@ -42,7 +42,32 @@ public struct NoteTemplate: Identifiable, Hashable, Sendable {
 
 @MainActor
 public final class NoteStore: ObservableObject {
-    @Published public private(set) var notes: [Note] = []
+    @Published public private(set) var notes: [Note] = [] {
+        didSet { notesGeneration &+= 1 }
+    }
+
+    /// Lazily-rebuilt id → array-position index behind `note(withID:)`.
+    /// Entries self-validate on lookup (`notes[i].id == id`), so in-place
+    /// content mutations never invalidate anything; the generation counter
+    /// exists only to bound rebuilds to one per actual `notes` change even
+    /// when the looked-up id genuinely doesn't exist.
+    private var idIndex: [String: Int] = [:]
+    private var idIndexGeneration = -1
+    private var notesGeneration = 0
+
+    /// O(1) note lookup by id. The linear `notes.first { $0.id == id }`
+    /// scan this replaces was fine per action, but the editor resolves its
+    /// note on every keystroke-triggered render — at 15k notes of long
+    /// shared-prefix path ids, that's real per-keystroke work.
+    public func note(withID id: String) -> Note? {
+        if let i = idIndex[id], i < notes.count, notes[i].id == id { return notes[i] }
+        guard idIndexGeneration != notesGeneration else { return nil }
+        idIndex = Dictionary(minimumCapacity: notes.count)
+        for (i, n) in notes.enumerated() where idIndex[n.id] == nil { idIndex[n.id] = i }
+        idIndexGeneration = notesGeneration
+        guard let i = idIndex[id] else { return nil }
+        return notes[i]
+    }
     /// The Index — the one folder Envy reads and watches. Singular by
     /// design: Envy used to support several folders merged into one list,
     /// but that flexibility mostly bought confusion (which folder does a
@@ -453,6 +478,11 @@ public final class NoteStore: ObservableObject {
             return nil
         }
         notes.removeAll { $0.id == note.id }
+        // If an edit was in flight (debounced save scheduled against the old
+        // id), let it land in the template file instead of resurrecting the
+        // note at its old path — the words the user just typed go where the
+        // note went.
+        recordFileRelocation(from: note.id, to: newURL)
         return NoteTemplate(id: newURL.path, name: newURL.deletingPathExtension().lastPathComponent, url: newURL)
     }
 
@@ -494,11 +524,63 @@ public final class NoteStore: ObservableObject {
             .replacingOccurrences(of: "{{title}}", with: title)
     }
 
+    /// oldID → newID for id-changing ops (rename, move, inbox submit), and
+    /// oldID → file URL for ops that take the note out of `notes` entirely but
+    /// keep its file (convert-to-template, delete-to-trash). A debounced save
+    /// is scheduled against the note's identity at typing time; by the time it
+    /// fires 400ms later, one of those ops may have moved the note out from
+    /// under it — these maps let save(_:) land the content on the note's
+    /// current identity instead of resurrecting a file at the stale old path.
+    private var renamedIDs: [String: String] = [:]
+    private var relocatedFiles: [String: URL] = [:]
+
+    private func recordIDChange(from oldID: String, to newID: String) {
+        // Crude but safe growth cap — a forgotten mapping means an orphaned
+        // save is skipped (harmless), never a resurrection.
+        if renamedIDs.count > 512 { renamedIDs.removeAll() }
+        renamedIDs[oldID] = newID
+    }
+
+    private func recordFileRelocation(from oldID: String, to url: URL) {
+        if relocatedFiles.count > 512 { relocatedFiles.removeAll() }
+        relocatedFiles[oldID] = url
+    }
+
+    /// Follows rename chains (A→B→C) to the id's current home, if it still
+    /// exists in `notes`.
+    private func currentID(for id: String) -> String? {
+        var current = id
+        var hops = 0
+        while let next = renamedIDs[current], hops < 16 {
+            current = next
+            hops += 1
+        }
+        return note(withID: current) != nil ? current : nil
+    }
+
     public func save(_ note: Note) {
+        var target = note
+        if self.note(withID: note.id) == nil {
+            // The id this save was scheduled against no longer exists — the
+            // note was renamed/moved (follow it there), converted or trashed
+            // (write into the relocated file so the words survive), or is
+            // gone entirely (skip: writing to the stale path would resurrect
+            // a file the user just deliberately made not-exist).
+            if let liveID = currentID(for: note.id), let current = self.note(withID: liveID) {
+                target = Note(id: current.id, url: current.url, content: note.content, modifiedDate: current.modifiedDate)
+            } else if let relocated = relocatedFiles[note.id],
+                      FileManager.default.fileExists(atPath: relocated.path) {
+                markInternalWrite()
+                try? note.content.write(to: relocated, atomically: true, encoding: .utf8)
+                return
+            } else {
+                return
+            }
+        }
         markInternalWrite()
-        try? note.content.write(to: note.url, atomically: true, encoding: .utf8)
-        if let idx = notes.firstIndex(where: { $0.id == note.id }) {
-            notes[idx].content = note.content
+        try? target.content.write(to: target.url, atomically: true, encoding: .utf8)
+        if let idx = notes.firstIndex(where: { $0.id == target.id }) {
+            notes[idx].content = target.content
             notes[idx].modifiedDate = Date()
         }
     }
@@ -682,9 +764,11 @@ public final class NoteStore: ObservableObject {
 
     /// Moves a note into `subfolder` (a path relative to the Index root), or to
     /// the Index root when `subfolder` is nil/empty. Creates the destination on
-    /// demand. The title is unchanged, so wiki-links pointing at it still
-    /// resolve — this only changes which folder the file sits in. Returns the
-    /// note at its new location, or nil if the move failed or it's already there.
+    /// demand. The title is always unchanged — a move that would collide with a
+    /// same-named note in the destination is refused (returns nil) rather than
+    /// silently de-dupped to "Foo (2)", so wiki-links pointing at either note
+    /// keep resolving to what they meant. Returns the note at its new location,
+    /// or nil if the move failed.
     @discardableResult
     public func moveNote(_ note: Note, toSubfolder subfolder: String?) -> Note? {
         let trimmed = subfolder?.trimmingCharacters(in: CharacterSet(charactersIn: "/ ")) ?? ""
@@ -700,11 +784,19 @@ public final class NoteStore: ObservableObject {
         markInternalWrite()
         try? FileManager.default.createDirectory(at: targetDir, withIntermediateDirectories: true)
         let destination = Self.availableURL(for: note.title, in: targetDir)
+        // availableURL de-dups a filename collision to "Foo (2)" — but for a
+        // *move* that's a silent title change: half the vault's [[Foo]] links
+        // would start resolving to whichever Foo remained, with no way to know
+        // which note each link actually meant. Refusing the move keeps every
+        // link intact and the doc promise above true; the note simply stays
+        // where it was, same as any other failed move.
+        guard destination.deletingPathExtension().lastPathComponent == note.title else { return nil }
         guard (try? FileManager.default.moveItem(at: note.url, to: destination)) != nil else { return nil }
         let moved = Note(id: destination.path, url: destination, content: note.content, modifiedDate: note.modifiedDate)
         if let index = notes.firstIndex(where: { $0.id == note.id }) {
             notes[index] = moved
         }
+        recordIDChange(from: note.id, to: moved.id)
         return moved
     }
 
@@ -770,7 +862,49 @@ public final class NoteStore: ObservableObject {
         let finalName = Self.availableAttachmentName(newName, in: dir)
         guard finalName != oldName else { return oldName }
         guard (try? FileManager.default.moveItem(at: source, to: dir.appendingPathComponent(finalName))) != nil else { return nil }
+        // The same image can be embedded in any number of notes — rewriting
+        // only the note the rename was invoked from (which the editor does to
+        // its own live text) would leave every other referrer with a permanent
+        // missing-image placeholder.
+        updateAttachmentReferences(from: oldName, to: finalName)
         return finalName
+    }
+
+    /// After an attachment rename, rewrite every `![[old.png]]` (including
+    /// `![[old.png|300]]` / `![[old.png|300|caption]]` — the size/caption
+    /// suffix survives via group 2) across the vault. Mirrors
+    /// updateWikiLinkReferences: candidates come from the wikiLinks cache, and
+    /// a reference-only rewrite keeps each note's modified date so renaming a
+    /// picture doesn't shove its referrers to the top of a date-sorted list.
+    private func updateAttachmentReferences(from oldName: String, to newName: String) {
+        guard oldName.caseInsensitiveCompare(newName) != .orderedSame else { return }
+        let oldLower = oldName.lowercased()
+        let escaped = NSRegularExpression.escapedPattern(for: oldName)
+        guard let regex = try? NSRegularExpression(
+            pattern: "!\\[\\[[ \\t]*\(escaped)[ \\t]*(\\|[^\\[\\]]*)?\\]\\]",
+            options: [.caseInsensitive]
+        ) else { return }
+        let template = "![[" + NSRegularExpression.escapedTemplate(for: newName) + "$1]]"
+
+        for idx in notes.indices where notes[idx].wikiLinks.contains(oldLower) {
+            let content = notes[idx].content
+            let updated = regex.stringByReplacingMatches(
+                in: content,
+                range: NSRange(location: 0, length: (content as NSString).length),
+                withTemplate: template
+            )
+            guard updated != content else { continue }
+            let url = notes[idx].url
+            let originalDate = notes[idx].modifiedDate
+            markInternalWrite()
+            do {
+                try updated.write(to: url, atomically: true, encoding: .utf8)
+            } catch {
+                continue
+            }
+            try? FileManager.default.setAttributes([.modificationDate: originalDate], ofItemAtPath: url.path)
+            notes[idx].content = updated
+        }
     }
 
     /// Every image in the `.attachments` folder, newest first — for the
@@ -814,12 +948,16 @@ public final class NoteStore: ObservableObject {
     public func submitFromInbox(_ note: Note) -> Note? {
         guard isInboxNote(note) else { return nil }
         markInternalWrite()
+        // Same collision refusal as moveNote — a de-dup here is a silent title
+        // change that scrambles which note the vault's [[links]] resolve to.
         let destination = Self.availableURL(for: note.title, in: noteDirectory)
+        guard destination.deletingPathExtension().lastPathComponent == note.title else { return nil }
         guard (try? FileManager.default.moveItem(at: note.url, to: destination)) != nil else { return nil }
         let moved = Note(id: destination.path, url: destination, content: note.content, modifiedDate: note.modifiedDate)
         if let index = notes.firstIndex(where: { $0.id == note.id }) {
             notes[index] = moved
         }
+        recordIDChange(from: note.id, to: moved.id)
         return moved
     }
 
@@ -1009,8 +1147,16 @@ public final class NoteStore: ObservableObject {
             }
         }
         lastDeleted = trashed
-        let deletedIDs = Set(notesToDelete.map(\.id))
+        // Only the notes whose move actually succeeded leave the list — a note
+        // whose trash move threw is still sitting on disk, and dropping it
+        // from the UI anyway would make it vanish until the next full reload.
+        let deletedIDs = Set(trashed.map(\.note.id))
         notes.removeAll { deletedIDs.contains($0.id) }
+        for entry in trashed {
+            // A pending debounced save follows the note into .trash, so words
+            // typed just before the delete survive a restore.
+            recordFileRelocation(from: entry.note.id, to: entry.trashedURL)
+        }
         let newlyTrashed = trashed.map { Note(id: $0.trashedURL.path, url: $0.trashedURL, content: $0.note.content, modifiedDate: $0.note.modifiedDate) }
         trashedNotes = (trashedNotes + newlyTrashed).sorted { $0.modifiedDate > $1.modifiedDate }
     }
@@ -1132,6 +1278,7 @@ public final class NoteStore: ObservableObject {
         if let idx = notes.firstIndex(where: { $0.id == note.id }) {
             notes[idx] = renamed
         }
+        recordIDChange(from: note.id, to: renamed.id)
         updateWikiLinkReferences(from: note.title, to: renamed.title)
         return renamed
     }

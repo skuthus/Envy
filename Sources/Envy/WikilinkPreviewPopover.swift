@@ -93,9 +93,14 @@ struct WikilinkPreviewContentView: View {
     @State private var content: String
     @State private var saveTask: Task<Void, Never>?
     @State private var lastSyncedContent: String
+    /// Bumped when the store's copy is adopted into `content` (on this
+    /// window becoming key), so the peek's MarkdownTextView actually swaps
+    /// its NSTextView text — without the token, `content` is treated as an
+    /// echo of typing and never pushed back into the view.
+    @State private var reloadToken = 0
 
     private var note: Note? {
-        store.notes.first { $0.id == noteID }
+        store.note(withID: noteID)
     }
 
     init(
@@ -235,7 +240,8 @@ struct WikilinkPreviewContentView: View {
                 // same "is this note open elsewhere" context too.
                 store: store,
                 currentNoteID: noteID,
-                noteTitles: noteTitles
+                noteTitles: noteTitles,
+                externalReloadToken: reloadToken
             )
         }
         // Fills the panel rather than pinning a fixed size, so the content
@@ -253,6 +259,35 @@ struct WikilinkPreviewContentView: View {
         .onChange(of: content) { _, newValue in
             guard isEditable, newValue != lastSyncedContent else { return }
             scheduleSave(newValue)
+        }
+        // Two-way sync with any other surface showing this note (the main
+        // editor, most importantly — a pop-out of the open note is allowed).
+        // This view deliberately doesn't observe the store, so its content
+        // goes stale whenever the note is edited elsewhere; adopting the
+        // store's copy on focus, paired with the blur-flush below (and the
+        // main editor's own), means whichever surface you type in always
+        // starts from the other's latest words instead of overwriting them.
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { notification in
+            guard let hostWindow, (notification.object as? NSWindow) === hostWindow else { return }
+            guard content == lastSyncedContent,
+                  let fresh = note?.content, fresh != content else { return }
+            content = fresh
+            lastSyncedContent = fresh
+            reloadToken += 1
+        }
+        // Commit in-flight edits the moment this window stops being key, so
+        // the 400ms debounce can never straddle a focus change into another
+        // editor showing the same note.
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didResignKeyNotification)) { notification in
+            guard let hostWindow, (notification.object as? NSWindow) === hostWindow else { return }
+            guard isEditable, content != lastSyncedContent else { return }
+            saveTask?.cancel()
+            saveTask = nil
+            guard let note else { return }
+            var updated = note
+            updated.content = content
+            store.save(updated)
+            lastSyncedContent = content
         }
     }
 
@@ -411,9 +446,12 @@ final class WikilinkPreviewController: NSObject {
     /// close button), so any number can sit open at once while the peek slot is
     /// free for the next Option-click. Held only to close them on app-switch.
     private var pinnedPanels: [PreviewPanel] = []
-    private var mouseMonitor: Any?
-    private var keyMonitor: Any?
-    private var resignActiveObserver: NSObjectProtocol?
+    // nonisolated(unsafe) so deinit (nonisolated) can read them for cleanup —
+    // same pattern as MarkdownTextView.Coordinator's observers. Only ever
+    // written on the main actor.
+    nonisolated(unsafe) private var mouseMonitor: Any?
+    nonisolated(unsafe) private var keyMonitor: Any?
+    nonisolated(unsafe) private var resignActiveObserver: NSObjectProtocol?
 
     /// The previewed anchor's own view/title, captured at show time — used
     /// by the mouse monitor below to recognize "this outside click landed
@@ -629,6 +667,27 @@ final class WikilinkPreviewController: NSObject {
         mouseMonitor = nil
         keyMonitor = nil
         resignActiveObserver = nil
+    }
+
+    /// Backstop for the one teardown path removeMonitors can't cover: the
+    /// owning Coordinator (and this controller with it) being deallocated
+    /// while a transient peek is still up — none of outside-click / Escape /
+    /// resign-active fired, so the app-global event monitors would otherwise
+    /// live forever. Deallocation happens on the main thread in practice
+    /// (SwiftUI view teardown), which is what the monitors require.
+    deinit {
+        let monitors = [mouseMonitor, keyMonitor].compactMap { $0 }
+        if let resignActiveObserver { NotificationCenter.default.removeObserver(resignActiveObserver) }
+        guard !monitors.isEmpty else { return }
+        if Thread.isMainThread {
+            MainActor.assumeIsolated {
+                for monitor in monitors { NSEvent.removeMonitor(monitor) }
+            }
+        } else {
+            DispatchQueue.main.async { [monitors] in
+                for monitor in monitors { NSEvent.removeMonitor(monitor) }
+            }
+        }
     }
 
     /// A click inside the panel itself needs to reach it normally (clicking

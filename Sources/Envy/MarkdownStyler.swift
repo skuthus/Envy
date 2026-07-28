@@ -233,6 +233,30 @@ enum MarkdownStyler {
     /// match on every keystroke of the title, long before the user's
     /// actually named a real note) this must return nothing, or style()
     /// would reserve a large block of blank space under half-typed text.
+    /// The lowercased whole-vault title Set that embedRanges and
+    /// embedRoomInsertion test membership against, memoized on the titles
+    /// array itself. Rebuilding it inline was ~15k trim+lowercase+hash
+    /// allocations on the main thread, and in a note containing a `![[...]]`
+    /// embed that ran from three call sites on every keystroke. The `==`
+    /// comparison is O(1) in the steady state — the caller passes the same
+    /// cached array instance until the vault actually changes, and Array's
+    /// `==` short-circuits on shared storage. When a rebuilt-but-equal array
+    /// arrives, adopting it into the memo restores the identity fast path.
+    private static let titleSetLock = NSLock()
+    nonisolated(unsafe) private static var titleSetMemo: (titles: [String], set: Set<String>) = ([], [])
+
+    private static func lowercasedTitleSet(for titles: [String]) -> Set<String> {
+        titleSetLock.lock()
+        defer { titleSetLock.unlock() }
+        if titles == titleSetMemo.titles {
+            titleSetMemo.titles = titles
+            return titleSetMemo.set
+        }
+        let set = Set(titles.map { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() })
+        titleSetMemo = (titles, set)
+        return set
+    }
+
     static func embedRanges(in text: String, noteTitles: [String]) -> [(markerRange: NSRange, spacerRange: NSRange, title: String)] {
         let nsText = text as NSString
         // Cheap reject before the regex: a substring search for the marker is
@@ -254,7 +278,7 @@ enum MarkdownStyler {
         // O(all-titles) build, twice per selection (style + overlay pass).
         let noteCandidates = candidates.filter { !imageExtensions.contains(($0.title as NSString).pathExtension.lowercased()) }
         guard !noteCandidates.isEmpty else { return [] }
-        let existingTitles = Set(noteTitles.map { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() })
+        let existingTitles = lowercasedTitleSet(for: noteTitles)
 
         return noteCandidates.compactMap { candidate in
             guard existingTitles.contains(candidate.title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()) else { return nil }
@@ -297,7 +321,7 @@ enum MarkdownStyler {
             return !imageExtensions.contains((target as NSString).pathExtension.lowercased())
         }
         guard !matches.isEmpty else { return nil }
-        let existingTitles = Set(noteTitles.map { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() })
+        let existingTitles = lowercasedTitleSet(for: noteTitles)
         for match in matches {
             let title = WikiLink.parse(nsText.substring(with: match.range(at: 1))).target.lowercased()
             guard existingTitles.contains(title) else { continue }

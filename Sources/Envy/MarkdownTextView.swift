@@ -769,16 +769,17 @@ struct MarkdownTextView: NSViewRepresentable {
         textView.window?.firstResponder === textView ? textView.selectedRange() : nil
     }
 
-    // Note switches are handled by giving NoteEditorView a `.id(noteID)` in
-    // ContentView, which tears down and recreates this whole view (and its
-    // Coordinator/NSTextView) per note via makeNSView — so this never needs to
-    // reconcile `text` against a different note's content. It only ever needs
-    // to react to theme/search-query changes for the note already showing,
-    // and it restyles using the view's own live content rather than `text`,
-    // since `text` is just an echo of the last edit and can lag textView.string
-    // by a render cycle mid-typing. Comparing/pushing from `text` here was the
-    // previous bug: a stale value could overwrite what was just typed, which
-    // is what caused headings to flicker between their styled and plain form.
+    // Note switches REUSE this view (NoteEditorView is no longer .id-keyed per
+    // note — recreating the whole NSTextView per click flashed the editor
+    // blank): NoteEditorView.switchNote loads the new note's content and bumps
+    // externalReloadToken, and the token branch below — seeing currentNoteID
+    // differ from the coordinator's lastNoteID — replaces the text and resets
+    // undo/scroll/selection in place. Outside that explicit token handshake,
+    // this still never reconciles `text` against textView.string: `text` is
+    // just an echo of the last edit and can lag textView.string by a render
+    // cycle mid-typing. Comparing/pushing from `text` here was the previous
+    // bug: a stale value could overwrite what was just typed, which is what
+    // caused headings to flicker between their styled and plain form.
     func updateNSView(_ scrollView: NSScrollView, context: Context) {
         context.coordinator.parent = self
         guard let textView = context.coordinator.textView else { return }
@@ -1032,6 +1033,7 @@ struct MarkdownTextView: NSViewRepresentable {
         nonisolated(unsafe) private var italicObserver: NSObjectProtocol?
         nonisolated(unsafe) private var extractObserver: NSObjectProtocol?
         nonisolated(unsafe) private var insertImageObserver: NSObjectProtocol?
+        nonisolated(unsafe) private var acceptLinkObserver: NSObjectProtocol?
         // Registered once the text view exists, in makeNSView below.
         nonisolated(unsafe) var frameObserver: NSObjectProtocol?
 
@@ -1097,6 +1099,25 @@ struct MarkdownTextView: NSViewRepresentable {
                     self.presentImagePicker()
                 }
             }
+            acceptLinkObserver = NotificationCenter.default.addObserver(forName: .acceptSuggestedLinkRequested, object: nil, queue: .main) { [weak self] notification in
+                // Sendable values pulled out before the actor hop —
+                // Notification itself can't cross into assumeIsolated.
+                guard let noteID = notification.object as? String,
+                      let title = notification.userInfo?["title"] as? String,
+                      let location = notification.userInfo?["location"] as? Int,
+                      let length = notification.userInfo?["length"] as? Int
+                else { return }
+                MainActor.assumeIsolated {
+                    // Main editor only — it's the one surface with an
+                    // onExtractSelection handler, which disambiguates it from a
+                    // peek/pop-out that may be showing the very same note.
+                    guard let self,
+                          self.parent.onExtractSelection != nil,
+                          self.parent.currentNoteID == noteID
+                    else { return }
+                    self.acceptSuggestedLink(title: title, hintRange: NSRange(location: location, length: length))
+                }
+            }
         }
 
         deinit {
@@ -1104,6 +1125,7 @@ struct MarkdownTextView: NSViewRepresentable {
             if let italicObserver { NotificationCenter.default.removeObserver(italicObserver) }
             if let extractObserver { NotificationCenter.default.removeObserver(extractObserver) }
             if let insertImageObserver { NotificationCenter.default.removeObserver(insertImageObserver) }
+            if let acceptLinkObserver { NotificationCenter.default.removeObserver(acceptLinkObserver) }
             if let frameObserver { NotificationCenter.default.removeObserver(frameObserver) }
         }
 
@@ -2670,6 +2692,48 @@ struct MarkdownTextView: NSViewRepresentable {
             // Cursor lands after the link, where writing would naturally carry
             // on, rather than leaving the whole link selected.
             textView.setSelectedRange(NSRange(location: selRange.location + (link as NSString).length, length: 0))
+        }
+
+        /// Wraps a suggested link's occurrence in "[[...]]" directly in the
+        /// live text, going through the same shouldChangeText/didChangeText
+        /// pipeline as every other programmatic edit so undo and the normal
+        /// save path both apply. `hintRange` is where the background interlink
+        /// pass found the occurrence — trusted only if the text there still
+        /// matches (the user may have typed since); otherwise the first
+        /// not-yet-bracketed occurrence is used, and if none is found the
+        /// click quietly does nothing rather than corrupting text.
+        private func acceptSuggestedLink(title: String, hintRange: NSRange) {
+            guard let textView else { return }
+            let nsText = textView.string as NSString
+
+            var target: NSRange?
+            if hintRange.location + hintRange.length <= nsText.length,
+               nsText.substring(with: hintRange).caseInsensitiveCompare(title) == .orderedSame {
+                target = hintRange
+            } else {
+                var search = NSRange(location: 0, length: nsText.length)
+                while search.length > 0 {
+                    let found = nsText.range(of: title, options: [.caseInsensitive], range: search)
+                    guard found.location != NSNotFound else { break }
+                    let beforeOK = found.location < 2
+                        || nsText.substring(with: NSRange(location: found.location - 2, length: 2)) != "[["
+                    let afterStart = found.location + found.length
+                    let afterOK = afterStart + 2 > nsText.length
+                        || nsText.substring(with: NSRange(location: afterStart, length: 2)) != "]]"
+                    if beforeOK && afterOK {
+                        target = found
+                        break
+                    }
+                    search = NSRange(location: afterStart, length: nsText.length - afterStart)
+                }
+            }
+            guard let target else { return }
+
+            let occurrence = nsText.substring(with: target)
+            let wrapped = "[[\(occurrence)]]"
+            guard textView.shouldChangeText(in: target, replacementString: wrapped) else { return }
+            textView.textStorage?.replaceCharacters(in: target, with: wrapped)
+            textView.didChangeText()
         }
 
         private func toggleBold() {

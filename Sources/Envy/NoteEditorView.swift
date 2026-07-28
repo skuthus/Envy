@@ -75,7 +75,10 @@ struct NoteEditorView: View {
     @State private var contentWatchNoteID: String
 
     private var note: Note? {
-        store.notes.first { $0.id == noteID }
+        // O(1) via the store's id index — this resolves on every
+        // keystroke-triggered render, where the old linear scan over the
+        // whole vault was real per-keystroke work at 15k notes.
+        store.note(withID: noteID)
     }
 
     init(
@@ -125,7 +128,7 @@ struct NoteEditorView: View {
         // evaluation (and thus after MarkdownTextView's makeNSView already
         // read the default ""), so anything set in .onAppear would arrive
         // too late for the text view to ever pick up.
-        let initialNote = store.notes.first { $0.id == noteID }
+        let initialNote = store.note(withID: noteID)
         _content = State(initialValue: initialNote?.content ?? "")
         _lastSyncedContent = State(initialValue: initialNote?.content ?? "")
         _titleText = State(initialValue: initialNote?.title ?? "")
@@ -238,6 +241,23 @@ struct NoteEditorView: View {
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             guard pendingHighlightRange != nil else { return }
             fireHighlight()
+        }
+        // Flush in-flight edits the moment focus moves to another window (a
+        // pop-out, another app). An early save is always safe, and it's what
+        // makes two surfaces on the same note converge instead of racing:
+        // whichever editor you leave commits before the one you enter can
+        // save over it — the 400ms debounce can no longer straddle a focus
+        // change. Fires for any window's resign (cheap dirty-check guard)
+        // rather than trying to identify "our" window from SwiftUI.
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didResignKeyNotification)) { _ in
+            flushIfDirty()
+        }
+        // The editor leaves the hierarchy without a note switch when the
+        // selection drops to nil (delete, convert-to-template, trash/template
+        // browsing) — without this, the still-scheduled debounced save was
+        // orphaned and fired later against the old path.
+        .onDisappear {
+            flushPendingSave(forNoteID: noteID)
         }
     }
 
@@ -378,7 +398,7 @@ struct NoteEditorView: View {
     /// deliberate switch, not an external edit to flag.
     private func switchNote(from oldID: String, to newID: String) {
         flushPendingSave(forNoteID: oldID)
-        let newNote = store.notes.first { $0.id == newID }
+        let newNote = store.note(withID: newID)
         let newContent = newNote?.content ?? ""
         statsTask?.cancel()
         isEditingTitle = false
@@ -402,11 +422,33 @@ struct NoteEditorView: View {
     private func flushPendingSave(forNoteID id: String) {
         saveTask?.cancel()
         saveTask = nil
-        guard let leaving = store.notes.first(where: { $0.id == id }),
-              content != leaving.content else { return }
-        var updated = leaving
+        if let leaving = store.note(withID: id) {
+            guard content != leaving.content else { return }
+            var updated = leaving
+            updated.content = content
+            store.save(updated)
+        } else if content != lastSyncedContent {
+            // The id vanished before this flush ran — the note was renamed,
+            // moved, or converted out from under an in-flight edit. Hand the
+            // content to the store anyway: save(_:) follows the store's
+            // id-change trail to the note's new identity (or its relocated
+            // file), and safely drops it only if the note is truly gone.
+            store.save(Note(id: id, url: URL(fileURLWithPath: id), content: content, modifiedDate: Date()))
+        }
+    }
+
+    /// Immediate save of any unsaved edits to the note currently showing —
+    /// used on window-blur, where (unlike flushPendingSave) the editor keeps
+    /// showing the same note afterwards, so lastSyncedContent must be updated
+    /// here the same way the debounced task would have.
+    private func flushIfDirty() {
+        guard let note, content != note.content else { return }
+        saveTask?.cancel()
+        saveTask = nil
+        var updated = note
         updated.content = content
         store.save(updated)
+        lastSyncedContent = content
     }
 
     private func scheduleSave(_ newValue: String) {

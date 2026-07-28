@@ -10,7 +10,7 @@ extension ContentView {
     /// The selected note, when it's a fleeting one — drives the two review
     /// buttons in the title bar and nothing else.
     private var fleetingNote: Note? {
-        guard let selectedID, let note = store.notes.first(where: { $0.id == selectedID }),
+        guard let selectedID, let note = store.note(withID: selectedID),
               store.isInboxNote(note) else { return nil }
         return note
     }
@@ -55,7 +55,7 @@ extension ContentView {
                 } else if isTrashQuery {
                     trashPreviewPane
 
-                } else if let selectedID, store.notes.contains(where: { $0.id == selectedID }) {
+                } else if let selectedID, store.note(withID: selectedID) != nil {
                     // Resolved once per render — the computed property is an
                     // O(notes) scan, and the two closure parameters below
                     // would otherwise each run it fresh in the same body pass

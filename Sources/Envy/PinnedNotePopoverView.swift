@@ -248,6 +248,16 @@ struct PinnedNotePopoverView: View {
             titleText = currentTitle
             return
         }
+        // Flush any in-flight debounced save to the CURRENT path before the
+        // file moves — the scheduled task captured this `url` at typing time,
+        // and firing after the rename would recreate the old filename on disk
+        // (with the just-typed content) right next to the renamed file.
+        saveTask?.cancel()
+        saveTask = nil
+        if content != lastSyncedContent {
+            try? content.write(to: url, atomically: true, encoding: .utf8)
+            lastSyncedContent = content
+        }
         let scratchStore = NoteStore(directory: url.deletingLastPathComponent())
         let note = Note(id: url.path, url: url, content: content, modifiedDate: Date())
         let renamed = scratchStore.rename(note, to: trimmed)

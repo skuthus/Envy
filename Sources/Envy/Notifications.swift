@@ -10,6 +10,13 @@ extension Notification.Name {
     static let zoomOutRequested = Notification.Name("zoomOutRequested")
     static let zoomResetRequested = Notification.Name("zoomResetRequested")
     static let boldSelectionRequested = Notification.Name("boldSelectionRequested")
+    /// Posted by the Interlinks panel's "Suggested" click; handled by the main
+    /// editor's coordinator, which wraps the occurrence in the live NSTextView
+    /// text. object = the note id; userInfo carries title + range. Editing the
+    /// live text (rather than a store copy) is what makes the wrap survive
+    /// unsaved edits sitting in the editor — a store-copy save raced the
+    /// editor's own debounced save and silently lost to it.
+    static let acceptSuggestedLinkRequested = Notification.Name("acceptSuggestedLinkRequested")
     static let italicSelectionRequested = Notification.Name("italicSelectionRequested")
     static let extractToNoteRequested = Notification.Name("extractToNoteRequested")
     static let insertImageRequested = Notification.Name("insertImageRequested")
