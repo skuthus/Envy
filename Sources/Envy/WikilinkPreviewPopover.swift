@@ -21,6 +21,40 @@ struct WikilinkAnchorProbe: NSViewRepresentable {
     func updateNSView(_ nsView: NSView, context: Context) {}
 }
 
+/// Reports the NSWindow a SwiftUI view ends up hosted in, once AppKit has
+/// inserted it — lets the preview's pin button close its own floating window via
+/// performClose (which works even when the window isn't key). Resolves exactly
+/// once, in a stored coordinator, so it never re-fires on later SwiftUI updates:
+/// pushing the window back into @State on every update (NSWindow isn't
+/// Equatable, so SwiftUI can't dedupe it) spins a re-render loop — one per
+/// pinned note, each doing O(notes) work — which is what made the list crawl.
+private struct WindowAccessor: NSViewRepresentable {
+    let onResolve: (NSWindow) -> Void
+
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView()
+        DispatchQueue.main.async {
+            guard !context.coordinator.resolved, let window = view.window else { return }
+            context.coordinator.resolved = true
+            onResolve(window)
+        }
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        guard !context.coordinator.resolved else { return }
+        DispatchQueue.main.async {
+            guard !context.coordinator.resolved, let window = nsView.window else { return }
+            context.coordinator.resolved = true
+            onResolve(window)
+        }
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
+    final class Coordinator { var resolved = false }
+}
+
 /// The content of the option-click preview popover: a title header plus
 /// the linked note's body, reusing MarkdownTextView directly rather than a
 /// separate read-only renderer — the same view just starts non-editable (a
@@ -32,7 +66,13 @@ struct WikilinkAnchorProbe: NSViewRepresentable {
 /// already alive, so there's no "second ongoing instance watching the same
 /// folder" concern to avoid here).
 struct WikilinkPreviewContentView: View {
-    @ObservedObject var store: NoteStore
+    // Deliberately NOT @ObservedObject: a peek shows one fixed note and doesn't
+    // need to redraw on every unrelated store mutation. Observing the whole
+    // store meant each open peek re-rendered on every autosave/reload across the
+    // vault — with several pinned, that fan-out (each doing an O(notes) lookup)
+    // is what made the app drag. It's still used for the note lookup and saving;
+    // the view just drives its own redraws from local @State.
+    var store: NoteStore
     let noteID: String
     var theme: Theme
     var requireModifierForLinkClick: Bool
@@ -45,8 +85,11 @@ struct WikilinkPreviewContentView: View {
     var noteTitles: [String]
     var onNavigate: (String) -> Void
     var onEditableActivated: () -> Void
+    var onPin: () -> Void
 
     @State private var isEditable: Bool
+    @State private var isPinned = false
+    @State private var hostWindow: NSWindow?
     @State private var content: String
     @State private var saveTask: Task<Void, Never>?
     @State private var lastSyncedContent: String
@@ -64,7 +107,8 @@ struct WikilinkPreviewContentView: View {
         showTagsInTitleBar: Bool,
         noteTitles: [String],
         onNavigate: @escaping (String) -> Void,
-        onEditableActivated: @escaping () -> Void
+        onEditableActivated: @escaping () -> Void,
+        onPin: @escaping () -> Void
     ) {
         self.store = store
         self.noteID = noteID
@@ -75,6 +119,7 @@ struct WikilinkPreviewContentView: View {
         self.noteTitles = noteTitles
         self.onNavigate = onNavigate
         self.onEditableActivated = onEditableActivated
+        self.onPin = onPin
         let initial = store.notes.first { $0.id == noteID }
         _content = State(initialValue: initial?.content ?? "")
         _lastSyncedContent = State(initialValue: initial?.content ?? "")
@@ -127,6 +172,34 @@ struct WikilinkPreviewContentView: View {
                         .clipShape(Capsule())
                         .layoutPriority(1)
                 }
+                // Pin detaches this peek into its own floating window that stays
+                // open and frees the peek slot, so several can sit open at once;
+                // it fills to show the pinned state. Click it again to close —
+                // routed through the window's own performClose so it works even
+                // when the window isn't key (a plain SwiftUI tap there wouldn't).
+                Button {
+                    if isPinned {
+                        // close(), not performClose(nil): performClose only
+                        // works on a window whose style mask includes
+                        // .closable, which this panel deliberately doesn't
+                        // carry a visible close button for — so it was a silent
+                        // no-op and the note wouldn't unpin. close() shuts the
+                        // window unconditionally and still fires
+                        // willCloseNotification, which is what PinnedPeekManager
+                        // listens for to drop it from its set.
+                        hostWindow?.close()
+                    } else {
+                        isPinned = true
+                        onPin()
+                    }
+                } label: {
+                    Image(systemName: isPinned ? "pin.fill" : "pin")
+                        .font(.caption)
+                        .foregroundStyle(isPinned ? Color.accentColor : Color.secondary)
+                }
+                .buttonStyle(.plain)
+                .help(isPinned ? "Close this floating note" : "Pin as a floating window")
+                .layoutPriority(1)
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
@@ -153,6 +226,7 @@ struct WikilinkPreviewContentView: View {
             )
         }
         .frame(width: 320, height: 240)
+        .background(WindowAccessor { hostWindow = $0 })
         // The panel's real title bar is hidden (titleVisibility = .hidden,
         // transparent) but its .fullSizeContentView style still leaves
         // SwiftUI reserving a title-bar-height safe-area inset at the top —
@@ -197,6 +271,14 @@ private final class PreviewPanel: NSPanel {
     override var canBecomeKey: Bool { true }
 }
 
+/// Delivers the click that re-focuses the panel to the control under it too, so
+/// a pinned peek's pin button (and clicking into its body) works in a single
+/// click even after you've clicked away and the panel is no longer key —
+/// otherwise that first click is swallowed just to re-key the window.
+private final class FirstMouseHostingView<Content: View>: NSHostingView<Content> {
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+}
+
 /// Owns the option-click preview panel's lifecycle. Shows instantly on an
 /// explicit option-click — no dwell delay (there's no passive "sweeping the
 /// mouse across text" case to guard against) and no appear animation.
@@ -235,9 +317,13 @@ private final class PreviewPanel: NSPanel {
 final class WikilinkPreviewController: NSObject {
     private var panel: PreviewPanel?
     private var isEditableActivated = false
+    /// Peeks the user pinned. Each is promoted out of the single hold-to-peek
+    /// `panel` above into its own self-standing floating window (with a native
+    /// close button), so any number can sit open at once while the peek slot is
+    /// free for the next Option-click. Held only to close them on app-switch.
+    private var pinnedPanels: [PreviewPanel] = []
     private var mouseMonitor: Any?
     private var keyMonitor: Any?
-    private var flagsChangedMonitor: Any?
     private var resignActiveObserver: NSObjectProtocol?
 
     /// The previewed anchor's own view/title, captured at show time — used
@@ -371,9 +457,12 @@ final class WikilinkPreviewController: NSObject {
             },
             onEditableActivated: { [weak self] in
                 self?.isEditableActivated = true
+            },
+            onPin: { [weak self] in
+                self?.pinCurrentPeek()
             }
         )
-        panel.contentViewController = NSHostingController(rootView: content)
+        panel.contentView = FirstMouseHostingView(rootView: content)
         panel.setFrame(frame, display: true)
         // makeKeyAndOrderFront, not plain orderFront — a non-key window's
         // first click only activates it rather than registering as a real
@@ -414,6 +503,22 @@ final class WikilinkPreviewController: NSObject {
         return NSRect(origin: origin, size: size)
     }
 
+    /// Promotes the current hold-to-peek into its own free-standing pinned
+    /// window, handed to the app-lifetime PinnedPeekManager so it outlives the
+    /// peek slot being reused (and the editor being torn down on a note switch)
+    /// — which is what lets several sit open at once. The transient monitors go
+    /// with the peek; the pinned window carries a native close button instead.
+    private func pinCurrentPeek() {
+        guard let pinned = panel else { return }
+        panel = nil
+        isEditableActivated = false
+        anchorView = nil
+        previewedTitle = nil
+        shouldNavigateOnOutsideClick = nil
+        removeMonitors()
+        PinnedPeekManager.shared.adopt(pinned)
+    }
+
     private func closePanel() {
         guard let panel, panel.isVisible else { return }
         panel.orderOut(nil)
@@ -433,13 +538,11 @@ final class WikilinkPreviewController: NSObject {
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown]) { [weak self] event in
             self?.handleKeyDown(event) ?? event
         }
-        // .flagsChanged (not .keyUp) is what actually reports a modifier key
-        // going up — this is the "release option, it vanishes instantly"
-        // behavior, so this needs to feel immediate, like letting go of a
-        // key, not like dismissing a window.
-        flagsChangedMonitor = NSEvent.addLocalMonitorForEvents(matching: [.flagsChanged]) { [weak self] event in
-            self?.handleFlagsChanged(event) ?? event
-        }
+        // The peek stays put once shown (dismiss with a click elsewhere, Escape,
+        // or by peeking another link) rather than vanishing the instant Option
+        // is released — that hold-to-peek behavior made pinning a race, since
+        // reaching the pin button almost always meant letting go of Option
+        // first, which closed the note out from under the click.
         resignActiveObserver = NotificationCenter.default.addObserver(
             forName: NSApplication.didResignActiveNotification, object: nil, queue: .main
         ) { [weak self] _ in
@@ -450,22 +553,10 @@ final class WikilinkPreviewController: NSObject {
     private func removeMonitors() {
         if let mouseMonitor { NSEvent.removeMonitor(mouseMonitor) }
         if let keyMonitor { NSEvent.removeMonitor(keyMonitor) }
-        if let flagsChangedMonitor { NSEvent.removeMonitor(flagsChangedMonitor) }
         if let resignActiveObserver { NotificationCenter.default.removeObserver(resignActiveObserver) }
         mouseMonitor = nil
         keyMonitor = nil
-        flagsChangedMonitor = nil
         resignActiveObserver = nil
-    }
-
-    /// Only relevant while still read-only (see the class doc comment on
-    /// why editing suspends this) — closes the instant option is no longer
-    /// held, with no debounce, matching a hold-to-peek gesture rather than
-    /// a click-to-toggle one.
-    private func handleFlagsChanged(_ event: NSEvent) -> NSEvent? {
-        guard !isEditableActivated, panel?.isVisible == true, !event.modifierFlags.contains(.option) else { return event }
-        closePanel()
-        return event
     }
 
     /// A click inside the panel itself needs to reach it normally (clicking
@@ -499,5 +590,70 @@ final class WikilinkPreviewController: NSObject {
         guard let panel, panel.isVisible, event.keyCode == 53 else { return event }
         closePanel()
         return nil
+    }
+}
+
+/// Owns pinned peek windows for the app's lifetime, so they survive the per-note
+/// editor (and its WikilinkPreviewController) being torn down on a note switch,
+/// and any number can sit open at once. Each is dismissed by its own pin button
+/// (which closes the window). Leaving Envy just *hides* them (so a floating card
+/// doesn't hover over other apps); they come back when Envy is active again,
+/// kept as long as you like.
+@MainActor
+final class PinnedPeekManager {
+    static let shared = PinnedPeekManager()
+    private var panels: [PreviewPanel] = []
+    private var resignObserver: NSObjectProtocol?
+    private var activateObserver: NSObjectProtocol?
+    private var closeObserver: NSObjectProtocol?
+
+    fileprivate func adopt(_ panel: PreviewPanel) {
+        panel.isMovableByWindowBackground = true
+        panels.append(panel)
+        installObserversIfNeeded()
+    }
+
+    private func installObserversIfNeeded() {
+        // Drop a window from the set when it actually closes (the pin button
+        // routes through performClose, so this catches every dismissal).
+        if closeObserver == nil {
+            closeObserver = NotificationCenter.default.addObserver(
+                forName: NSWindow.willCloseNotification, object: nil, queue: .main
+            ) { [weak self] note in
+                guard let panel = note.object as? PreviewPanel else { return }
+                let id = ObjectIdentifier(panel)
+                Task { @MainActor in self?.dropPanel(id) }
+            }
+        }
+        // Leaving Envy hides the floating notes rather than closing them, so
+        // they don't hover over other apps; returning brings them back.
+        if resignObserver == nil {
+            resignObserver = NotificationCenter.default.addObserver(
+                forName: NSApplication.didResignActiveNotification, object: nil, queue: .main
+            ) { [weak self] _ in
+                Task { @MainActor in self?.panels.forEach { $0.orderOut(nil) } }
+            }
+        }
+        if activateObserver == nil {
+            activateObserver = NotificationCenter.default.addObserver(
+                forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main
+            ) { [weak self] _ in
+                Task { @MainActor in self?.panels.forEach { $0.orderFront(nil) } }
+            }
+        }
+    }
+
+    private func dropPanel(_ id: ObjectIdentifier) {
+        panels.removeAll { ObjectIdentifier($0) == id }
+        if panels.isEmpty { removeObservers() }
+    }
+
+    private func removeObservers() {
+        for observer in [resignObserver, activateObserver, closeObserver] {
+            if let observer { NotificationCenter.default.removeObserver(observer) }
+        }
+        resignObserver = nil
+        activateObserver = nil
+        closeObserver = nil
     }
 }
