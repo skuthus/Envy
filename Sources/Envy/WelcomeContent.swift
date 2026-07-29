@@ -145,7 +145,7 @@ enum WelcomeContent {
 
     - Fleeting notes live in an `Inbox` folder inside The Index. That's the whole mechanism — an ordinary `.md` file that happens to sit there. Drag one out in Finder and it's filed, exactly as if you'd pressed Submit.
     - They carry a bold amber `!` on the left in the note list, and the count beside the search box says how many are waiting. Click it to review; click it again to come back.
-    - Opening one shows **Submit Note** (files it into The Index) and **Delete Note** in its title bar. Both move you to the next one waiting, so working through a backlog is a run of decisions rather than a series of round trips.
+    - Opening one shows **Submit Note** (files it into The Index — or use the button's menu to file it straight into a folder, colors and all) and **Delete Note** in its title bar. Both move you to the next one waiting, so working through a backlog is a run of decisions rather than a series of round trips.
     - Titling is usually the real work — a capture arrives called "fix the thing", and deciding what it's actually about is most of what reviewing means. Click the title to rename it before you file it.
     - Settings → General → "New notes start in the Inbox" sends everything you write there first, so nothing joins your permanent collection without you deciding it should.
 

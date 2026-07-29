@@ -233,9 +233,9 @@ extension ContentView {
     /// Stays in inbox: browsing afterwards rather than following the note:
     /// review is a run of decisions, and being thrown elsewhere after each
     /// one would break it every time.
-    func submitFromInbox(_ note: Note) {
+    func submitFromInbox(_ note: Note, toSubfolder subfolder: String? = nil) {
         let next = matchingInboxForQuery.first { $0.id != note.id }?.id
-        store.submitFromInbox(note)
+        store.submitFromInbox(note, toSubfolder: subfolder)
         if selectedID == note.id { selectedID = next }
     }
 

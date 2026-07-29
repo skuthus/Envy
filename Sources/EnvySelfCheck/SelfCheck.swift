@@ -1156,6 +1156,38 @@ struct SelfCheck {
                   Set(plain.map(\.title)) == ["Filed thought", "Fleeting one"])
         }
 
+        // submitFromInboxFilesToRootOrStraightIntoAFolder
+        do {
+            let store = await makeTempStore()
+            let inbox = store.noteDirectory.appendingPathComponent(NoteStore.inboxFolderName, isDirectory: true)
+            try? FileManager.default.createDirectory(at: inbox, withIntermediateDirectories: true)
+            try? "a thought".write(to: inbox.appendingPathComponent("Rooted.md"), atomically: true, encoding: .utf8)
+            try? "another".write(to: inbox.appendingPathComponent("Filed Deep.md"), atomically: true, encoding: .utf8)
+            store.reload()
+            await waitForLoad(store)
+
+            if let rooted = store.notes.first(where: { $0.title == "Rooted" }) {
+                let moved = store.submitFromInbox(rooted)
+                check("submit with no folder files to the Index root",
+                      moved != nil && FileManager.default.fileExists(atPath: store.noteDirectory.appendingPathComponent("Rooted.md").path))
+            } else {
+                check("inbox note found for root submit", false)
+            }
+            if let deep = store.notes.first(where: { $0.title == "Filed Deep" }) {
+                let moved = store.submitFromInbox(deep, toSubfolder: "Projects/Work")
+                check("submit straight into a subfolder lands there, creating it on demand",
+                      moved != nil && FileManager.default.fileExists(atPath: store.noteDirectory.appendingPathComponent("Projects/Work/Filed Deep.md").path))
+                check("the submitted note is no longer an inbox note",
+                      moved.map { !store.isInboxNote($0) } ?? false)
+            } else {
+                check("inbox note found for folder submit", false)
+            }
+            if let filed = store.notes.first(where: { $0.title == "Rooted" }) {
+                check("submitFromInbox refuses a non-inbox note",
+                      store.submitFromInbox(filed, toSubfolder: "Projects") == nil)
+            }
+        }
+
         do {
             print("Search operators")
 

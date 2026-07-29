@@ -1031,25 +1031,13 @@ public final class NoteStore: ObservableObject {
     /// `Inbox/`. The note's text is untouched, so nothing about having been
     /// fleeting survives in the file.
     @discardableResult
-    public func submitFromInbox(_ note: Note) -> Note? {
+    public func submitFromInbox(_ note: Note, toSubfolder subfolder: String? = nil) -> Note? {
+        // A thin wrapper now: submit is just "move out of Inbox/" — to the
+        // root by default, or straight into a chosen subfolder — and
+        // moveNote already carries everything submit used to duplicate
+        // (collision refusal, the rename map, sanitization link rewrites).
         guard isInboxNote(note) else { return nil }
-        markInternalWrite()
-        // Same collision refusal as moveNote — a de-dup here is a silent title
-        // change that scrambles which note the vault's [[links]] resolve to.
-        // And the same sanitized-base comparison: a ":" or "/" in the title is
-        // rewritten by the filename, not a collision.
-        let destination = Self.availableURL(for: note.title, in: noteDirectory)
-        guard destination.deletingPathExtension().lastPathComponent == Self.sanitizedBase(for: note.title) else { return nil }
-        guard (try? FileManager.default.moveItem(at: note.url, to: destination)) != nil else { return nil }
-        let moved = Note(id: destination.path, url: destination, content: note.content, modifiedDate: note.modifiedDate)
-        if let index = notes.firstIndex(where: { $0.id == note.id }) {
-            notes[index] = moved
-        }
-        recordIDChange(from: note.id, to: moved.id)
-        if moved.title != note.title {
-            updateWikiLinkReferences(from: note.title, to: moved.title)
-        }
-        return moved
+        return moveNote(note, toSubfolder: subfolder)
     }
 
     /// Renames a loose `.md` file in place. Used by the template and inbox

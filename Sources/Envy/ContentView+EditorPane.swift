@@ -68,8 +68,13 @@ extension ContentView {
                         onNavigate: navigateToNote,
                         onExtractSelection: extractSelectionToNote,
                         onRename: { newTitle in renameSelectedNote(to: newTitle) },
-                        onSubmitFleeting: fleetingNote.map { note in { submitFromInbox(note) } },
+                        onSubmitFleeting: fleetingNote.map { note in { folder in submitFromInbox(note, toSubfolder: folder) } },
                         onDeleteFleeting: fleetingNote.map { note in { deleteFromInbox(note) } },
+                        // Submit's dropdown offers the same folders Move to
+                        // does; empty (a plain button) when subfolder
+                        // scanning is off, since folders don't exist then.
+                        submitFolders: indexIncludeSubfolders ? subfolderCache : [],
+                        submitFolderSwatch: { folderSwatchCache[$0] },
                         onTagSearch: searchByTag,
                         theme: theme,
                         requireModifierForLinkClick: requireModifierForLinkClick,

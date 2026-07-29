@@ -13,8 +13,14 @@ struct NoteEditorView: View {
     /// live in the ordinary title bar rather than a separate pane — a
     /// fleeting note is a normal note in a subfolder, and the buttons are
     /// the one thing that differs.
-    var onSubmitFleeting: (() -> Void)?
+    /// Called with nil to file into the Index root (the plain Submit click),
+    /// or with a subfolder's relative path when picked from Submit's menu.
+    var onSubmitFleeting: ((String?) -> Void)?
     var onDeleteFleeting: (() -> Void)?
+    /// The folders Submit's dropdown offers (empty when subfolder scanning is
+    /// off — the button stays a plain button then) and their menu swatches.
+    var submitFolders: [String] = []
+    var submitFolderSwatch: ((String) -> NSImage?)? = nil
     var onTagSearch: (String) -> Void
     var theme: Theme
     var requireModifierForLinkClick: Bool
@@ -88,8 +94,10 @@ struct NoteEditorView: View {
         onNavigate: @escaping (String) -> Void,
         onExtractSelection: ((String) -> String?)? = nil,
         onRename: @escaping (String) -> Void,
-        onSubmitFleeting: (() -> Void)? = nil,
+        onSubmitFleeting: ((String?) -> Void)? = nil,
         onDeleteFleeting: (() -> Void)? = nil,
+        submitFolders: [String] = [],
+        submitFolderSwatch: ((String) -> NSImage?)? = nil,
         onTagSearch: @escaping (String) -> Void,
         theme: Theme,
         requireModifierForLinkClick: Bool,
@@ -111,6 +119,8 @@ struct NoteEditorView: View {
         self.onRename = onRename
         self.onSubmitFleeting = onSubmitFleeting
         self.onDeleteFleeting = onDeleteFleeting
+        self.submitFolders = submitFolders
+        self.submitFolderSwatch = submitFolderSwatch
         self.onTagSearch = onTagSearch
         self.theme = theme
         self.requireModifierForLinkClick = requireModifierForLinkClick
@@ -309,8 +319,40 @@ struct NoteEditorView: View {
             // at full size instead, growing the title bar's height to fit.
             FlowLayout(spacing: 6, lineSpacing: 6) {
                 if let onSubmitFleeting, let onDeleteFleeting {
-                    Button("Submit Note", action: onSubmitFleeting)
-                        .help("File this note into The Index")
+                    if submitFolders.isEmpty {
+                        Button("Submit Note") { onSubmitFleeting(nil) }
+                            .help("File this note into The Index")
+                    } else {
+                        // A plain click still files to the Index root —
+                        // unchanged muscle memory — while the menu arrow
+                        // offers filing straight into a folder, so the review
+                        // act ("where does this belong?") is one gesture.
+                        Menu {
+                            Button {
+                                onSubmitFleeting(nil)
+                            } label: {
+                                Label("The Index", systemImage: "tray")
+                            }
+                            Divider()
+                            ForEach(submitFolders, id: \.self) { folder in
+                                Button {
+                                    onSubmitFleeting(folder)
+                                } label: {
+                                    if let swatch = submitFolderSwatch?(folder) {
+                                        Label { Text(folder) } icon: { Image(nsImage: swatch) }
+                                    } else {
+                                        Label(folder, systemImage: "folder")
+                                    }
+                                }
+                            }
+                        } label: {
+                            Text("Submit Note")
+                        } primaryAction: {
+                            onSubmitFleeting(nil)
+                        }
+                        .fixedSize()
+                        .help("Click to file into The Index; use the menu to file into a folder")
+                    }
                     Button("Delete Note", role: .destructive, action: onDeleteFleeting)
                 }
                 if showDuePill, let note, let due = note.due {
