@@ -437,7 +437,7 @@ extension ContentView {
                 Divider()
                 Button("New Folder…") {
                     newFolderName = ""
-                    newFolderNote = note
+                    newFolderNotes = [note]
                 }
             }
         }
@@ -446,25 +446,37 @@ extension ContentView {
         }
     }
 
-    /// Creates `newFolderName` and moves `newFolderNote` into it. moveNote makes
-    /// the folder on demand, so this is just a move to a name that doesn't exist
-    /// yet. Called from the New Folder alert's Create button.
+    /// Creates `newFolderName` and moves every `newFolderNotes` entry into it —
+    /// one note from the single-note menu, the whole selection from the bulk
+    /// menu. moveNote makes the folder on demand, so this is just a move to a
+    /// name that doesn't exist yet. Called from the New Folder alert's Create
+    /// button.
     func createFolderAndMove() {
-        guard let note = newFolderNote else { return }
+        let pending = newFolderNotes
+        guard !pending.isEmpty else { return }
         let name = newFolderName
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .replacingOccurrences(of: "/", with: "-")
-        newFolderNote = nil
+        newFolderNotes = []
         guard !name.isEmpty else { return }
-        moveNoteToSubfolder(note, name)
+        for note in pending {
+            guard let moved = moveNoteToSubfolder(note, name) else { continue }
+            if multiSelectedIDs.remove(note.id) != nil {
+                multiSelectedIDs.insert(moved.id)
+            }
+            if selectionAnchorID == note.id {
+                selectionAnchorID = moved.id
+            }
+        }
     }
 
     /// Moves a note into a subfolder (nil = the Index root) and carries the
     /// selection with it — the move changes the note's id (its path), so a
     /// selected note would otherwise fall out of the editor.
-    func moveNoteToSubfolder(_ note: Note, _ subfolder: String?) {
+    @discardableResult
+    func moveNoteToSubfolder(_ note: Note, _ subfolder: String?) -> Note? {
         let wasSelected = selectedID == note.id
-        guard let moved = store.moveNote(note, toSubfolder: subfolder) else { return }
+        guard let moved = store.moveNote(note, toSubfolder: subfolder) else { return nil }
         if wasSelected { selectedID = moved.id }
 
         // A move changes only this note's folder — not its title, content, date
@@ -490,6 +502,24 @@ extension ContentView {
         // Everything a move affects is now reconciled, so skip the full-vault
         // recompute the store.notes change below would otherwise kick off.
         skipNotesReconcileOnce = true
+        return moved
+    }
+
+    /// Moves every selected note into `subfolder` (nil = the Index root),
+    /// carrying the multi-selection and anchor across the id changes the
+    /// same way moveNoteToSubfolder already carries the primary selection.
+    /// A note whose name collides in the destination is skipped (the store
+    /// refuses that move to keep wikilinks honest) — the rest still go.
+    func bulkMoveToSubfolder(_ subfolder: String?) {
+        for note in selectedNotes() {
+            guard let moved = moveNoteToSubfolder(note, subfolder) else { continue }
+            if multiSelectedIDs.remove(note.id) != nil {
+                multiSelectedIDs.insert(moved.id)
+            }
+            if selectionAnchorID == note.id {
+                selectionAnchorID = moved.id
+            }
+        }
     }
 
     /// A small filled-circle image for a folder's color, shown beside its name
@@ -510,6 +540,38 @@ extension ContentView {
         let count = fullSelection.count
         Button("Open \(count) Notes in Finder") {
             bulkOpenInFinder()
+        }
+        if indexIncludeSubfolders {
+            // The single-note menu's Move to, applied to the whole selection.
+            // No per-folder disabling here — a mixed selection has no single
+            // "current" folder, and moving a note to where it already sits is
+            // a harmless no-op at the store level.
+            Menu("Move \(count) Notes to") {
+                Button {
+                    bulkMoveToSubfolder(nil)
+                } label: {
+                    Label("The Index", systemImage: "tray")
+                }
+
+                if !subfolderCache.isEmpty { Divider() }
+                ForEach(subfolderCache, id: \.self) { folder in
+                    Button {
+                        bulkMoveToSubfolder(folder)
+                    } label: {
+                        if let swatch = folderSwatchCache[folder] {
+                            Label { Text(folder) } icon: { Image(nsImage: swatch) }
+                        } else {
+                            Label(folder, systemImage: "folder")
+                        }
+                    }
+                }
+
+                Divider()
+                Button("New Folder…") {
+                    newFolderName = ""
+                    newFolderNotes = selectedNotes()
+                }
+            }
         }
         Button("Move \(count) Notes to Trash", role: .destructive) {
             bulkDelete()

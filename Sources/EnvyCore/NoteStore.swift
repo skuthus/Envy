@@ -856,18 +856,26 @@ public final class NoteStore: ObservableObject {
         try? FileManager.default.createDirectory(at: targetDir, withIntermediateDirectories: true)
         let destination = Self.availableURL(for: note.title, in: targetDir)
         // availableURL de-dups a filename collision to "Foo (2)" — but for a
-        // *move* that's a silent title change: half the vault's [[Foo]] links
-        // would start resolving to whichever Foo remained, with no way to know
-        // which note each link actually meant. Refusing the move keeps every
-        // link intact and the doc promise above true; the note simply stays
-        // where it was, same as any other failed move.
-        guard destination.deletingPathExtension().lastPathComponent == note.title else { return nil }
+        // *move* that's a silent title change with no single right answer:
+        // half the vault's [[Foo]] links would start resolving to whichever
+        // Foo remained. Refusing keeps every link intact; the note stays put.
+        // Compare against the sanitized base, NOT the raw title — a title can
+        // legally carry ":" or "/" that filenames rewrite to "-", and that
+        // deterministic difference is not a collision (it used to be misread
+        // as one, which made colon-titled notes refuse to move at all).
+        guard destination.deletingPathExtension().lastPathComponent == Self.sanitizedBase(for: note.title) else { return nil }
         guard (try? FileManager.default.moveItem(at: note.url, to: destination)) != nil else { return nil }
         let moved = Note(id: destination.path, url: destination, content: note.content, modifiedDate: note.modifiedDate)
         if let index = notes.firstIndex(where: { $0.id == note.id }) {
             notes[index] = moved
         }
         recordIDChange(from: note.id, to: moved.id)
+        // Sanitization can still change the title (Contact: → Contact-).
+        // That's deterministic, not ambiguous — so rewrite the vault's
+        // references the same way rename(_:to:) does, and links keep working.
+        if moved.title != note.title {
+            updateWikiLinkReferences(from: note.title, to: moved.title)
+        }
         return moved
     }
 
@@ -1028,14 +1036,19 @@ public final class NoteStore: ObservableObject {
         markInternalWrite()
         // Same collision refusal as moveNote — a de-dup here is a silent title
         // change that scrambles which note the vault's [[links]] resolve to.
+        // And the same sanitized-base comparison: a ":" or "/" in the title is
+        // rewritten by the filename, not a collision.
         let destination = Self.availableURL(for: note.title, in: noteDirectory)
-        guard destination.deletingPathExtension().lastPathComponent == note.title else { return nil }
+        guard destination.deletingPathExtension().lastPathComponent == Self.sanitizedBase(for: note.title) else { return nil }
         guard (try? FileManager.default.moveItem(at: note.url, to: destination)) != nil else { return nil }
         let moved = Note(id: destination.path, url: destination, content: note.content, modifiedDate: note.modifiedDate)
         if let index = notes.firstIndex(where: { $0.id == note.id }) {
             notes[index] = moved
         }
         recordIDChange(from: note.id, to: moved.id)
+        if moved.title != note.title {
+            updateWikiLinkReferences(from: note.title, to: moved.title)
+        }
         return moved
     }
 
@@ -2135,12 +2148,22 @@ public final class NoteStore: ObservableObject {
     /// already collide at the filesystem level, so matching only exact case
     /// would happily generate a name the OS then refuses. One directory
     /// read up front rather than a fileExists syscall per candidate.
-    nonisolated static func uniqueFilename(for title: String, in directory: URL) -> String {
+    /// The filename a title produces before any collision de-dup — ":" and
+    /// "/" become "-" (path separators on one filesystem layer or the
+    /// other). Factored out of uniqueFilename so callers can distinguish
+    /// "the filename differs because sanitization rewrote a character"
+    /// (deterministic, harmless) from "it differs because a ' (2)' de-dup
+    /// was appended" (a real collision with another note).
+    nonisolated static func sanitizedBase(for title: String) -> String {
         let sanitized = title
             .replacingOccurrences(of: "/", with: "-")
             .replacingOccurrences(of: ":", with: "-")
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        let base = sanitized.isEmpty ? "Untitled" : sanitized
+        return sanitized.isEmpty ? "Untitled" : sanitized
+    }
+
+    nonisolated static func uniqueFilename(for title: String, in directory: URL) -> String {
+        let base = sanitizedBase(for: title)
         let existing = Set(
             ((try? FileManager.default.contentsOfDirectory(atPath: directory.path)) ?? [])
                 .map { ($0 as NSString).deletingPathExtension.lowercased() }

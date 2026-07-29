@@ -63,7 +63,9 @@ struct ContentView: View {
     @State var selectionAnchorID: String?
     @State var renamingNote: Note?
     @State var renameText = ""
-    @State var newFolderNote: Note?
+    /// The note(s) waiting on the New Folder alert — one entry from a single
+    /// note's Move to → New Folder…, the whole selection from the bulk menu's.
+    @State var newFolderNotes: [Note] = []
     @State var newFolderName = ""
     // Set by a move, which reconciles everything it affects itself; the next
     // store.notes change is then skipped rather than triggering a full-vault
@@ -787,14 +789,16 @@ struct ContentView: View {
             }
         }
         .alert("New Folder", isPresented: Binding(
-            get: { newFolderNote != nil },
-            set: { if !$0 { newFolderNote = nil } }
+            get: { !newFolderNotes.isEmpty },
+            set: { if !$0 { newFolderNotes = [] } }
         )) {
             TextField("Folder name", text: $newFolderName)
             Button("Create") { createFolderAndMove() }
-            Button("Cancel", role: .cancel) { newFolderNote = nil }
+            Button("Cancel", role: .cancel) { newFolderNotes = [] }
         } message: {
-            Text("Create a folder inside your Index and move this note into it.")
+            Text(newFolderNotes.count > 1
+                ? "Create a folder inside your Index and move these \(newFolderNotes.count) notes into it."
+                : "Create a folder inside your Index and move this note into it.")
         }
     }
 
