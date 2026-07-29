@@ -1240,6 +1240,36 @@ struct SelfCheck {
             check("unquoted commas still split OR groups",
                   titles("nothing, notes", commaSet).sorted() == ["Debrief (Sep 24, 2025)", "Lonely"])
 
+            // --- folder: ---
+            let root = URL(fileURLWithPath: "/tmp/FolderOpIndex")
+            func filed(_ title: String, _ folder: String?, _ content: String = "body") -> Note {
+                var url = root
+                for part in (folder?.split(separator: "/") ?? []) { url.appendPathComponent(String(part)) }
+                url.appendPathComponent("\(title).md")
+                return Note(id: url.path, url: url, content: content, modifiedDate: Date())
+            }
+            func folderTitles(_ query: String, _ notes: [Note]) -> Set<String> {
+                Set(NoteStore.filtered(notes, query: query, root: root).map(\.title))
+            }
+            let atRoot = filed("Loose", nil)
+            let inWork = filed("Filed", "Projects/Work")
+            let inDeep = filed("Deep Note", "Deep Work")
+            let folderSet = [atRoot, inWork, inDeep]
+            check("folder: matches partially and case-insensitively",
+                  folderTitles("folder:proj", folderSet) == ["Filed"])
+            check("folder: matches any segment of a nested path",
+                  folderTitles("folder:work", folderSet) == ["Filed", "Deep Note"])
+            check("folder: takes a quoted spaced name",
+                  folderTitles("folder:\"Deep Work\"", folderSet) == ["Deep Note"])
+            check("bare folder: means any note in a subfolder",
+                  folderTitles("folder:", folderSet) == ["Filed", "Deep Note"])
+            check("bare -folder: means notes at the Index root",
+                  folderTitles("-folder:", folderSet) == ["Loose"])
+            check("-folder:name excludes that folder",
+                  folderTitles("-folder:projects", folderSet) == ["Loose", "Deep Note"])
+            check("folder: composes with free terms",
+                  folderTitles("folder:work body", folderSet) == ["Filed", "Deep Note"])
+
             // --- orphan: ---
             // "Meeting Notes" and "Ideas" are linked-to; Hub and Leaf link
             // out. Lonely does neither — the only orphan here. A note that

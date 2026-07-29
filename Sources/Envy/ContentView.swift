@@ -299,7 +299,9 @@ struct ContentView: View {
         showInbox: Bool,
         inboxDirectory: URL
     ) -> SearchComputation {
-        var filtered = NoteStore.filtered(notes, query: query)
+        // The Index root (folder:'s reference point) is the inbox's parent —
+        // already threaded through, so no second directory parameter.
+        var filtered = NoteStore.filtered(notes, query: query, root: inboxDirectory.deletingLastPathComponent())
         // Hidden only when the query isn't already about the inbox — asking
         // for "inbox:" and being shown nothing because of a setting
         // elsewhere would be its own bug.

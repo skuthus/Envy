@@ -1489,7 +1489,7 @@ public final class NoteStore: ObservableObject {
     /// query that never had commas in it to begin with. A note matching
     /// more than one group keeps whichever group's score ranked it higher.
     public func filtered(query: String) -> [Note] {
-        Self.filtered(notes, query: query)
+        Self.filtered(notes, query: query, root: noteDirectory)
     }
 
     /// The full search over an explicit snapshot, callable from off the
@@ -1498,7 +1498,10 @@ public final class NoteStore: ObservableObject {
     /// it on the main thread visibly delayed the keystrokes queued behind
     /// it. The UI captures `notes` and runs this on a background task,
     /// assigning only the result back on the main actor.
-    nonisolated public static func filtered(_ notes: [Note], query: String) -> [Note] {
+    /// `root` (The Index's own directory) is what folder: paths resolve
+    /// against — nil (tests, callers without one) falls back to matching a
+    /// note's immediate parent-folder name only.
+    nonisolated public static func filtered(_ notes: [Note], query: String, root: URL? = nil) -> [Note] {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return notes }
 
@@ -1506,13 +1509,13 @@ public final class NoteStore: ObservableObject {
         guard !groups.isEmpty else { return notes }
 
         if groups.count == 1 {
-            return matched(in: notes, forGroup: groups[0]).sorted(by: rankedHigherFirst).map(\.0)
+            return matched(in: notes, forGroup: groups[0], root: root).sorted(by: rankedHigherFirst).map(\.0)
         }
 
         var bestScoreByID: [String: Int] = [:]
         var noteByID: [String: Note] = [:]
         for group in groups {
-            for (note, score) in matched(in: notes, forGroup: group) {
+            for (note, score) in matched(in: notes, forGroup: group, root: root) {
                 noteByID[note.id] = note
                 bestScoreByID[note.id] = max(bestScoreByID[note.id] ?? Int.min, score)
             }
@@ -1606,7 +1609,20 @@ public final class NoteStore: ObservableObject {
         return result
     }
 
-    nonisolated private static func matched(in notes: [Note], forGroup group: String) -> [(Note, Int)] {
+    /// A note's folder path relative to the Index root, lowercased ("" at
+    /// the root, "projects/work" nested) — what folder: matches against.
+    /// Without a root there's no way to know where the vault starts, so the
+    /// fallback matches the immediate parent folder's name only.
+    nonisolated private static func relativeFolderPath(of note: Note, rootLower: String?) -> String {
+        let parentURL = note.url.deletingLastPathComponent()
+        guard let rootLower else { return parentURL.lastPathComponent.lowercased() }
+        let parent = parentURL.path.lowercased()
+        if parent == rootLower { return "" }
+        if parent.hasPrefix(rootLower + "/") { return String(parent.dropFirst(rootLower.count + 1)) }
+        return parentURL.lastPathComponent.lowercased()
+    }
+
+    nonisolated private static func matched(in notes: [Note], forGroup group: String, root: URL? = nil) -> [(Note, Int)] {
         let q = group.lowercased()
         let tokens = Self.tokenize(q)
 
@@ -1634,6 +1650,10 @@ public final class NoteStore: ObservableObject {
         var excludeLinks: [String] = []
         var interlinkFilter: String?
         var excludeInterlinks: [String] = []
+        var folderFilter: String?
+        var excludeFolders: [String] = []
+        var isFolderedOnly = false     // bare folder: — any note in a subfolder
+        var isRootOnly = false         // bare -folder: — notes at the Index root
         var isOrphanOnly = false
         var isLinkedOnly = false
         // Closed quotes are exact — matched on word boundaries, so "nee"
@@ -1751,6 +1771,22 @@ public final class NoteStore: ObservableObject {
                 // and they point at nothing. Zettelkasten hygiene: the
                 // backlink half is corpus-wide, computed once below.
                 isOrphanOnly = true
+            } else if token == "folder:" {
+                isFolderedOnly = true
+            } else if token == "-folder:" {
+                isRootOnly = true
+            } else if token.hasPrefix("-folder:") {
+                let target = unquote(String(token.dropFirst("-folder:".count)))
+                if !target.isEmpty { excludeFolders.append(target) }
+            } else if token.hasPrefix("folder:") {
+                // Notes filed under that folder — partial and case-insensitive
+                // like tag: (folder:proj matches Projects), matched against
+                // the note's whole relative path, so a nested folder is
+                // findable by any of its segments. First one wins, like tag:.
+                if folderFilter == nil {
+                    let target = unquote(String(token.dropFirst("folder:".count)))
+                    folderFilter = target.isEmpty ? nil : target
+                }
             } else if token.hasPrefix("-interlink:") {
                 let target = unquote(String(token.dropFirst("-interlink:".count)))
                 if !target.isEmpty { excludeInterlinks.append(target) }
@@ -1802,6 +1838,7 @@ public final class NoteStore: ObservableObject {
             || isImageOnly || isImageExcluded || isEmbedOnly || isEmbedExcluded
             || linkFilter != nil || !excludeLinks.isEmpty || isOrphanOnly || isLinkedOnly
             || interlinkFilter != nil || !excludeInterlinks.isEmpty
+            || folderFilter != nil || !excludeFolders.isEmpty || isFolderedOnly || isRootOnly
             || isTodoOnly || isTodoExcluded || tagFilter != nil || !excludeTags.isEmpty
             || dateFilter != nil
             || staleCutoff != nil
@@ -1839,6 +1876,11 @@ public final class NoteStore: ObservableObject {
         let phraseRegexes = phraseTerms.compactMap(Self.wholeWordRegex(for:))
         let excludePhraseRegexes = excludePhrases.compactMap(Self.wholeWordRegex(for:))
 
+        // folder:'s reference point, computed once per group. The path work
+        // per note only runs when a folder token is actually present.
+        let needsFolderPath = folderFilter != nil || !excludeFolders.isEmpty || isFolderedOnly || isRootOnly
+        let rootLower = root?.path.lowercased()
+
         return notes.compactMap { note -> (Note, Int)? in
             // Membership is the folder the file sits in — there's no flag on
             // a note saying it's fleeting, and there shouldn't be: moving it
@@ -1846,6 +1888,13 @@ public final class NoteStore: ObservableObject {
             // pressing Submit does.
             if isInboxOnly, !Self.isInInboxFolder(note) { return nil }
             if isInboxExcluded, Self.isInInboxFolder(note) { return nil }
+            if needsFolderPath {
+                let folderPath = Self.relativeFolderPath(of: note, rootLower: rootLower)
+                if isFolderedOnly, folderPath.isEmpty { return nil }
+                if isRootOnly, !folderPath.isEmpty { return nil }
+                if let folderFilter, !Self.fastContains(folderPath, folderFilter) { return nil }
+                if !excludeFolders.isEmpty, excludeFolders.contains(where: { Self.fastContains(folderPath, $0) }) { return nil }
+            }
             if isImageOnly, !note.hasImageEmbed { return nil }
             if isImageExcluded, note.hasImageEmbed { return nil }
             if isEmbedOnly, !note.hasNoteEmbed { return nil }

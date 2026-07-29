@@ -705,7 +705,7 @@ extension ContentView {
     /// drift apart again (they had, once each grew its own hand-written
     /// chain). Split prefix-matched from whole-word because that difference
     /// is load-bearing: "todo:xyz" is not an operator, "tag:xyz" is.
-    private static let operatorPrefixes = ["tag:", "date:", "due:", "link:", "interlink:", "stale:", "-link:", "-interlink:", "-tag:"]
+    private static let operatorPrefixes = ["tag:", "date:", "due:", "link:", "interlink:", "folder:", "stale:", "-link:", "-interlink:", "-folder:", "-tag:"]
     private static let operatorWords = ["orphan:", "linked:", "todo:", "img:", "embed:"]
 
     /// Whether one lowercased query word reads as an operator.
@@ -833,6 +833,7 @@ extension ContentView {
     private var suggestionRemainder: String? {
         if let tagRemainder = tagSuggestionRemainder { return tagRemainder }
         if let linkRemainder = linkSuggestionRemainder { return linkRemainder }
+        if let folderRemainder = folderSuggestionRemainder { return folderRemainder }
         guard let note = suggestionNoteCache, !query.isEmpty,
               note.title.count > query.count,
               note.lowercasedTitle.hasPrefix(query.lowercased()) else { return nil }
@@ -866,7 +867,15 @@ extension ContentView {
     /// before the operator, kept so acceptance can rebuild the whole string.
     /// A closed quote means the argument is already complete: no context.
     private var linkCompletionContext: (prefix: String, fragment: String, head: String)? {
-        let prefixes = ["-interlink:", "interlink:", "-link:", "link:"]
+        quotedArgumentContext(prefixes: ["-interlink:", "interlink:", "-link:", "link:"])
+    }
+
+    /// Same shape for folder: — its names can carry spaces and commas too.
+    private var folderCompletionContext: (prefix: String, fragment: String, head: String)? {
+        quotedArgumentContext(prefixes: ["-folder:", "folder:"])
+    }
+
+    private func quotedArgumentContext(prefixes: [String]) -> (prefix: String, fragment: String, head: String)? {
         var best: (start: String.Index, prefix: String)? = nil
         for prefix in prefixes {
             guard let range = query.range(of: prefix, options: [.backwards, .caseInsensitive]) else { continue }
@@ -903,6 +912,15 @@ extension ContentView {
         return String(match.dropFirst(fragment.count))
     }
 
+    /// folder: completes against the actual subfolder list (relative paths,
+    /// so nested folders complete whole: folder:Proj → Projects/Work).
+    private var folderSuggestionRemainder: String? {
+        guard let (_, fragment, _) = folderCompletionContext, !fragment.isEmpty else { return nil }
+        let lowered = fragment.lowercased()
+        guard let match = subfolderCache.first(where: { $0.lowercased().hasPrefix(lowered) && $0.count > fragment.count }) else { return nil }
+        return String(match.dropFirst(fragment.count))
+    }
+
     /// "tag:xyz"/"-tag:xyz" — the tag-name equivalent of the note-title
     /// suggestion, completing against every tag used anywhere in The Index
     /// (see allTagsByFrequencyCache), most-used first when several share a
@@ -930,6 +948,12 @@ extension ContentView {
         if let (prefix, fragment, head) = linkCompletionContext, let remainder = linkSuggestionRemainder {
             // Quote the accepted title whenever it has spaces — the
             // tokenizer would otherwise split it into separate terms.
+            let full = fragment + remainder
+            let argument = full.contains(" ") ? "\"\(full)\"" : full
+            query = head + prefix + argument
+            return
+        }
+        if let (prefix, fragment, head) = folderCompletionContext, let remainder = folderSuggestionRemainder {
             let full = fragment + remainder
             let argument = full.contains(" ") ? "\"\(full)\"" : full
             query = head + prefix + argument
