@@ -68,6 +68,38 @@ public final class NoteStore: ObservableObject {
         guard let i = idIndex[id] else { return nil }
         return notes[i]
     }
+
+    /// Every distinct tag used anywhere in The Index, most-used first —
+    /// feeds the editor's `#tag` ghost-text completion. The search box keeps
+    /// its own background-computed copy (ContentView.recomputeAllTags, built
+    /// with the same static helper below); this one is rebuilt lazily, at
+    /// most once per `notes` change, and only when someone actually asks —
+    /// i.e. while a hashtag is being typed — so it costs nothing on the
+    /// keystroke/save hot paths.
+    private var tagsByFrequencyCache: [String] = []
+    private var tagsByFrequencyGeneration = -1
+
+    public func allTagsByFrequency() -> [String] {
+        if tagsByFrequencyGeneration != notesGeneration {
+            tagsByFrequencyCache = Self.tagsByFrequency(in: notes)
+            tagsByFrequencyGeneration = notesGeneration
+        }
+        return tagsByFrequencyCache
+    }
+
+    /// Most-used first, ties alphabetical. Per-note tag sets are memoized
+    /// (Note.tags), so this is set iteration, not a regex pass.
+    nonisolated public static func tagsByFrequency(in notes: [Note]) -> [String] {
+        var frequency: [String: Int] = [:]
+        for note in notes {
+            for tag in note.tags {
+                frequency[tag, default: 0] += 1
+            }
+        }
+        return frequency.keys.sorted {
+            frequency[$0]! != frequency[$1]! ? frequency[$0]! > frequency[$1]! : $0 < $1
+        }
+    }
     /// The Index — the one folder Envy reads and watches. Singular by
     /// design: Envy used to support several folders merged into one list,
     /// but that flexibility mostly bought confusion (which folder does a

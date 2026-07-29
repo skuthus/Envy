@@ -131,6 +131,8 @@ enum WelcomeContent {
 
     Write `#work` anywhere in a note's text and Envy picks it up as a tag automatically, no separate tagging step needed. Tags render bold with a tinted background so they stand out from the rest of the text, like this: #work
 
+    Start typing a `#tag` you've used before and the rest appears as grey ghost text — your most-used matching tag first, same as `[[link]]` completion. Press **⇥** or **→** to accept it.
+
     Search `tag:work` to see every note tagged that way — it's not case-sensitive, and partial names work too: `tag:techn` matches `#technology`. A bare `tag:` finds every note carrying any tag; a bare `-tag:` finds the completely untagged (pair it with `orphan:` and `stale:` for a full hygiene sweep). And `title:word` restricts a search to titles only — the note *named* for a thing, not every note that mentions it.
 
     Combine it with regular search words, like `tag:work meeting`, to narrow further to tagged notes that also mention "meeting".

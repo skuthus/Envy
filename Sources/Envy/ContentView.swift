@@ -405,15 +405,7 @@ struct ContentView: View {
         let notesSnapshot = store.notes
         Task { @MainActor in
             let tags = await Task.detached(priority: .utility) {
-                var frequency: [String: Int] = [:]
-                for note in notesSnapshot {
-                    for tag in note.tags {
-                        frequency[tag, default: 0] += 1
-                    }
-                }
-                return frequency.keys.sorted {
-                    frequency[$0]! != frequency[$1]! ? frequency[$0]! > frequency[$1]! : $0 < $1
-                }
+                NoteStore.tagsByFrequency(in: notesSnapshot)
             }.value
             guard generation == allTagsGeneration else { return }
             allTagsByFrequencyCache = tags

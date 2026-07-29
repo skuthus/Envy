@@ -3193,13 +3193,16 @@ struct MarkdownTextView: NSViewRepresentable {
             let searchRange = NSRange(location: lineRange.location, length: cursor - lineRange.location)
             let lastOpen = nsText.range(of: "[[", options: .backwards, range: searchRange)
             guard lastOpen.location != NSNotFound else {
-                hideWikiLinkGhost()
+                updateTagGhostSuggestion(in: textView, nsText: nsText, cursor: cursor, searchRange: searchRange)
                 return
             }
             let afterOpen = lastOpen.location + lastOpen.length
             let closedBetween = nsText.range(of: "]]", options: [], range: NSRange(location: afterOpen, length: cursor - afterOpen))
             guard closedBetween.location == NSNotFound else {
-                hideWikiLinkGhost()
+                // No open wiki-link after all (the last one on the line is
+                // already closed) — the caret may still be at the end of a
+                // hashtag being typed.
+                updateTagGhostSuggestion(in: textView, nsText: nsText, cursor: cursor, searchRange: searchRange)
                 return
             }
             let query = nsText.substring(with: NSRange(location: afterOpen, length: cursor - afterOpen))
@@ -3231,6 +3234,70 @@ struct MarkdownTextView: NSViewRepresentable {
             }
             let remainder = String(match.dropFirst(query.count))
             showWikiLinkGhost(remainder: remainder, atCursor: cursor, in: textView)
+        }
+
+        /// A character that can appear in a tag's body — Note.tagRegex's
+        /// `[A-Za-z0-9_-]`, expressed over the UTF-16 units NSString hands
+        /// back (so any non-ASCII unit simply reads as "not a tag char",
+        /// matching the regex's own ASCII-only capture).
+        private nonisolated static func isTagBodyChar(_ c: unichar) -> Bool {
+            (c >= 48 && c <= 57) || (c >= 65 && c <= 90) || (c >= 97 && c <= 122) || c == 95 || c == 45
+        }
+
+        /// What Note.tagRegex's `(?<![\w#])` refuses immediately before the
+        /// "#": a word character or another hash (so "word#x" and "##x"
+        /// aren't tags, while "(#x" and line starts are).
+        private nonisolated static func blocksTagStart(_ c: unichar) -> Bool {
+            (c >= 48 && c <= 57) || (c >= 65 && c <= 90) || (c >= 97 && c <= 122) || c == 95 || c == 35
+        }
+
+        /// The `#tag` sibling of the wiki-link ghost above — with the caret
+        /// at the end of a partly-typed hashtag, suggest the rest of the
+        /// most-used existing tag sharing that prefix (same source and
+        /// ordering as the search box's own tag: completion), reusing the
+        /// same floating label and Tab/→ accept path. Called from
+        /// updateWikiLinkGhostSuggestion's early exits, so the wiki-link
+        /// ghost always wins when both could apply.
+        @MainActor
+        private func updateTagGhostSuggestion(in textView: NSTextView, nsText: NSString, cursor: Int, searchRange: NSRange) {
+            let lastHash = nsText.range(of: "#", options: .backwards, range: searchRange)
+            guard lastHash.location != NSNotFound, let store = parent.store else {
+                hideWikiLinkGhost()
+                return
+            }
+            if lastHash.location > 0, Self.blocksTagStart(nsText.character(at: lastHash.location - 1)) {
+                hideWikiLinkGhost()
+                return
+            }
+            // Everything between the "#" and the caret must read as one
+            // unbroken tag body — a space or punctuation in between means
+            // the tag (if any) ended before the caret got here.
+            let fragStart = lastHash.location + 1
+            guard cursor > fragStart else {
+                hideWikiLinkGhost()
+                return
+            }
+            for i in fragStart..<cursor where !Self.isTagBodyChar(nsText.character(at: i)) {
+                hideWikiLinkGhost()
+                return
+            }
+            // The caret must sit at the tag's current end — a body character
+            // right after it means editing mid-tag, where the floating label
+            // would stack over text already on screen (same rule the
+            // wiki-link ghost applies via its `trailing` check).
+            if cursor < nsText.length, Self.isTagBodyChar(nsText.character(at: cursor)) {
+                hideWikiLinkGhost()
+                return
+            }
+            let fragment = nsText.substring(with: NSRange(location: fragStart, length: cursor - fragStart))
+            // Stored tags are already lowercased; matching is
+            // case-insensitive on the typed side, like everywhere else.
+            let lowered = fragment.lowercased()
+            guard let match = store.allTagsByFrequency().first(where: { $0.hasPrefix(lowered) && $0.count > fragment.count }) else {
+                hideWikiLinkGhost()
+                return
+            }
+            showWikiLinkGhost(remainder: String(match.dropFirst(fragment.count)), atCursor: cursor, in: textView)
         }
 
         /// Positions the ghost label right after the last typed character,

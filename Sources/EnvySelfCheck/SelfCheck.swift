@@ -1573,6 +1573,27 @@ struct SelfCheck {
             try? fm.removeItem(at: tmp)
         }
 
+        // tagsByFrequencyOrdersMostUsedFirstTiesAlphabetical
+        do {
+            let store = await makeTempStore()
+            var a = store.create(title: "A")
+            a.content = "#work #home"
+            store.save(a)
+            var b = store.create(title: "B")
+            b.content = "#work #Alpha"
+            store.save(b)
+            var c = store.create(title: "C")
+            c.content = "#work"
+            store.save(c)
+            check("tagsByFrequency orders most-used first, ties alphabetical",
+                  store.allTagsByFrequency() == ["work", "alpha", "home"])
+            var d = store.create(title: "D")
+            d.content = "#newest"
+            store.save(d)
+            check("tagsByFrequency cache refreshes after a notes change",
+                  store.allTagsByFrequency().contains("newest"))
+        }
+
         print("")
         if failures.isEmpty {
             print("All checks passed.")
