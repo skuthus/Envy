@@ -17,8 +17,6 @@ struct GeneralSettingsView: View {
     @AppStorage("showTagsInTitleBar") private var showTagsInTitleBar = false
     @AppStorage("showDuePill") private var showDuePill = true
     @AppStorage("linkDomainPills") private var linkDomainPills = true
-    @AppStorage(FolderColorPreferences.storageKey) private var folderColorsRaw = ""
-    @State private var subfolders: [String] = []
     @AppStorage(IndexPreference.storageKey) private var indexPathRaw = ""
     @AppStorage(IndexPreference.includeSubfoldersKey) private var indexIncludeSubfolders = false
     @AppStorage("moveFocusToEditorOnEnter") private var moveFocusToEditorOnEnter = true
@@ -174,35 +172,9 @@ struct GeneralSettingsView: View {
                 Toggle("Show items in subfolders", isOn: $indexIncludeSubfolders)
             }
 
-            if indexIncludeSubfolders {
-                Section("Folder Colors") {
-                    if subfolders.isEmpty {
-                        Text("Make subfolders inside your Index and they'll appear here to color. A note's dot in the list shows the color of the folder it's in.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    } else {
-                        ForEach(subfolders, id: \.self) { folder in
-                            HStack(spacing: 8) {
-                                ColorPicker("", selection: folderColorBinding(folder), supportsOpacity: false)
-                                    .labelsHidden()
-                                Text(folder)
-                                Spacer()
-                                if FolderColorPreferences.color(for: folder, raw: folderColorsRaw) != nil {
-                                    Button {
-                                        folderColorsRaw = FolderColorPreferences.setting(nil, for: folder, in: folderColorsRaw)
-                                    } label: {
-                                        Image(systemName: "arrow.uturn.backward")
-                                    }
-                                    .buttonStyle(.borderless)
-                                    .help("Remove color")
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
+            // No Folder Colors section — folders are colored the way tags are:
+            // every folder gets a color the moment it exists, and right-clicking
+            // its dot (or name chip) in the note list recolors it in place.
             Section("Templates") {
                 VStack(alignment: .leading, spacing: 4) {
                     TextField("{{date}} Format", text: $templateDateFormatPattern)
@@ -327,22 +299,6 @@ struct GeneralSettingsView: View {
         .sheet(isPresented: $showingMarkupHelp) {
             MarkupHelpView()
         }
-        .onAppear { reloadSubfolders() }
-        .onChange(of: indexIncludeSubfolders) { _, _ in reloadSubfolders() }
-    }
-
-    private func reloadSubfolders() {
-        subfolders = indexIncludeSubfolders ? NoteStore.subfolders(in: indexURL) : []
-    }
-
-    /// Reads/writes a folder's color through the preference. ColorPicker has no
-    /// "unset", so the get falls back to gray for display; a per-row button
-    /// clears the real value.
-    private func folderColorBinding(_ folder: String) -> Binding<Color> {
-        Binding(
-            get: { FolderColorPreferences.color(for: folder, raw: folderColorsRaw) ?? Color.gray },
-            set: { folderColorsRaw = FolderColorPreferences.setting($0, for: folder, in: folderColorsRaw) }
-        )
     }
 
     private func setOpenAtLogin(_ enabled: Bool) {

@@ -140,7 +140,22 @@ extension ContentView {
     /// folder. No filesystem, no note scan.
     func rebuildFolderColors() {
         guard indexIncludeSubfolders else { folderColorMap = [:]; folderSwatchCache = [:]; return }
-        folderColorMap = FolderColorPreferences.loadAll(from: folderColorsRaw).mapValues { $0.color }
+        // Every folder is born colored, tag-style: any folder seen without a
+        // color (newly created in Envy, made in Finder, or predating this
+        // behavior) gets a random preset, persisted — so its dot, and the
+        // dot's right-click recolor menu, always exist. Writing the pref
+        // retriggers this via its own onChange; the second pass finds
+        // nothing uncolored and settles.
+        var all = FolderColorPreferences.loadAll(from: folderColorsRaw)
+        var assigned = false
+        for folder in subfolderCache where all[folder] == nil {
+            if let preset = FolderColorPreferences.presets.randomElement() {
+                all[folder] = CodableColor(nsColor: NSColor(preset.color))
+                assigned = true
+            }
+        }
+        if assigned { folderColorsRaw = FolderColorPreferences.encode(all) }
+        folderColorMap = all.mapValues { $0.color }
         folderSwatchCache = folderColorMap.mapValues { Self.folderSwatch($0) }
     }
 

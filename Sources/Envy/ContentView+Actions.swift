@@ -497,6 +497,12 @@ extension ContentView {
             if !subfolderCache.contains(folder) {   // a brand-new folder, added without a walk
                 subfolderCache = (subfolderCache + [folder])
                     .sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
+                // Born colored, tag-style (see rebuildFolderColors) — writing
+                // the pref triggers the cache rebuild that paints the dot.
+                if FolderColorPreferences.color(for: folder, raw: folderColorsRaw) == nil,
+                   let preset = FolderColorPreferences.presets.randomElement() {
+                    folderColorsRaw = FolderColorPreferences.setting(preset.color, for: folder, in: folderColorsRaw)
+                }
             }
         }
         // Everything a move affects is now reconciled, so skip the full-vault
