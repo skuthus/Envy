@@ -49,6 +49,11 @@ struct NoteRow: View {
     /// nothing.
     var folderDisplay: FolderListDisplay = .dot
 
+    /// The dot's quick hover label (see folderIndicator) — hand-rolled
+    /// because .help()'s system delay isn't tunable.
+    @State private var showsFolderTip = false
+    @State private var dotHoverTask: Task<Void, Never>?
+
     var body: some View {
         HStack(spacing: 6) {
             if isPinned {
@@ -116,7 +121,47 @@ struct NoteRow: View {
                     Circle()
                         .fill(folderColor)
                         .frame(width: 7 * interfaceFontScale, height: 7 * interfaceFontScale)
-                        .accessibilityLabel("In a colored folder")
+                        // The dot alone says "in a colored folder" but not
+                        // which — hovering names it. A hand-rolled label, not
+                        // .help(): the system tooltip's ~1.5s delay isn't
+                        // tunable and reads as "nothing happens". A slightly
+                        // larger invisible hit area so a 7pt dot isn't a
+                        // pixel-hunt to hover.
+                        .contentShape(Rectangle().inset(by: -3))
+                        .onHover { hovering in
+                            dotHoverTask?.cancel()
+                            if hovering, folderName != nil {
+                                dotHoverTask = Task { @MainActor in
+                                    // Just enough delay that sweeping the
+                                    // cursor across the list doesn't strobe
+                                    // labels; a deliberate pause shows it.
+                                    try? await Task.sleep(for: .milliseconds(250))
+                                    guard !Task.isCancelled else { return }
+                                    showsFolderTip = true
+                                }
+                            } else {
+                                showsFolderTip = false
+                            }
+                        }
+                        .overlay(alignment: .top) {
+                            if showsFolderTip, let folderName {
+                                Text(folderName)
+                                    .font(.system(size: 10 * interfaceFontScale))
+                                    .lineLimit(1)
+                                    .fixedSize()
+                                    .foregroundStyle(folderColor)
+                                    .padding(.horizontal, 6 * interfaceFontScale)
+                                    .padding(.vertical, 2)
+                                    .background(Color(nsColor: .windowBackgroundColor), in: Capsule())
+                                    .overlay(Capsule().strokeBorder(folderColor.opacity(0.4), lineWidth: 1))
+                                    // Floats above the dot, over the previous
+                                    // row — which paints earlier, so this
+                                    // draws on top of it.
+                                    .offset(y: -(16 * interfaceFontScale))
+                                    .allowsHitTesting(false)
+                            }
+                        }
+                        .accessibilityLabel(folderName.map { "In folder \($0)" } ?? "In a colored folder")
                 }
             case .name:
                 if let folderName {
