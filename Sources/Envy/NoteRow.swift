@@ -147,7 +147,13 @@ struct NoteRow: View {
                                 showsFolderTip = false
                             }
                         }
-                        .overlay(alignment: .top) {
+                        // Anchored to the dot's window-edge side so the label
+                        // grows inward, over the list — centering it on the
+                        // dot pushed half of a long folder name past the
+                        // window edge (clipped, since nothing can draw
+                        // outside the window), worst in full screen or a
+                        // tiled half where the window edge is the screen's.
+                        .overlay(alignment: dotTrailing ? .topTrailing : .topLeading) {
                             if showsFolderTip, let folderName {
                                 Text(folderName)
                                     .font(.system(size: 10 * interfaceFontScale))
