@@ -28,12 +28,12 @@ struct WhatsNewView: View {
             }
 
             VStack(spacing: 10) {
-                Image(systemName: "folder")
+                Image(systemName: "magnifyingglass")
                     .font(.system(size: 44))
                     .foregroundStyle(EnvyBrand.mark)
-                Text("A Vault That Syncs Whole")
+                Text("Filing & Finding")
                     .font(.title3.bold())
-                Text("Your images and deleted notes now live in visible Attachments and Trash folders inside your Index \u{2014} the old hidden folders were silently skipped by cloud sync, leaving pictures stranded on one machine while the notes traveled. Everything migrates automatically; references keep working.\n\nFolders got friendlier too: every folder now has a color from the moment it exists \u{2014} hover a note's dot to see its folder's name, right-click it to recolor, exactly like a tag. And multi-select finally files in bulk: right-click \u{2192} Move N Notes to.")
+                Text("Four new search operators: interlink: shows everything connected to a note, both directions; folder: searches by pile; title: matches names, not mentions; and ghost: finds unresolved [[links]], which now render dimmed in the editor until their note exists. Operator arguments autocomplete as you type.\n\nFolders meet you everywhere now: Submit a fleeting note straight into one from the button's menu, or create into one from the search box itself: type Work/Note title and press Return.")
                     .font(.body)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)

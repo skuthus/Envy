@@ -2,6 +2,20 @@
 
 Also published at [envynote.app/changelog.html](https://envynote.app/changelog.html).
 
+## 1.8.4 — July 29, 2026
+
+Filing and finding: every organizing axis in Envy now has a first-class search operator, and folders can be targeted from everywhere a note is born or reviewed.
+
+- **`interlink:Note Title`** matches everything connected to a note in either direction: the notes linking to it plus the notes it links out to. The Interlinks footer as a searchable list, and it composes: `interlink:Project todo:` finds open tasks across everything touching Project.
+- **`folder:name`** finds notes filed under a folder, partial and case-insensitive like `tag:`, matched against the whole relative path. A bare `folder:` means anything in a subfolder; `-folder:` alone means the unfiled notes at the root.
+- **`title:word`** restricts matching to titles only: the note *named* for a thing, not every note that mentions it. Several combine; `-title:` excludes.
+- **Ghost links.** A `[[link]]` whose target note doesn't exist yet now renders dimmed (still clickable; clicking creates the note, as ever), so a glance separates kept promises from IOUs. Search `ghost:` for every note carrying one; `-ghost:` for notes whose links all resolve.
+- **Bare `tag:` / `-tag:`**: any tagged note, or the completely untagged. `-tag: orphan: stale:` is the full hygiene sweep.
+- **Autofill for operator arguments.** `link:`, `interlink:`, `title:`, and `folder:` complete their arguments as you type (note titles by recency, folders from your real list); accepting auto-quotes anything with spaces.
+- **Submit a fleeting note straight into a folder.** The Submit button's menu lists your folders with their colors; a plain click still files to the Index root. Same advance-to-the-next-capture flow either way.
+- **Create into a folder from the search box.** Type `Work/Retro notes` and press Return: the note is born inside `Work/`. The slash only acts as a path when the part before it is a real folder, so a stray `/` never invents one. An explicit path overrides the start-in-Inbox setting.
+- **Fixed:** a comma inside a quoted operator argument (`interlink:"Debrief (Sep 24, 2025)"`) no longer splits the search into meaningless OR groups; this had silently broken `link:` and quoted phrases with commas all along. `img:`/`embed:`/`stale:` register as operators in the search box again (styling, and Enter no longer offers to create a note literally named "img: diagram"). The blockquote rule no longer draws through the text of a single-line quote.
+
 ## 1.8.3 — July 28, 2026
 
 Your vault now syncs whole, and folders got friendlier.
