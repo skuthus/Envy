@@ -16,6 +16,7 @@ struct GeneralSettingsView: View {
     @AppStorage("requireModifierForLinkClick") private var requireModifierForLinkClick = true
     @AppStorage("linkPreviewTrigger") private var linkPreviewTriggerRaw = LinkPreviewTrigger.optionClick.rawValue
     @AppStorage("showTagsInTitleBar") private var showTagsInTitleBar = false
+    @AppStorage("showFolderInTitleBar") private var showFolderInTitleBar = true
     @AppStorage("showDuePill") private var showDuePill = true
     @AppStorage("linkDomainPills") private var linkDomainPills = true
     @AppStorage(IndexPreference.storageKey) private var indexPathRaw = ""
@@ -247,6 +248,11 @@ struct GeneralSettingsView: View {
 
             Section("Editor") {
                 Toggle("Show tags in title bar", isOn: $showTagsInTitleBar)
+                Toggle("Show folder in title bar", isOn: $showFolderInTitleBar)
+                Text("A chip in the folder's color naming the pile the open note lives in; click it to see that folder's notes. Never shows for notes at the Index root.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
                 Toggle("Show due date pill in title bar", isOn: $showDuePill)
                 Toggle("Show links as domain pills", isOn: $linkDomainPills)
                 Text("A bare URL renders as a compact pill of just its domain. Purely visual and entirely offline — the note still holds the full URL, and it shows in full the moment your cursor enters it.")

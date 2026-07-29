@@ -103,6 +103,7 @@ struct ContentView: View {
     @AppStorage("requireModifierForLinkClick") var requireModifierForLinkClick = true
     @AppStorage("linkPreviewTrigger") var linkPreviewTriggerRaw = LinkPreviewTrigger.optionClick.rawValue
     @AppStorage("showTagsInTitleBar") var showTagsInTitleBar = false
+    @AppStorage("showFolderInTitleBar") var showFolderInTitleBar = true
     @AppStorage("showDuePill") var showDuePill = true
     @AppStorage(IndexPreference.storageKey) var indexPathRaw = ""
     @AppStorage(IndexPreference.includeSubfoldersKey) var indexIncludeSubfolders = false

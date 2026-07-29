@@ -22,10 +22,17 @@ struct NoteEditorView: View {
     var submitFolders: [String] = []
     var submitFolderSwatch: ((String) -> NSImage?)? = nil
     var onTagSearch: (String) -> Void
+    /// Clicking the title bar's folder chip pivots to that folder's notes —
+    /// same search searchByFolder runs for the list's dot/chip.
+    var onFolderSearch: ((String) -> Void)? = nil
     var theme: Theme
     var requireModifierForLinkClick: Bool
     var searchQuery: String
     var showTagsInTitleBar: Bool
+    var showFolderInTitleBar: Bool = true
+    /// Read here (rather than threaded in) so a recolor from anywhere —
+    /// the list's context menu, Settings — repaints the chip live.
+    @AppStorage(FolderColorPreferences.storageKey) private var folderColorsRaw = ""
     var showDuePill: Bool
     var linkPreviewTrigger: LinkPreviewTrigger
     var fontZoom: CGFloat
@@ -99,10 +106,12 @@ struct NoteEditorView: View {
         submitFolders: [String] = [],
         submitFolderSwatch: ((String) -> NSImage?)? = nil,
         onTagSearch: @escaping (String) -> Void,
+        onFolderSearch: ((String) -> Void)? = nil,
         theme: Theme,
         requireModifierForLinkClick: Bool,
         searchQuery: String,
         showTagsInTitleBar: Bool,
+        showFolderInTitleBar: Bool = true,
         showDuePill: Bool,
         linkPreviewTrigger: LinkPreviewTrigger,
         fontZoom: CGFloat,
@@ -122,10 +131,12 @@ struct NoteEditorView: View {
         self.submitFolders = submitFolders
         self.submitFolderSwatch = submitFolderSwatch
         self.onTagSearch = onTagSearch
+        self.onFolderSearch = onFolderSearch
         self.theme = theme
         self.requireModifierForLinkClick = requireModifierForLinkClick
         self.searchQuery = searchQuery
         self.showTagsInTitleBar = showTagsInTitleBar
+        self.showFolderInTitleBar = showFolderInTitleBar
         self.showDuePill = showDuePill
         self.linkPreviewTrigger = linkPreviewTrigger
         self.fontZoom = fontZoom
@@ -354,6 +365,32 @@ struct NoteEditorView: View {
                         .help("Click to file into The Index; use the menu to file into a folder")
                     }
                     Button("Delete Note", role: .destructive, action: onDeleteFleeting)
+                }
+                // Which pile this note lives in, in the pile's own color —
+                // the title-bar twin of the list's folder dot/chip, absent
+                // entirely for root (and Inbox) notes so it costs no space
+                // when unused. Clicking pivots to the folder's notes, same
+                // as clicking the dot in the list.
+                if showFolderInTitleBar, let note, let folder = store.subfolderPath(of: note) {
+                    let folderColor = FolderColorPreferences.color(for: folder, raw: folderColorsRaw) ?? Color.secondary
+                    // Deliberately NOT the tag chips' filled-capsule look —
+                    // a folder is a different kind of fact than a tag, so
+                    // this reads as a different species: a folder glyph
+                    // (tags never carry icons) in an outlined capsule, the
+                    // same visual language as the list dot's hover label.
+                    HStack(spacing: 3) {
+                        Image(systemName: "folder.fill")
+                            .font(.system(size: 8))
+                        Text(folder)
+                            .font(.caption.bold())
+                    }
+                    .foregroundStyle(folderColor)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .overlay(Capsule().strokeBorder(folderColor.opacity(0.4), lineWidth: 1))
+                    .contentShape(Capsule())
+                    .onTapGesture { onFolderSearch?(folder) }
+                    .help("In \(folder) · click to see this folder's notes")
                 }
                 if showDuePill, let note, let due = note.due {
                     // "+N" once there's more than one active due date —
