@@ -711,7 +711,7 @@ extension ContentView {
     /// chain). Split prefix-matched from whole-word because that difference
     /// is load-bearing: "todo:xyz" is not an operator, "tag:xyz" is.
     private static let operatorPrefixes = ["tag:", "title:", "date:", "due:", "link:", "interlink:", "folder:", "stale:", "-link:", "-interlink:", "-folder:", "-tag:", "-title:"]
-    private static let operatorWords = ["orphan:", "linked:", "todo:", "img:", "embed:"]
+    private static let operatorWords = ["orphan:", "linked:", "todo:", "img:", "embed:", "ghost:"]
 
     /// Whether one lowercased query word reads as an operator.
     /// `browsePrefixes` exists because the two call sites deliberately

@@ -936,13 +936,13 @@ struct MarkdownTextView: NSViewRepresentable {
             selectedTextAttributes[.foregroundColor] = adjustedTextColor
         }
         textView.selectedTextAttributes = selectedTextAttributes
-        // NSTextView renders `.link`-attributed ranges with its own default color
-        // (system blue), ignoring any per-range `.foregroundColor` we set in
-        // MarkdownStyler, unless this is overridden explicitly.
-        textView.linkTextAttributes = [
-            .foregroundColor: theme.resolvedLinkColor,
-            .underlineStyle: NSUnderlineStyle.single.rawValue
-        ]
+        // Empty, deliberately: NSTextView otherwise paints `.link` ranges with
+        // one uniform style (its default blue, or whatever single override is
+        // set here), stomping the per-range colors MarkdownStyler applies.
+        // The styler sets color + underline on every link span itself — which
+        // is what lets an unresolved link render dimmed while resolved ones
+        // keep full link color.
+        textView.linkTextAttributes = [:]
     }
 
     @MainActor

@@ -1340,6 +1340,21 @@ struct SelfCheck {
             check("tag:name still filters by that tag",
                   titles("tag:alpha", tagSet) == ["Tagged"])
 
+            // --- ghost: ---
+            let real = note("Real Target", "exists")
+            let promising = note("Promising", "see [[Real Target]] and [[Not Yet Written]]")
+            let kept = note("Kept", "only [[Real Target]] here")
+            let pictorial = note("Pictorial", "an image ![[photo.png]] only")
+            let ghostSet = [real, promising, kept, pictorial]
+            check("ghost: finds notes with an unresolved link",
+                  titles("ghost:", ghostSet) == ["Promising"])
+            check("an image reference never counts as a ghost",
+                  !titles("ghost:", ghostSet).contains("Pictorial"))
+            check("-ghost: keeps only notes whose links all resolve",
+                  titles("-ghost:", ghostSet) == ["Real Target", "Kept", "Pictorial"])
+            check("ghost: composes with free terms",
+                  titles("ghost: see", ghostSet) == ["Promising"])
+
             // --- orphan: ---
             // "Meeting Notes" and "Ideas" are linked-to; Hub and Leaf link
             // out. Lonely does neither — the only orphan here. A note that

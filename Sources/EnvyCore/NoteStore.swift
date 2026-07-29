@@ -1654,6 +1654,8 @@ public final class NoteStore: ObservableObject {
         var excludeTitles: [String] = []
         var isTaggedOnly = false       // bare tag: — carries any tag
         var isUntaggedOnly = false     // bare -tag: — completely untagged
+        var isGhostOnly = false        // ghost: — has an unresolved [[link]]
+        var isGhostExcluded = false    // -ghost: — every link resolves
         var isOrphanOnly = false
         var isLinkedOnly = false
         // Closed quotes are exact — matched on word boundaries, so "nee"
@@ -1779,6 +1781,14 @@ public final class NoteStore: ObservableObject {
                         isDueInvalid = true
                     }
                 }
+            } else if token == "ghost:" {
+                // Notes carrying at least one unresolved [[link]] — a link
+                // whose target note doesn't exist yet. The file-list twin of
+                // the editor's dimmed ghost links: where the unkept promises
+                // are.
+                isGhostOnly = true
+            } else if token == "-ghost:" {
+                isGhostExcluded = true
             } else if token == "linked:" {
                 // The complement of orphan: — notes with at least one link
                 // in or out, i.e. part of the web rather than adrift.
@@ -1857,6 +1867,7 @@ public final class NoteStore: ObservableObject {
             || interlinkFilter != nil || !excludeInterlinks.isEmpty
             || folderFilter != nil || !excludeFolders.isEmpty || isFolderedOnly || isRootOnly
             || !titleTerms.isEmpty || !excludeTitles.isEmpty || isTaggedOnly || isUntaggedOnly
+            || isGhostOnly || isGhostExcluded
             || isTodoOnly || isTodoExcluded || tagFilter != nil || !excludeTags.isEmpty
             || dateFilter != nil
             || staleCutoff != nil
@@ -1869,6 +1880,12 @@ public final class NoteStore: ObservableObject {
         // in the query, since it's a full pass over every note's links.
         let linkedToTitles: Set<String> = (isOrphanOnly || isLinkedOnly)
             ? Set(notes.flatMap { $0.wikiLinks })
+            : []
+
+        // ghost:'s reference set — every real note title, built only when the
+        // operator is present (same guard linkedToTitles uses).
+        let allNoteTitles: Set<String> = (isGhostOnly || isGhostExcluded)
+            ? Set(notes.map(\.lowercasedTitle))
             : []
 
         // interlink:'s outbound half — what the target note itself links out
@@ -1933,6 +1950,16 @@ public final class NoteStore: ObservableObject {
                         return nil
                     }
                 }
+            }
+            if isGhostOnly || isGhostExcluded {
+                // A ghost link's target answers to no note — image targets
+                // aren't notes, so an attachment reference never counts.
+                let hasGhost = note.wikiLinks.contains { target in
+                    !allNoteTitles.contains(target)
+                        && !Note.imageAttachmentExtensions.contains((target as NSString).pathExtension.lowercased())
+                }
+                if isGhostOnly, !hasGhost { return nil }
+                if isGhostExcluded, hasGhost { return nil }
             }
             let noteIsOrphan = note.wikiLinks.isEmpty && !linkedToTitles.contains(note.lowercasedTitle)
             if isOrphanOnly, !noteIsOrphan { return nil }

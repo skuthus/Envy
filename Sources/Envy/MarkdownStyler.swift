@@ -729,6 +729,11 @@ enum MarkdownStyler {
         // as white-on-white in light mode.
         let listMarkerColor = NSColor(name: nil) { _ in markerColor.withAlphaComponent(0.5) }
         let linkColor = theme.resolvedLinkColor
+        // Unresolved links — targets no note answers to yet — render dimmed,
+        // Obsidian-style: still links (clicking one creates the note), but a
+        // glance separates kept promises from IOUs. Dynamic-color wrapped so
+        // the alpha survives appearance switches (see listMarkerColor).
+        let ghostLinkColor = NSColor(name: nil) { _ in theme.resolvedLinkColor.withAlphaComponent(0.45) }
         let codeBackground = theme.resolvedCodeBackgroundColor
         let monoFont = NSFont.monospacedSystemFont(ofSize: baseFont.pointSize, weight: .regular)
         let tagColor = theme.resolvedTagColor
@@ -1310,7 +1315,14 @@ enum MarkdownStyler {
                     collapse(range: aliasTargetRange, in: textStorage, text: text, font: baseFont)
                 }
             }
-            textStorage.addAttribute(.foregroundColor, value: linkColor, range: titleRange)
+            // Resolved against the vault's titles (the memoized set the embed
+            // pass already pays for). Image targets aren't notes — a
+            // [[pic.png]] shouldn't read as an unkept promise — so they keep
+            // full strength.
+            let target = parsed.target.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            let isResolved = imageExtensions.contains((target as NSString).pathExtension.lowercased())
+                || lowercasedTitleSet(for: noteTitles).contains(target)
+            textStorage.addAttribute(.foregroundColor, value: isResolved ? linkColor : ghostLinkColor, range: titleRange)
             textStorage.addAttribute(.underlineStyle, value: NSUnderlineStyle.single.rawValue, range: titleRange)
             // Revealed, the whole span is one hit target: brackets, the
             // aliased target, and the display text. Otherwise the clickable

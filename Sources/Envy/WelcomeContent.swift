@@ -97,7 +97,7 @@ enum WelcomeContent {
 
     `[[Note Title]]` links work throughout Envy, not just in the list above. Here's one to a small companion note: [[Example Linked Note]]
 
-    Hold **⌘** and click a link to follow it. If the note doesn't exist yet, clicking creates it and takes you straight there. That makes it easy to sketch out related notes before you've written any of them.
+    Hold **⌘** and click a link to follow it. If the note doesn't exist yet, clicking creates it and takes you straight there. That makes it easy to sketch out related notes before you've written any of them — and until a linked note exists, its link renders **dimmed**, so you can see at a glance which promises are still unkept. Search `ghost:` to find every note carrying one.
 
     Hold **⌥** (Option) and click a link instead to peek at it without leaving where you are — a small floating preview opens, and you can click straight into it to edit right there. Works on backlinks too. Settings → General can turn this off or change the trigger.
 
