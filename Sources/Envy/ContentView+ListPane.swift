@@ -705,7 +705,7 @@ extension ContentView {
     /// drift apart again (they had, once each grew its own hand-written
     /// chain). Split prefix-matched from whole-word because that difference
     /// is load-bearing: "todo:xyz" is not an operator, "tag:xyz" is.
-    private static let operatorPrefixes = ["tag:", "date:", "due:", "link:", "interlink:", "folder:", "stale:", "-link:", "-interlink:", "-folder:", "-tag:"]
+    private static let operatorPrefixes = ["tag:", "title:", "date:", "due:", "link:", "interlink:", "folder:", "stale:", "-link:", "-interlink:", "-folder:", "-tag:", "-title:"]
     private static let operatorWords = ["orphan:", "linked:", "todo:", "img:", "embed:"]
 
     /// Whether one lowercased query word reads as an operator.
@@ -867,7 +867,10 @@ extension ContentView {
     /// before the operator, kept so acceptance can rebuild the whole string.
     /// A closed quote means the argument is already complete: no context.
     private var linkCompletionContext: (prefix: String, fragment: String, head: String)? {
-        quotedArgumentContext(prefixes: ["-interlink:", "interlink:", "-link:", "link:"])
+        // title: completes from the same pool — it substring-matches rather
+        // than needing the exact title, but the completion is still the
+        // fastest way to land on the note you mean.
+        quotedArgumentContext(prefixes: ["-interlink:", "interlink:", "-link:", "link:", "-title:", "title:"])
     }
 
     /// Same shape for folder: — its names can carry spaces and commas too.

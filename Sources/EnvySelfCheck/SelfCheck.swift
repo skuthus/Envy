@@ -1270,6 +1270,32 @@ struct SelfCheck {
             check("folder: composes with free terms",
                   folderTitles("folder:work body", folderSet) == ["Filed", "Deep Note"])
 
+            // --- title: ---
+            let named = note("Meeting Notes", "about the dog")
+            let mentions = note("Random Thoughts", "my meeting notes say otherwise")
+            let titleSet = [named, mentions]
+            check("title: matches titles only, not bodies",
+                  titles("title:meeting", titleSet) == ["Meeting Notes"])
+            check("title: takes a quoted phrase",
+                  titles("title:\"meeting notes\"", titleSet) == ["Meeting Notes"])
+            check("several title: terms AND together",
+                  titles("title:meeting title:zzz", titleSet).isEmpty)
+            check("-title: excludes by title only",
+                  titles("meeting -title:meeting", titleSet) == ["Random Thoughts"])
+            check("title: composes with free terms",
+                  titles("title:meeting dog", titleSet) == ["Meeting Notes"])
+
+            // --- bare tag: / -tag: ---
+            let tagged = note("Tagged", "words #alpha")
+            let untagged = note("Untagged", "words only")
+            let tagSet = [tagged, untagged]
+            check("bare tag: means carries any tag",
+                  titles("tag:", tagSet) == ["Tagged"])
+            check("bare -tag: means completely untagged",
+                  titles("-tag:", tagSet) == ["Untagged"])
+            check("tag:name still filters by that tag",
+                  titles("tag:alpha", tagSet) == ["Tagged"])
+
             // --- orphan: ---
             // "Meeting Notes" and "Ideas" are linked-to; Hub and Leaf link
             // out. Lonely does neither — the only orphan here. A note that

@@ -1654,6 +1654,10 @@ public final class NoteStore: ObservableObject {
         var excludeFolders: [String] = []
         var isFolderedOnly = false     // bare folder: — any note in a subfolder
         var isRootOnly = false         // bare -folder: — notes at the Index root
+        var titleTerms: [String] = []
+        var excludeTitles: [String] = []
+        var isTaggedOnly = false       // bare tag: — carries any tag
+        var isUntaggedOnly = false     // bare -tag: — completely untagged
         var isOrphanOnly = false
         var isLinkedOnly = false
         // Closed quotes are exact — matched on word boundaries, so "nee"
@@ -1709,6 +1713,13 @@ public final class NoteStore: ObservableObject {
                 if aiCondition == nil {
                     aiCondition = AIFilter.parse(String(token.dropFirst("ai:".count)))
                 }
+            } else if token == "tag:" {
+                // Bare forms, on the folder: model: tag: alone is "carries
+                // any tag at all", -tag: alone is the untagged — which makes
+                // "-tag: orphan: stale:" the full hygiene sweep.
+                isTaggedOnly = true
+            } else if token == "-tag:" {
+                isUntaggedOnly = true
             } else if token.hasPrefix("-tag:") {
                 let name = String(token.dropFirst("-tag:".count))
                 if !name.isEmpty { excludeTags.append(name) }
@@ -1717,6 +1728,16 @@ public final class NoteStore: ObservableObject {
                     let name = String(token.dropFirst("tag:".count))
                     tagFilter = name.isEmpty ? nil : name
                 }
+            } else if token.hasPrefix("-title:") {
+                let term = unquote(String(token.dropFirst("-title:".count)))
+                if !term.isEmpty { excludeTitles.append(term) }
+            } else if token.hasPrefix("title:") {
+                // Restricts matching to titles only — free text also matches
+                // bodies, which at a large vault buries the note *named* for
+                // a thing under every note that merely mentions it. Several
+                // title: terms AND together, like free terms.
+                let term = unquote(String(token.dropFirst("title:".count)))
+                if !term.isEmpty { titleTerms.append(term) }
             } else if token.hasPrefix("date:") {
                 if dateFilter == nil {
                     dateFilter = Self.dateRange(for: String(token.dropFirst("date:".count)))
@@ -1839,6 +1860,7 @@ public final class NoteStore: ObservableObject {
             || linkFilter != nil || !excludeLinks.isEmpty || isOrphanOnly || isLinkedOnly
             || interlinkFilter != nil || !excludeInterlinks.isEmpty
             || folderFilter != nil || !excludeFolders.isEmpty || isFolderedOnly || isRootOnly
+            || !titleTerms.isEmpty || !excludeTitles.isEmpty || isTaggedOnly || isUntaggedOnly
             || isTodoOnly || isTodoExcluded || tagFilter != nil || !excludeTags.isEmpty
             || dateFilter != nil
             || staleCutoff != nil
@@ -1931,6 +1953,12 @@ public final class NoteStore: ObservableObject {
             }
             if isTodoOnly, !note.hasUncheckedTask { return nil }
             if isTodoExcluded, note.hasUncheckedTask { return nil }
+            if !titleTerms.isEmpty {
+                for term in titleTerms where !Self.fastContains(note.lowercasedTitle, term) { return nil }
+            }
+            if !excludeTitles.isEmpty, excludeTitles.contains(where: { Self.fastContains(note.lowercasedTitle, $0) }) { return nil }
+            if isTaggedOnly, note.tags.isEmpty { return nil }
+            if isUntaggedOnly, !note.tags.isEmpty { return nil }
             if let tagFilter, !note.tags.contains(where: { Self.fastContains($0, tagFilter) }) { return nil }
             if !excludeTags.isEmpty, note.tags.contains(where: { tag in excludeTags.contains { Self.fastContains(tag, $0) } }) { return nil }
             if let dateFilter, !(note.modifiedDate >= dateFilter.start && note.modifiedDate < dateFilter.end) { return nil }
