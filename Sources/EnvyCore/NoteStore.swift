@@ -31,9 +31,9 @@ private enum AIFilter {
 /// A template is just a plain `.md` file living in The Index's own
 /// `Templates` subfolder — never a Note itself. scanDirectory() explicitly
 /// skips descending into `Templates/` even when subfolders are included, so
-/// it's never visible to search/list/backlinks. `.trash/` folders (see
-/// NoteStore's own doc comment on trashedNotes) don't need the same explicit
-/// treatment — being hidden, they're already excluded by skipsHiddenFiles.
+/// it's never visible to search/list/backlinks. `Trash/` and `Attachments/`
+/// get the same by-name exclusion (they're visible folders now, so
+/// skipsHiddenFiles no longer covers them).
 public struct NoteTemplate: Identifiable, Hashable, Sendable {
     public let id: String
     public let name: String
@@ -105,6 +105,72 @@ public final class NoteStore: ObservableObject {
         self.includeSubfolders = includeSubfolders
         reload()
         startWatching()
+        migrateLegacyHiddenFolders()
+    }
+
+    /// Moves pre-1.8.3 hidden service folders to their visible homes:
+    /// `.attachments` → `Attachments/`, and every per-folder `.trash` into
+    /// the single root `Trash/` (mirroring each origin folder's relative
+    /// path). Runs detached — the legacy `.trash` hunt walks the whole vault
+    /// subtree, which has no business on the main thread at launch — and the
+    /// note scan is indifferent to it either way: the legacy folders are
+    /// hidden (already skipped) and the destinations are name-excluded.
+    /// Idempotent and cheap when there's nothing to migrate.
+    private func migrateLegacyHiddenFolders() {
+        let directory = noteDirectory
+        Task.detached(priority: .utility) { [weak self] in
+            let fm = FileManager.default
+
+            // .attachments → Attachments. Whole-folder rename when the
+            // visible folder doesn't exist yet; per-file merge (collision-
+            // safe) when it does.
+            let legacyAttachments = directory.appendingPathComponent(Self.legacyAttachmentsFolderName, isDirectory: true)
+            let attachments = directory.appendingPathComponent(Self.attachmentsFolderName, isDirectory: true)
+            if fm.fileExists(atPath: legacyAttachments.path) {
+                if !fm.fileExists(atPath: attachments.path) {
+                    try? fm.moveItem(at: legacyAttachments, to: attachments)
+                } else {
+                    for entry in (try? fm.contentsOfDirectory(at: legacyAttachments, includingPropertiesForKeys: nil)) ?? [] {
+                        let name = Self.availableAttachmentName(entry.lastPathComponent, in: attachments)
+                        try? fm.moveItem(at: entry, to: attachments.appendingPathComponent(name))
+                    }
+                    if ((try? fm.contentsOfDirectory(atPath: legacyAttachments.path)) ?? []).isEmpty {
+                        try? fm.removeItem(at: legacyAttachments)
+                    }
+                }
+            }
+
+            // Per-folder .trash → Trash/<origin's relative path>.
+            let rootPath = directory.standardizedFileURL.path
+            let trashRoot = directory.appendingPathComponent(Self.trashFolderName, isDirectory: true)
+            var movedTrash = false
+            for legacy in Self.allLegacyTrashDirectories(under: directory) {
+                let origin = legacy.deletingLastPathComponent().standardizedFileURL.path
+                var destination = trashRoot
+                if origin != rootPath, origin.hasPrefix(rootPath + "/") {
+                    destination = trashRoot.appendingPathComponent(String(origin.dropFirst(rootPath.count + 1)), isDirectory: true)
+                }
+                let entries = (try? fm.contentsOfDirectory(at: legacy, includingPropertiesForKeys: nil)) ?? []
+                if !entries.isEmpty {
+                    try? fm.createDirectory(at: destination, withIntermediateDirectories: true)
+                    for entry in entries {
+                        let title = entry.deletingPathExtension().lastPathComponent
+                        let name = entry.pathExtension.lowercased() == "md"
+                            ? Self.uniqueFilename(for: title, in: destination)
+                            : Self.availableAttachmentName(entry.lastPathComponent, in: destination)
+                        try? fm.moveItem(at: entry, to: destination.appendingPathComponent(name))
+                        movedTrash = true
+                    }
+                }
+                if ((try? fm.contentsOfDirectory(atPath: legacy.path)) ?? []).isEmpty {
+                    try? fm.removeItem(at: legacy)
+                }
+            }
+
+            if movedTrash {
+                await self?.refreshTrashedNotes()
+            }
+        }
     }
 
     deinit {
@@ -131,6 +197,7 @@ public final class NoteStore: ObservableObject {
         noteDirectory = resolved
         reload()
         startWatching()
+        migrateLegacyHiddenFolders()
     }
 
     /// Toggles whether The Index's subfolders (aside from `Templates/`) are
@@ -203,14 +270,18 @@ public final class NoteStore: ObservableObject {
         let buffer: UnsafeMutableBufferPointer<T>
     }
 
-    /// Every `.md` file anywhere under `directory`, except inside
-    /// `Templates/` — never notes, whether or not subfolder scanning is on.
-    /// `.trash/` folders need no equivalent special-casing here: they're
-    /// hidden (dot-prefixed), and skipsHiddenFiles below already excludes a
-    /// hidden directory's entire subtree, not just the directory entry
-    /// itself — confirmed empirically, not just assumed from the docs.
+    /// Every `.md` file anywhere under `directory`, except inside the
+    /// Index's own service folders — `Templates/`, `Trash/`, `Attachments/`
+    /// — none of which hold notes, whether or not subfolder scanning is on.
+    /// (Trash and Attachments used to be dot-hidden and excluded for free by
+    /// skipsHiddenFiles; they're visible now so sync clients don't skip
+    /// them, which means the scan excludes them by name, the Templates way.)
     nonisolated private static func notesRecursively(under directory: URL, fm: FileManager) -> [URL] {
-        let templatesDirectory = directory.appendingPathComponent("Templates", isDirectory: true).resolvingSymlinksInPath()
+        let serviceDirectories = Set(
+            ["Templates", trashFolderName, attachmentsFolderName].map {
+                directory.appendingPathComponent($0, isDirectory: true).resolvingSymlinksInPath()
+            }
+        )
         guard let enumerator = fm.enumerator(
             at: directory,
             includingPropertiesForKeys: [.contentModificationDateKey, .isDirectoryKey],
@@ -220,10 +291,10 @@ public final class NoteStore: ObservableObject {
         var results: [URL] = []
         for case let url as URL in enumerator {
             // resolvingSymlinksInPath() hits the filesystem, so only pay for
-            // it on directories (the only thing Templates/ could be) rather
-            // than on every enumerated file.
+            // it on directories (the only thing a service folder could be)
+            // rather than on every enumerated file.
             if (try? url.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true {
-                if url.resolvingSymlinksInPath() == templatesDirectory {
+                if serviceDirectories.contains(url.resolvingSymlinksInPath()) {
                     enumerator.skipDescendants()
                 }
                 continue
@@ -585,23 +656,23 @@ public final class NoteStore: ObservableObject {
         }
     }
 
-    /// A folder's own `.trash` subfolder is where delete(_:) sends its notes
-    /// first, ahead of the real macOS Trash — not one single Trash/ at The
-    /// Index's top level, but one hidden `.trash` sibling per folder a note
-    /// actually lives in. That's what makes restoreFromTrash(_:) trivial:
-    /// a trashed note's own parent folder always *is* the folder it came
-    /// from, no separate bookkeeping of "original location" required, and
-    /// it survives across app restarts for free. Being dot-prefixed also
-    /// means it's simply never visible — not in Finder, not to
-    /// scanDirectory()/notesRecursively() (skipsHiddenFiles already
-    /// excludes a hidden directory's whole subtree), and it can never
-    /// collide with a real folder of the user's own already named "Trash".
-    nonisolated private static let trashDirectoryName = ".trash"
+    /// Visible, single, and at the Index root (it was a hidden `.trash`
+    /// inside each folder before 1.8.3, invisible to the sync clients that
+    /// exclude dot-folders — a deleted note was stranded on the machine it
+    /// was deleted on). Inside, Trash mirrors the vault's folder structure:
+    /// `Trash/Work/x.md` came from `Work/`, which is what lets
+    /// restoreFromTrash put things back where they came from without any
+    /// separate bookkeeping.
+    public nonisolated static let trashFolderName = "Trash"
+    nonisolated static let legacyTrashDirectoryName = ".trash"
 
-    /// Every `.trash` directory anywhere under `directory`, however deep —
-    /// there's one per folder that's ever had a note deleted from it, not
-    /// just one at the top.
-    nonisolated private static func allTrashDirectories(under directory: URL) -> [URL] {
+    public var trashDirectory: URL {
+        noteDirectory.appendingPathComponent(Self.trashFolderName, isDirectory: true)
+    }
+
+    /// Every legacy per-folder `.trash` directory anywhere under `directory`
+    /// — only migration walks these now.
+    nonisolated private static func allLegacyTrashDirectories(under directory: URL) -> [URL] {
         guard let enumerator = FileManager.default.enumerator(
             at: directory,
             includingPropertiesForKeys: [.isDirectoryKey],
@@ -609,7 +680,7 @@ public final class NoteStore: ObservableObject {
         ) else { return [] }
         var results: [URL] = []
         for case let url as URL in enumerator {
-            guard url.lastPathComponent == trashDirectoryName,
+            guard url.lastPathComponent == legacyTrashDirectoryName,
                   (try? url.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true else { continue }
             results.append(url)
             enumerator.skipDescendants()
@@ -630,22 +701,21 @@ public final class NoteStore: ObservableObject {
     /// Not parallelized like scanDirectory() — trash is expected to hold far
     /// fewer notes than the whole Index at any given time (it only
     /// accumulates between emptyTrash() sweeps). Runs off the main actor via
-    /// refreshTrashedNotes(), since allTrashDirectories() walks the whole
-    /// vault subtree even when the trash itself is empty.
+    /// refreshTrashedNotes(). Walks only the root `Trash/` subtree now — far
+    /// cheaper than the old whole-vault hunt for per-folder `.trash` dirs,
+    /// which paid a full tree walk even when the trash was empty.
     nonisolated private static func scanTrashedNotes(under directory: URL) -> [Note] {
-        let fm = FileManager.default
+        let trashRoot = directory.appendingPathComponent(trashFolderName, isDirectory: true)
+        guard let enumerator = FileManager.default.enumerator(
+            at: trashRoot,
+            includingPropertiesForKeys: [.contentModificationDateKey],
+            options: [.skipsHiddenFiles]
+        ) else { return [] }
         var results: [Note] = []
-        for trashDirectory in allTrashDirectories(under: directory) {
-            guard let entries = try? fm.contentsOfDirectory(
-                at: trashDirectory,
-                includingPropertiesForKeys: [.contentModificationDateKey],
-                options: [.skipsHiddenFiles]
-            ) else { continue }
-            for url in entries where url.pathExtension.lowercased() == "md" {
-                guard let content = try? String(contentsOf: url, encoding: .utf8) else { continue }
-                let modified = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? Date()
-                results.append(Note(id: url.path, url: url, content: content, modifiedDate: modified))
-            }
+        for case let url as URL in enumerator where url.pathExtension.lowercased() == "md" {
+            guard let content = try? String(contentsOf: url, encoding: .utf8) else { continue }
+            let modified = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? Date()
+            results.append(Note(id: url.path, url: url, content: content, modifiedDate: modified))
         }
         return results.sorted { $0.modifiedDate > $1.modifiedDate }
     }
@@ -738,7 +808,8 @@ public final class NoteStore: ObservableObject {
         for case let url as URL in enumerator {
             guard (try? url.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true else { continue }
             let name = url.lastPathComponent
-            if name == "Templates" || name == inboxFolderName {
+            if name == "Templates" || name == inboxFolderName
+                || name == trashFolderName || name == attachmentsFolderName {
                 enumerator.skipDescendants()
                 continue
             }
@@ -807,7 +878,14 @@ public final class NoteStore: ObservableObject {
     /// everywhere automatically — the same trick `.trash` uses — meaning a
     /// stored image never shows up as a note or as a colorable subfolder, with
     /// no exclusion code to maintain.
-    public nonisolated static let attachmentsFolderName = ".attachments"
+    /// Visible, not dot-hidden (it was `.attachments` before 1.8.3): cloud
+    /// sync clients commonly exclude dot-folders by default, which silently
+    /// split a vault — notes synced everywhere, images stranded on one
+    /// machine. Same reasoning as `Inbox/` being visible: real user data must
+    /// survive whatever sync pipeline the vault lives in. The note scan
+    /// excludes it by name, the `Templates/` way.
+    public nonisolated static let attachmentsFolderName = "Attachments"
+    nonisolated static let legacyAttachmentsFolderName = ".attachments"
 
     /// The folder attachments are stored in (created lazily on first write).
     public var attachmentsDirectory: URL {
@@ -1126,19 +1204,30 @@ public final class NoteStore: ObservableObject {
         delete([note])
     }
 
-    /// Soft-deletes by moving each note's file into its own parent folder's
-    /// `.trash` subfolder — not straight to the real macOS Trash, so it
-    /// stays fully reversible via restoreLastDeleted() (or, later,
-    /// restoreFromTrash(_:)) until emptyTrash() eventually sweeps it further.
+    /// Soft-deletes by moving each note's file into the Index's own `Trash/`
+    /// — not straight to the real macOS Trash, so it stays fully reversible
+    /// via restoreLastDeleted() (or, later, restoreFromTrash(_:)) until
+    /// emptyTrash() eventually sweeps it further. The destination mirrors the
+    /// note's origin folder (`Work/x.md` → `Trash/Work/x.md`), which is what
+    /// restoreFromTrash reads the way home from.
     public func delete(_ notesToDelete: [Note]) {
         guard !notesToDelete.isEmpty else { return }
         markInternalWrite()
         var trashed: [(note: Note, trashedURL: URL)] = []
+        let rootPath = noteDirectory.standardizedFileURL.path
         for note in notesToDelete {
-            let trashDirectory = note.url.deletingLastPathComponent().appendingPathComponent(Self.trashDirectoryName, isDirectory: true)
-            try? FileManager.default.createDirectory(at: trashDirectory, withIntermediateDirectories: true)
-            let filename = Self.uniqueFilename(for: note.title, in: trashDirectory)
-            let destination = trashDirectory.appendingPathComponent(filename)
+            // Raw relative path, not subfolderPath(of:) — that helper
+            // deliberately reports nil for Inbox/ (a folder-color concern),
+            // and an inbox note must restore back to the Inbox.
+            var destinationDirectory = trashDirectory
+            let parent = note.url.deletingLastPathComponent().standardizedFileURL.path
+            if parent != rootPath, parent.hasPrefix(rootPath + "/") {
+                destinationDirectory = trashDirectory.appendingPathComponent(
+                    String(parent.dropFirst(rootPath.count + 1)), isDirectory: true)
+            }
+            try? FileManager.default.createDirectory(at: destinationDirectory, withIntermediateDirectories: true)
+            let filename = Self.uniqueFilename(for: note.title, in: destinationDirectory)
+            let destination = destinationDirectory.appendingPathComponent(filename)
             do {
                 try FileManager.default.moveItem(at: note.url, to: destination)
                 trashed.append((note, destination))
@@ -1196,14 +1285,27 @@ public final class NoteStore: ObservableObject {
     /// search — unlike restoreLastDeleted() (which only remembers the most
     /// recent delete, and only for the lifetime of the app process), this
     /// works for anything currently sitting in any `.trash` subfolder,
-    /// including ones left over from a previous session. Always lands back
-    /// in its `.trash` folder's own parent directory — the same folder it
-    /// was deleted from, which is exactly what the per-folder `.trash`
-    /// layout guarantees without needing to separately remember it.
+    /// including ones left over from a previous session. Lands back in the
+    /// folder it was deleted from — read straight off the note's position
+    /// inside `Trash/`, whose subpaths mirror the vault (`Trash/Work/x.md`
+    /// came from `Work/`). A file found in a legacy per-folder `.trash`
+    /// (pre-1.8.3 leftovers) restores beside that `.trash`, the old way.
     @discardableResult
     public func restoreFromTrash(_ note: Note) -> Note? {
-        let trashDirectory = note.url.deletingLastPathComponent()
-        let destinationDirectory = trashDirectory.deletingLastPathComponent()
+        let parent = note.url.deletingLastPathComponent().standardizedFileURL.path
+        let trashRoot = trashDirectory.standardizedFileURL.path
+        let destinationDirectory: URL
+        if parent == trashRoot {
+            destinationDirectory = noteDirectory
+        } else if parent.hasPrefix(trashRoot + "/") {
+            destinationDirectory = noteDirectory.appendingPathComponent(
+                String(parent.dropFirst(trashRoot.count + 1)), isDirectory: true)
+        } else {
+            destinationDirectory = note.url.deletingLastPathComponent().deletingLastPathComponent()
+        }
+        // The origin folder may have been deleted/renamed since — recreate it
+        // rather than failing the restore.
+        try? FileManager.default.createDirectory(at: destinationDirectory, withIntermediateDirectories: true)
         let filename = Self.uniqueFilename(for: note.title, in: destinationDirectory)
         let destination = destinationDirectory.appendingPathComponent(filename)
         markInternalWrite()
@@ -1236,21 +1338,17 @@ public final class NoteStore: ObservableObject {
     /// fails its restore silently (see restoreLastDeleted()'s own doc
     /// comment), so no extra bookkeeping is needed here for that.
     public func emptyTrash() {
-        let directories = Self.allTrashDirectories(under: noteDirectory)
-        guard !directories.isEmpty else { return }
-        var swept = false
-        for trashDirectory in directories {
-            guard let entries = try? FileManager.default.contentsOfDirectory(
-                at: trashDirectory,
-                includingPropertiesForKeys: nil,
-                options: [.skipsHiddenFiles]
-            ), !entries.isEmpty else { continue }
-            for url in entries {
-                try? FileManager.default.trashItem(at: url, resultingItemURL: nil)
-            }
-            swept = true
+        guard let entries = try? FileManager.default.contentsOfDirectory(
+            at: trashDirectory,
+            includingPropertiesForKeys: nil,
+            options: [.skipsHiddenFiles]
+        ), !entries.isEmpty else { return }
+        // Top-level entries are loose (root-deleted) notes plus the mirror
+        // folders; trashing each moves whole subtrees to the macOS Trash in
+        // one go and leaves Trash/ itself empty.
+        for url in entries {
+            try? FileManager.default.trashItem(at: url, resultingItemURL: nil)
         }
-        guard swept else { return }
         markInternalWrite()
         trashedNotes = []
     }

@@ -108,13 +108,11 @@ struct GeneralSettingsView: View {
         indexPathRaw.isEmpty ? NoteStore.defaultDirectory() : URL(fileURLWithPath: indexPathRaw, isDirectory: true)
     }
 
-    /// The Index's own top-level `.trash` — the one that matters for the
-    /// overwhelmingly common case (subfolder scanning off, or a delete that
-    /// happened right at the top level). A note deleted from deeper inside a
-    /// subfolder gets its own sibling `.trash` there instead; browsing across
-    /// all of them at once is what the `trash:` search operator is for.
+    /// The Index's single visible `Trash/` — everything deleted lands here
+    /// now (mirroring its origin folder's structure inside), so this button
+    /// shows all of it, not just top-level deletions.
     private var trashURL: URL {
-        indexURL.appendingPathComponent(".trash", isDirectory: true)
+        indexURL.appendingPathComponent(NoteStore.trashFolderName, isDirectory: true)
     }
 
     // Formatters are expensive to construct, and this one would otherwise be

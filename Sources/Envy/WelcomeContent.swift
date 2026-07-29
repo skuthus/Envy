@@ -24,7 +24,7 @@ enum WelcomeContent {
     - **⌥↓** and **⌥↑** move keyboard focus between the search box, the note list, and the editor.
     - If your search matches the start of an existing title — or, typing `tag:`, the start of a tag you've already used — the rest shows up in grey. Press **→** to complete it.
     - **⌘N** creates a blank note directly.
-    - **⌘⌫** deletes the selected note. It goes to a hidden `.trash` folder right next to it, not gone for good — Settings → General → Trash controls how often that gets swept into the real macOS Trash.
+    - **⌘⌫** deletes the selected note. It goes to a `Trash` folder inside your Index (visible in Finder, and it syncs with your notes), not gone for good — Settings → General → Trash controls how often that gets swept into the real macOS Trash.
     - **⌘⇧⌫** restores the note(s) you just deleted, right back where they were.
     - Search `trash:` to browse everything currently trashed, anywhere in The Index. Clicking or arrowing through results just previews them, read-only — Restore, Reveal in Finder, and Delete are always a right-click (or a button right there in the preview) away, never a side effect of looking.
     - Cmd-click notes in the list to select several at once. Shift-click to select every note between your last click and the new one.
@@ -87,7 +87,7 @@ enum WelcomeContent {
 
     ### 🖼️ Images
 
-    - **Drag an image onto a note**, or paste one (a screenshot, a copied picture) — it appears inline. The original file is left untouched; Envy keeps its own copy in a hidden `.attachments` folder beside your notes, and the note just holds a plain `![[picture.png]]` reference, so everything stays portable.
+    - **Drag an image onto a note**, or paste one (a screenshot, a copied picture) — it appears inline. The original file is left untouched; Envy keeps its own copy in an `Attachments` folder inside your Index (visible, so it syncs with your notes), and the note just holds a plain `![[picture.png]]` reference, so everything stays portable.
     - **Insert one you already have** — press `⇧⌘I` (or right-click → Insert Image) to open a grid of thumbnails of every image in your vault. Filter by name, click one, and it drops in at your cursor — handy when the file is a screenshot with a name you'd never remember.
     - **Right-click an image** to resize it (Small/Medium/Large, or a custom width), add a **caption**, rename it, open it in Preview, or reveal the file in Finder. At rest the reference reads as just the filename; click into it to see and edit the full `![[picture.png|400|A caption]]`. A caption sits under the image and is plain text in the note, so it's searchable like anything else. If a referenced file goes missing, you'll see a clear placeholder instead of a blank.
     - PNG, JPEG, GIF (animated), HEIC, WebP, TIFF, and BMP all work.
@@ -191,7 +191,7 @@ enum WelcomeContent {
 
     Envy keeps all your notes in one folder, called The Index. Settings → General shows where it lives and lets you point it somewhere else at any time.
 
-    Already organize with subfolders? Turn on "Show items in subfolders" in that same section and Envy picks up notes nested inside them too (its own `Templates` folder is always excluded, and so is any hidden `.trash` folder).
+    Already organize with subfolders? Turn on "Show items in subfolders" in that same section and Envy picks up notes nested inside them too (its own `Templates`, `Trash`, and `Attachments` folders are always excluded).
 
     ## 🎨 Customizing the Look
 

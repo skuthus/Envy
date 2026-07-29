@@ -99,24 +99,24 @@ struct SelfCheck {
             check("delete removes file", !FileManager.default.fileExists(atPath: note.url.path))
         }
 
-        // deleteSendsToAHiddenDotTrashSubfolder
+        // deleteSendsToTheVisibleTrashFolder
         do {
             let store = await makeTempStore()
             let note = store.create(title: "Soft Delete Me")
-            let trashDirectory = store.noteDirectory.appendingPathComponent(".trash", isDirectory: true)
+            let trashDirectory = store.trashDirectory
             store.delete(note)
-            check("delete lands in a hidden .trash/, not macOS Trash directly", FileManager.default.fileExists(atPath: trashDirectory.appendingPathComponent("Soft Delete Me.md").path))
+            check("delete lands in the Index's Trash/, not macOS Trash directly", FileManager.default.fileExists(atPath: trashDirectory.appendingPathComponent("Soft Delete Me.md").path))
             check("delete publishes it via trashedNotes", store.trashedNotes.contains { $0.title == "Soft Delete Me" })
 
             let restored = store.restoreLastDeleted()
             check("restoreLastDeleted brings back exactly one note", restored.count == 1)
             check("restoreLastDeleted restores the original file", FileManager.default.fileExists(atPath: note.url.path))
-            check("restoreLastDeleted removes it from .trash/", !FileManager.default.fileExists(atPath: trashDirectory.appendingPathComponent("Soft Delete Me.md").path))
+            check("restoreLastDeleted removes it from Trash/", !FileManager.default.fileExists(atPath: trashDirectory.appendingPathComponent("Soft Delete Me.md").path))
             check("restoreLastDeleted re-adds it to notes", store.notes.contains { $0.id == note.id })
             check("restoreLastDeleted clears it from trashedNotes", !store.trashedNotes.contains { $0.title == "Soft Delete Me" })
         }
 
-        // trashSubfolderIsNeverScannedAsNotes
+        // trashFolderIsNeverScannedAsNotes
         do {
             let store = await makeTempStore()
             store.setIncludeSubfolders(true)
@@ -124,10 +124,10 @@ struct SelfCheck {
             let note = store.create(title: "Will Be Trashed")
             store.delete(note)
             await waitForLoad(store)
-            check("a note sitting in .trash/ never reappears as a note, even with subfolders included", !store.notes.contains { $0.title == "Will Be Trashed" })
+            check("a note sitting in Trash/ never reappears as a note, even with subfolders included", !store.notes.contains { $0.title == "Will Be Trashed" })
         }
 
-        // eachSubfolderGetsItsOwnTrashAndRestoresBackIntoItself
+        // trashMirrorsOriginFolderAndRestoresBackIntoIt
         do {
             let store = await makeTempStore()
             store.setIncludeSubfolders(true)
@@ -140,9 +140,9 @@ struct SelfCheck {
             await waitForLoad(store)
             if let nestedNote = store.notes.first(where: { $0.title == "Nested" }) {
                 store.delete(nestedNote)
-                let siblingTrash = subfolder.appendingPathComponent(".trash", isDirectory: true)
-                check("a subfolder note gets its own sibling .trash/, not the top-level one", FileManager.default.fileExists(atPath: siblingTrash.appendingPathComponent("Nested.md").path))
-                check("nothing landed in the top-level .trash/ for a subfolder delete", !FileManager.default.fileExists(atPath: store.noteDirectory.appendingPathComponent(".trash/Nested.md").path))
+                let mirrored = store.trashDirectory.appendingPathComponent("Work/Nested.md")
+                check("a subfolder note lands under Trash/<its folder>/, mirroring its origin", FileManager.default.fileExists(atPath: mirrored.path))
+                check("nothing landed loose at the top of Trash/ for a subfolder delete", !FileManager.default.fileExists(atPath: store.trashDirectory.appendingPathComponent("Nested.md").path))
 
                 if let trashedNested = store.trashedNotes.first(where: { $0.title == "Nested" }) {
                     let restored = store.restoreFromTrash(trashedNested)
@@ -150,11 +150,41 @@ struct SelfCheck {
                     check("restoreFromTrash puts it back in the same subfolder it came from", FileManager.default.fileExists(atPath: nestedURL.path))
                     check("restoreFromTrash re-adds it to notes", store.notes.contains { $0.title == "Nested" })
                 } else {
-                    check("trashedNotes finds the nested note in its own .trash/", false)
+                    check("trashedNotes finds the nested note under Trash/", false)
                 }
             } else {
                 check("nested note was found before trashing it", false)
             }
+        }
+
+        // legacyHiddenFoldersMigrateToVisibleOnes
+        do {
+            let root = FileManager.default.temporaryDirectory
+                .appendingPathComponent("EnvySelfCheck-migration-\(UUID().uuidString)", isDirectory: true)
+            let fm = FileManager.default
+            // Pre-1.8.3 layout: .attachments at the root, per-folder .trash.
+            let legacyAttachments = root.appendingPathComponent(".attachments", isDirectory: true)
+            try? fm.createDirectory(at: legacyAttachments, withIntermediateDirectories: true)
+            try? Data([0x89]).write(to: legacyAttachments.appendingPathComponent("pic.png"))
+            let work = root.appendingPathComponent("Work", isDirectory: true)
+            let legacyWorkTrash = work.appendingPathComponent(".trash", isDirectory: true)
+            try? fm.createDirectory(at: legacyWorkTrash, withIntermediateDirectories: true)
+            try? "old deleted".write(to: legacyWorkTrash.appendingPathComponent("Old.md"), atomically: true, encoding: .utf8)
+
+            let store = NoteStore(directory: root)
+            // Migration runs detached — poll briefly for it to settle.
+            for _ in 0..<50 {
+                if fm.fileExists(atPath: root.appendingPathComponent("Attachments/pic.png").path) { break }
+                try? await Task.sleep(for: .milliseconds(100))
+            }
+            check("migration moves .attachments contents into visible Attachments/",
+                  fm.fileExists(atPath: root.appendingPathComponent("Attachments/pic.png").path))
+            check("migration moves a per-folder .trash note into Trash/<folder>/",
+                  fm.fileExists(atPath: root.appendingPathComponent("Trash/Work/Old.md").path))
+            check("migration removes the emptied legacy .attachments", !fm.fileExists(atPath: legacyAttachments.path))
+            check("migration removes the emptied legacy .trash", !fm.fileExists(atPath: legacyWorkTrash.path))
+            _ = store
+            try? fm.removeItem(at: root)
         }
 
         // deleteFromTrashMovesJustThatOneItemToMacOSTrash
@@ -175,16 +205,16 @@ struct SelfCheck {
             }
         }
 
-        // emptyTrashSweepsEveryDotTrashFolderUnderTheIndex
+        // emptyTrashSweepsTheIndexTrashFolder
         do {
             let store = await makeTempStore()
             let note = store.create(title: "Long Gone")
-            let trashDirectory = store.noteDirectory.appendingPathComponent(".trash", isDirectory: true)
+            let trashDirectory = store.trashDirectory
             store.delete(note)
-            check("note is in .trash/ before emptying", FileManager.default.fileExists(atPath: trashDirectory.appendingPathComponent("Long Gone.md").path))
+            check("note is in Trash/ before emptying", FileManager.default.fileExists(atPath: trashDirectory.appendingPathComponent("Long Gone.md").path))
 
             store.emptyTrash()
-            check("emptyTrash clears the .trash/ folder", !FileManager.default.fileExists(atPath: trashDirectory.appendingPathComponent("Long Gone.md").path))
+            check("emptyTrash clears the Trash/ folder", !FileManager.default.fileExists(atPath: trashDirectory.appendingPathComponent("Long Gone.md").path))
             check("emptyTrash clears trashedNotes too", store.trashedNotes.isEmpty)
 
             let restoredAfterEmpty = store.restoreLastDeleted()
