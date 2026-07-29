@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 import EnvyCore
 
 /// Per-subfolder colors, stored as one JSON dictionary (folder path -> color)
@@ -13,16 +14,17 @@ import EnvyCore
 enum FolderColorPreferences {
     static let storageKey = "folderColors"
 
-    /// The swatches offered in the color menu — the app's own palette, so a
-    /// colored folder sits in the same family as tags and links.
-    static let presets: [(name: String, color: Color)] = [
-        ("Red", Color(red: 0xFF/255, green: 0x4B/255, blue: 0x39/255)),
-        ("Orange", Color(red: 0xF5/255, green: 0xA6/255, blue: 0x23/255)),
-        ("Yellow", Color(red: 0xF5/255, green: 0xD4/255, blue: 0x23/255)),
-        ("Green", Color(red: 0x30/255, green: 0xD1/255, blue: 0x58/255)),
-        ("Blue", Color(red: 0x5A/255, green: 0x80/255, blue: 0xFF/255)),
-        ("Purple", Color(red: 0xB4/255, green: 0x6B/255, blue: 0xFF/255)),
-        ("Pink", Color(red: 0xFF/255, green: 0x6F/255, blue: 0xB0/255)),
+    /// The swatches offered in the color menu — the same palette (and menu
+    /// emoji) as TagColorPreferences, so a colored folder sits in the same
+    /// family as tags and links.
+    static let presets: [(name: String, emoji: String, color: Color)] = [
+        ("Red",    "🔴", Color(red: 0xFF/255, green: 0x4B/255, blue: 0x39/255)),
+        ("Orange", "🟠", Color(red: 0xF5/255, green: 0xA6/255, blue: 0x23/255)),
+        ("Yellow", "🟡", Color(red: 0xF5/255, green: 0xD4/255, blue: 0x23/255)),
+        ("Green",  "🟢", Color(red: 0x30/255, green: 0xD1/255, blue: 0x58/255)),
+        ("Blue",   "🔵", Color(red: 0x5A/255, green: 0x80/255, blue: 0xFF/255)),
+        ("Purple", "🟣", Color(red: 0xB4/255, green: 0x6B/255, blue: 0xFF/255)),
+        ("Pink",   "🩷", Color(red: 0xFF/255, green: 0x6F/255, blue: 0xB0/255)),
     ]
 
     static func loadAll(from raw: String) -> [String: CodableColor] {
@@ -53,5 +55,37 @@ enum FolderColorPreferences {
             all[folderPath] = nil
         }
         return encode(all)
+    }
+}
+
+/// Drives the shared macOS color panel for the folder marker's "Custom
+/// Color…" item — TagColorPanel's twin, and the same reasoning: the panel is
+/// a single global object outliving any one row view and updates continuously
+/// as the user drags, so each change writes straight to UserDefaults against
+/// whatever the current stored value is; @AppStorage observers repaint.
+@MainActor
+enum FolderColorPanel {
+    // @MainActor because AppKit's colour-panel target-action always fires on
+    // the main thread — a nested class doesn't inherit the enclosing enum's
+    // isolation (see TagColorPanel.Target).
+    @MainActor private final class Target: NSObject {
+        var folderPath: String = ""
+        @objc func changed(_ sender: NSColorPanel) {
+            let raw = UserDefaults.standard.string(forKey: FolderColorPreferences.storageKey) ?? ""
+            let updated = FolderColorPreferences.setting(Color(nsColor: sender.color), for: folderPath, in: raw)
+            UserDefaults.standard.set(updated, forKey: FolderColorPreferences.storageKey)
+        }
+    }
+    private static let target = Target()
+
+    static func present(initial: NSColor, for folderPath: String) {
+        target.folderPath = folderPath
+        let panel = NSColorPanel.shared
+        panel.showsAlpha = false
+        panel.color = initial
+        panel.isContinuous = true
+        panel.setTarget(target)
+        panel.setAction(#selector(Target.changed(_:)))
+        panel.makeKeyAndOrderFront(nil)
     }
 }

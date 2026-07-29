@@ -54,6 +54,10 @@ struct NoteRow: View {
     @State private var showsFolderTip = false
     @State private var dotHoverTask: Task<Void, Never>?
 
+    /// Written by the marker's right-click color menu; ContentView observes
+    /// this key and rebuilds the folder-color caches, so every row repaints.
+    @AppStorage(FolderColorPreferences.storageKey) private var folderColorsRaw = ""
+
     var body: some View {
         HStack(spacing: 6) {
             if isPinned {
@@ -162,6 +166,7 @@ struct NoteRow: View {
                             }
                         }
                         .accessibilityLabel(folderName.map { "In folder \($0)" } ?? "In a colored folder")
+                        .contextMenu { folderColorMenu }
                 }
             case .name:
                 if let folderName {
@@ -173,6 +178,37 @@ struct NoteRow: View {
                         .padding(.vertical, 1)
                         .background((folderColor ?? Color.secondary).opacity(0.15), in: Capsule())
                         .help(folderName)
+                        .contextMenu { folderColorMenu }
+                }
+            }
+        }
+    }
+
+    /// Right-clicking the folder marker recolors its folder — the same menu a
+    /// tag chip offers, writing the same preference the Settings color wells
+    /// edit. Attached to the marker itself, so it wins over the row's own
+    /// context menu only when the click lands on the dot/chip.
+    @ViewBuilder
+    private var folderColorMenu: some View {
+        if let folderName {
+            ForEach(FolderColorPreferences.presets, id: \.name) { preset in
+                Button {
+                    folderColorsRaw = FolderColorPreferences.setting(preset.color, for: folderName, in: folderColorsRaw)
+                } label: {
+                    Text("\(preset.emoji)  \(preset.name)")
+                }
+            }
+
+            Button("Custom Color…") {
+                FolderColorPanel.present(
+                    initial: NSColor(folderColor ?? .secondary),
+                    for: folderName)
+            }
+
+            if FolderColorPreferences.color(for: folderName, raw: folderColorsRaw) != nil {
+                Divider()
+                Button("Remove Color", role: .destructive) {
+                    folderColorsRaw = FolderColorPreferences.setting(nil, for: folderName, in: folderColorsRaw)
                 }
             }
         }
