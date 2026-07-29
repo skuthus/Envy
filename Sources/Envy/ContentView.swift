@@ -127,6 +127,7 @@ struct ContentView: View {
     @AppStorage("showFooterClockDate") var showFooterClockDate = false
     @AppStorage("footerClockDateFormat") var footerClockDateFormatRaw = ClockDateFormat.short.rawValue
     @AppStorage("showFooterClockOnlyWhenFullScreen") var showFooterClockOnlyWhenFullScreen = false
+    @AppStorage("showFooterVaultCounts") var showFooterVaultCounts = true
     @AppStorage("editorFontZoom") var editorFontZoom: Double = 0
     @AppStorage("plainTextMode") var plainTextMode = false
     @AppStorage("protectAISignature") var protectAISignature = false

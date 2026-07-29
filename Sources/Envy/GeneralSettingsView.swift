@@ -5,6 +5,7 @@ import EnvyCore
 
 struct GeneralSettingsView: View {
     @AppStorage("showNotePreview") private var showNotePreview = false
+    @AppStorage("showFooterVaultCounts") private var showFooterVaultCounts = true
     @AppStorage("noteDotTrailing") private var noteDotTrailing = true
     @AppStorage("folderListDisplay") private var folderListDisplayRaw = FolderListDisplay.dot.rawValue
     @AppStorage("showDateModified") private var showDateModified = true
@@ -260,6 +261,11 @@ struct GeneralSettingsView: View {
                 }
                 Toggle("Plain-text mode (ignore markdown formatting)", isOn: $plainTextMode)
                 Toggle("Show interlinks in footer", isOn: $showBacklinks)
+                Toggle("Show note and folder counts in footer", isOn: $showFooterVaultCounts)
+                Text("Whole-vault totals, sitting to the right of the word and character counts. The folder count appears only when subfolder scanning is on.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
             Section("Updates") {

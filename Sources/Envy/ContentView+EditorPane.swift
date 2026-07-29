@@ -242,10 +242,22 @@ extension ContentView {
                     }
                 }
                 Spacer()
-                if selectedID != nil {
-                    Text("\(editorWordCount) words, \(editorCharacterCount) characters")
-                        .foregroundStyle(.secondary)
-                        .font(.system(size: 10 * interfaceFontScale))
+                HStack(spacing: 10) {
+                    if selectedID != nil {
+                        Text("\(editorWordCount) words, \(editorCharacterCount) characters")
+                            .foregroundStyle(.secondary)
+                            .font(.system(size: 10 * interfaceFontScale))
+                    }
+                    if showFooterVaultCounts {
+                        if selectedID != nil {
+                            RoundedRectangle(cornerRadius: 1)
+                                .fill(.secondary.opacity(0.45))
+                                .frame(width: 2, height: 10)
+                        }
+                        Text(vaultCountsLabel)
+                            .foregroundStyle(.secondary)
+                            .font(.system(size: 10 * interfaceFontScale))
+                    }
                 }
             }
         }
@@ -264,6 +276,19 @@ extension ContentView {
 
     var interlinksCount: Int {
         currentBacklinkNotes.count + currentForwardLinkedNotes.count + currentSuggestedLinks.count
+    }
+
+    /// Whole-vault totals for the footer: every loaded note (fleeting ones
+    /// included; Templates and Trash never load), and the folder count only
+    /// when subfolder scanning is on — without it folders don't factor into
+    /// Envy at all, so a count would just be noise. Both are O(1) reads of
+    /// state that's already maintained.
+    var vaultCountsLabel: String {
+        let noteCount = store.notes.count
+        let notes = "\(noteCount) note\(noteCount == 1 ? "" : "s")"
+        guard indexIncludeSubfolders else { return notes }
+        let folderCount = subfolderCache.count
+        return "\(notes) · \(folderCount) folder\(folderCount == 1 ? "" : "s")"
     }
 
     private var interlinksExpandedList: some View {

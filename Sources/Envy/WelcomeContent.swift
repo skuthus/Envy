@@ -218,6 +218,7 @@ enum WelcomeContent {
     - Settings → General has a toggle to automatically hide Envy the moment you click into a different app or an empty part of the screen.
     - Settings → General has a toggle for whether pressing Return in the search box also moves your cursor into the editor, in case you'd rather stay in the search box instead.
     - Settings → General can also show a small clock in the editor's footer, with an optional date in a few different formats, and an option to only show it while in full screen.
+    - The footer also shows your vault's totals — how many notes and folders you have — just right of the word and character counts. Settings → General → "Show note and folder counts in footer" turns it off.
     - Every shortcut above (plus the global summon key) can be changed in Settings → Shortcuts. Click a shortcut, then press a new combination to save it right away. A Reset button sits next to each one, plus a "Reset All to Defaults" for starting over.
     - Edit a note in another app while it's open in Envy, and the change appears here automatically. The part that changed briefly flashes so you don't miss it, in the same color as your theme's search highlight.
 
