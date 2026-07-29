@@ -82,8 +82,13 @@ final class HoverAwareTextView: NSTextView {
             // Sits in the gap the 16pt headIndent already opens up, at the
             // same 2pt weight an embed's rule uses — a quote and a
             // transclusion are the same idea, one static and one live, so
-            // they get the same mark.
-            let rule = NSRect(x: bounds.minX + 4, y: bounds.minY, width: 2, height: bounds.height)
+            // they get the same mark. Anchored to the container's left edge,
+            // NOT bounds.minX: boundingRect unions whole line fragments for
+            // a multi-line quote (minX 0) but hugs the glyphs for a
+            // single-line one (minX ≈ the indent), which used to draw the
+            // rule straight through the first character.
+            let ruleX = textContainerInset.width + textContainer.lineFragmentPadding + 4
+            let rule = NSRect(x: ruleX, y: bounds.minY, width: 2, height: bounds.height)
             rule.fill()
         }
     }
