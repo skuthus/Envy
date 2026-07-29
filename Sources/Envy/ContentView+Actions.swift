@@ -84,7 +84,37 @@ extension ContentView {
     /// Not used for notes made from a template, which arrive with structure
     /// and content because you chose them deliberately.
     func createNoteWhereNewNotesGo(titled title: String) -> Note {
-        newNotesStartInInbox ? store.createInboxNote(titled: title) : store.create(title: title)
+        // "Work/Retro notes" creates "Retro notes" inside Work/ — the slash
+        // is the folder picker, the way a flat-file omnibar should think. An
+        // explicit path also overrides the start-in-Inbox default: naming a
+        // destination is the filing decision that setting exists to force.
+        if let target = folderTargetedCreation(from: title) {
+            let note = store.create(title: target.title, inSubfolder: target.folder)
+            // Same surgical cache update a move does, so the new row shows
+            // its folder marker immediately without a full recompute.
+            noteSubfolderCache[note.id] = target.folder
+            if let color = folderColorMap[target.folder] { noteFolderColorCache[note.id] = color }
+            return note
+        }
+        return newNotesStartInInbox ? store.createInboxNote(titled: title) : store.create(title: title)
+    }
+
+    /// Splits "Folder/Title" into its parts when — and only when — the part
+    /// before the last "/" case-insensitively matches an existing subfolder
+    /// path (nested included: "Projects/Work/Note"). Deliberately never
+    /// creates folders implicitly: a typo'd slash shouldn't quietly
+    /// manufacture one, so unmatched slash-text falls through to ordinary
+    /// creation (where sanitization turns "/" into "-", as ever). Nil when
+    /// subfolder scanning is off — folders don't exist as a concept then.
+    func folderTargetedCreation(from raw: String) -> (folder: String, title: String)? {
+        guard indexIncludeSubfolders,
+              let slash = raw.range(of: "/", options: .backwards) else { return nil }
+        let folderPart = String(raw[..<slash.lowerBound]).trimmingCharacters(in: .whitespaces)
+        let titlePart = String(raw[slash.upperBound...]).trimmingCharacters(in: .whitespaces)
+        guard !folderPart.isEmpty, !titlePart.isEmpty,
+              let match = subfolderCache.first(where: { $0.caseInsensitiveCompare(folderPart) == .orderedSame })
+        else { return nil }
+        return (match, titlePart)
     }
 
     /// Splits the selected text out into a note of its own, returning the title

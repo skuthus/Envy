@@ -98,7 +98,12 @@ extension ContentView {
             // keystroke render — it trails typing by the debounce, which
             // for a hint pill is imperceptible.
             if !query.trimmingCharacters(in: .whitespaces).isEmpty && !isSearchOperatorQuery && !queryHasExactTitleMatch {
-                Text("Press \u{23CE} to create \"\(query)\"")
+                // Folder-aware when the query reads as "Folder/Title" against
+                // a real folder — the pill is the promise of what ⏎ does, so
+                // it must say where the note will land.
+                let creation = folderTargetedCreation(from: query.trimmingCharacters(in: .whitespaces))
+                Text(creation.map { "Press \u{23CE} to create \"\($0.title)\" in \($0.folder)" }
+                     ?? "Press \u{23CE} to create \"\(query)\"")
                     .font(.system(size: 11 * interfaceFontScale))
                     .foregroundStyle(.secondary)
                     .padding(.horizontal, 12)

@@ -463,11 +463,19 @@ public final class NoteStore: ObservableObject {
     // MARK: - CRUD
 
     @discardableResult
-    public func create(title: String) -> Note {
+    /// Creates an empty note — at the Index root, or directly inside
+    /// `subfolder` (a path relative to the root, created on demand) when the
+    /// omnibar's "Folder/Title" creation form names one.
+    public func create(title: String, inSubfolder subfolder: String? = nil) -> Note {
         let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
         let base = trimmedTitle.isEmpty ? "Untitled" : trimmedTitle
-        let filename = Self.uniqueFilename(for: base, in: noteDirectory)
-        let url = noteDirectory.appendingPathComponent(filename)
+        var directory = noteDirectory
+        if let subfolder, !subfolder.isEmpty {
+            directory = noteDirectory.appendingPathComponent(subfolder, isDirectory: true)
+            try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        }
+        let filename = Self.uniqueFilename(for: base, in: directory)
+        let url = directory.appendingPathComponent(filename)
 
         markInternalWrite()
         try? "".write(to: url, atomically: true, encoding: .utf8)

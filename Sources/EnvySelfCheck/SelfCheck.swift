@@ -1188,6 +1188,18 @@ struct SelfCheck {
             }
         }
 
+        // createDirectlyIntoASubfolder
+        do {
+            let store = await makeTempStore()
+            let born = store.create(title: "Born Filed", inSubfolder: "Projects/Work")
+            check("create(inSubfolder:) lands the file in that folder, creating it on demand",
+                  FileManager.default.fileExists(atPath: store.noteDirectory.appendingPathComponent("Projects/Work/Born Filed.md").path))
+            check("the created note's id is its subfolder path",
+                  born.id.hasSuffix("/Projects/Work/Born Filed.md"))
+            check("create with no subfolder still lands at the root",
+                  store.create(title: "Plain").url.deletingLastPathComponent().path == store.noteDirectory.path)
+        }
+
         do {
             print("Search operators")
 
