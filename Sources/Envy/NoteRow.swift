@@ -45,6 +45,10 @@ struct NoteRow: View {
     /// The note's subfolder as a relative path ("Projects" or "Projects/Ideas"),
     /// for the "Folder name" display. nil for a root or Inbox note.
     var folderName: String? = nil
+    /// Clicking the folder dot/chip searches for just that folder's notes
+    /// (ContentView.searchByFolder) — the same click-to-pivot a tag chip
+    /// offers. Optional so surfaces without a search box can omit it.
+    var onFolderSearch: ((String) -> Void)? = nil
     /// How the subfolder shows in the list — a colored dot, a labelled chip, or
     /// nothing.
     var folderDisplay: FolderListDisplay = .dot
@@ -171,6 +175,12 @@ struct NoteRow: View {
                                     .allowsHitTesting(false)
                             }
                         }
+                        // On the dot itself, so it wins over the row's own
+                        // selection tap only when the click lands here —
+                        // same scoping as the recolor context menu below.
+                        .onTapGesture {
+                            if let folderName { onFolderSearch?(folderName) }
+                        }
                         .accessibilityLabel(folderName.map { "In folder \($0)" } ?? "In a colored folder")
                         .contextMenu { folderColorMenu }
                 }
@@ -183,6 +193,7 @@ struct NoteRow: View {
                         .padding(.horizontal, 5 * interfaceFontScale)
                         .padding(.vertical, 1)
                         .background((folderColor ?? Color.secondary).opacity(0.15), in: Capsule())
+                        .onTapGesture { onFolderSearch?(folderName) }
                         .help(folderName)
                         .contextMenu { folderColorMenu }
                 }

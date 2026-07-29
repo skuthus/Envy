@@ -187,6 +187,16 @@ extension ContentView {
         focusedField = .search
     }
 
+    /// Clicking a row's folder dot or name chip — the folder twin of
+    /// searchByTag above, showing just that folder's notes. Always quoted:
+    /// folder names carry spaces far more often than tags do. Matching is
+    /// the folder: operator's own (against the whole relative path), so a
+    /// parent folder's search includes its nested folders' notes too.
+    func searchByFolder(_ folder: String) {
+        query = "folder:\"\(folder)\""
+        focusedField = .search
+    }
+
     // MARK: - Templates
 
     /// "template:xyz" creates from whichever template is highlighted (arrow
