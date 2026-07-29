@@ -2,6 +2,15 @@
 
 Also published at [envynote.app/changelog.html](https://envynote.app/changelog.html).
 
+## 1.8.3 — July 28, 2026
+
+Your vault now syncs whole, and folders got friendlier.
+
+- **Attachments and Trash are visible folders now.** They were hidden (`.attachments`, per-folder `.trash`) — invisible to the cloud sync clients that skip dot-folders by default, so a vault's notes synced everywhere while its images and deleted notes stayed stranded on one machine. Both now live in plain `Attachments/` and `Trash/` folders at the Index root that travel with your vault. Envy migrates everything automatically on first launch; `![[image]]` references keep working untouched. Trash mirrors your folder structure inside (`Trash/Work/note.md` came from `Work/`), so restore still puts things back exactly where they came from. ("Attachments" and "Trash" are now reserved names at the Index root.)
+- **Every folder has a color from the moment it exists** — no setup. Hover a note's folder dot to see the folder's name; **right-click the dot** (or name chip) to pick the color you actually want, same as a tag. The Settings Folder Colors section is retired — the marker is the interface.
+- **Move many notes at once.** Multi-select, right-click → **Move N Notes to**: any folder, the Index root, or New Folder… for the whole selection in one go.
+- **Fixed:** notes with `:` or `/` in their titles refused to move to a folder at all (the filename-sanitization difference was misread as a name collision). Moving one now also rewrites the vault's `[[links]]` if the filename form differs, so nothing breaks.
+
 ## 1.8.2 — July 28, 2026
 
 - **Envy now opens properly when you sign in.** With Envy in your Login Items, a sign-in launch could come up as just the menu bar eye — clicking it did nothing, and only a quit-and-reopen recovered. The window now appears on its own shortly after login, and every summon path (hotkey, menu bar, Dock) can recreate it if it's ever missing.

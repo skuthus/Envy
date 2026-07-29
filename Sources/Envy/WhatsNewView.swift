@@ -28,12 +28,12 @@ struct WhatsNewView: View {
             }
 
             VStack(spacing: 10) {
-                Image(systemName: "macwindow")
+                Image(systemName: "folder")
                     .font(.system(size: 44))
                     .foregroundStyle(EnvyBrand.mark)
-                Text("Reliably There")
+                Text("A Vault That Syncs Whole")
                     .font(.title3.bold())
-                Text("Two fixes for how Envy shows up: launching at sign-in now actually opens the window (no more lonely menu bar eye that ignores your clicks), and the summon hotkey always lands the window in front of whatever you were doing \u{2014} it could previously slip behind.\n\nImage editing lost its dialogs, too: right-click an image \u{2192} Caption or Custom width now drops your cursor straight into the note text to type, and Rename is a small popover at the image with the name pre-selected. No more clicking into a box in the middle of the screen.")
+                Text("Your images and deleted notes now live in visible Attachments and Trash folders inside your Index \u{2014} the old hidden folders were silently skipped by cloud sync, leaving pictures stranded on one machine while the notes traveled. Everything migrates automatically; references keep working.\n\nFolders got friendlier too: every folder now has a color from the moment it exists \u{2014} hover a note's dot to see its folder's name, right-click it to recolor, exactly like a tag. And multi-select finally files in bulk: right-click \u{2192} Move N Notes to.")
                     .font(.body)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
