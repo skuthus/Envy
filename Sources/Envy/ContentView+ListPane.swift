@@ -705,8 +705,8 @@ extension ContentView {
     /// drift apart again (they had, once each grew its own hand-written
     /// chain). Split prefix-matched from whole-word because that difference
     /// is load-bearing: "todo:xyz" is not an operator, "tag:xyz" is.
-    private static let operatorPrefixes = ["tag:", "date:", "due:", "link:", "-link:", "-tag:"]
-    private static let operatorWords = ["orphan:", "linked:", "todo:"]
+    private static let operatorPrefixes = ["tag:", "date:", "due:", "link:", "interlink:", "stale:", "-link:", "-interlink:", "-tag:"]
+    private static let operatorWords = ["orphan:", "linked:", "todo:", "img:", "embed:"]
 
     /// Whether one lowercased query word reads as an operator.
     /// `browsePrefixes` exists because the two call sites deliberately
@@ -832,6 +832,7 @@ extension ContentView {
     /// title match against the same text wouldn't mean anything there.
     private var suggestionRemainder: String? {
         if let tagRemainder = tagSuggestionRemainder { return tagRemainder }
+        if let linkRemainder = linkSuggestionRemainder { return linkRemainder }
         guard let note = suggestionNoteCache, !query.isEmpty,
               note.title.count > query.count,
               note.lowercasedTitle.hasPrefix(query.lowercased()) else { return nil }
@@ -856,6 +857,52 @@ extension ContentView {
         return nil
     }
 
+    /// The link operator (link:/interlink:, either polarity) the query is
+    /// currently completing an argument for, if any. Unlike the tag context,
+    /// this can't just take the last space-split word — a title mid-typing
+    /// inside an open quote (link:"Meeting No) contains spaces — so it finds
+    /// the last operator occurrence that sits at a word boundary and treats
+    /// everything after it as the argument. `head` is the untouched query
+    /// before the operator, kept so acceptance can rebuild the whole string.
+    /// A closed quote means the argument is already complete: no context.
+    private var linkCompletionContext: (prefix: String, fragment: String, head: String)? {
+        let prefixes = ["-interlink:", "interlink:", "-link:", "link:"]
+        var best: (start: String.Index, prefix: String)? = nil
+        for prefix in prefixes {
+            guard let range = query.range(of: prefix, options: [.backwards, .caseInsensitive]) else { continue }
+            let atWordStart = range.lowerBound == query.startIndex
+                || query[query.index(before: range.lowerBound)] == " "
+            guard atWordStart else { continue }
+            if best == nil || range.lowerBound > best!.start {
+                best = (range.lowerBound, prefix)
+            }
+        }
+        guard let best else { return nil }
+        let head = String(query[..<best.start])
+        var fragment = String(query[query.index(best.start, offsetBy: best.prefix.count)...])
+        if fragment.hasPrefix("\"") {
+            guard !fragment.dropFirst().contains("\"") else { return nil }
+            fragment = String(fragment.dropFirst())
+        } else if fragment.contains(" ") {
+            // Unquoted spaces mean the tokenizer already split this into
+            // separate terms — the argument ended at the first space.
+            return nil
+        }
+        return (best.prefix, fragment, head)
+    }
+
+    /// link:/interlink: complete against note titles, most recently edited
+    /// first (the same ranking the editor's [[ autocomplete uses) — and it
+    /// matters more here than for tag:, since these operators match exact
+    /// titles: a partial title finds nothing, so the ghost text is the
+    /// difference between usable and a memory test.
+    private var linkSuggestionRemainder: String? {
+        guard let (_, fragment, _) = linkCompletionContext, !fragment.isEmpty else { return nil }
+        let lowered = fragment.lowercased()
+        guard let match = noteTitlesByRecencyCache.first(where: { $0.lowercased().hasPrefix(lowered) && $0.count > fragment.count }) else { return nil }
+        return String(match.dropFirst(fragment.count))
+    }
+
     /// "tag:xyz"/"-tag:xyz" — the tag-name equivalent of the note-title
     /// suggestion, completing against every tag used anywhere in The Index
     /// (see allTagsByFrequencyCache), most-used first when several share a
@@ -878,6 +925,14 @@ extension ContentView {
                 words[words.count - 1] = prefix + fragment + remainder
             }
             query = words.joined(separator: " ")
+            return
+        }
+        if let (prefix, fragment, head) = linkCompletionContext, let remainder = linkSuggestionRemainder {
+            // Quote the accepted title whenever it has spaces — the
+            // tokenizer would otherwise split it into separate terms.
+            let full = fragment + remainder
+            let argument = full.contains(" ") ? "\"\(full)\"" : full
+            query = head + prefix + argument
             return
         }
         if suggestionRemainder != nil, let note = suggestionNoteCache {

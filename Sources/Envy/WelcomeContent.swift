@@ -107,7 +107,7 @@ enum WelcomeContent {
 
     **Renaming a note updates its links everywhere.** Rename a note (click its title, or right-click it in the list) and every `[[link]]` and `![[embed]]` pointing to it across your notes is rewritten to the new name, so nothing breaks — and if you gave a link your own wording with `|`, that wording is left alone.
 
-    **Search your links, too.** `link:Note Title` finds every note that points at another; `orphan:` surfaces notes with no links in or out. Wrap words in `"quotes"` for an exact phrase.
+    **Search your links, too.** `link:Note Title` finds every note that points at another; `interlink:Note Title` goes both directions, showing everything connected to that note (the Interlinks footer as a list, and it combines: `interlink:Project todo:` finds open tasks across everything touching Project); `orphan:` surfaces notes with no links in or out. Wrap words in `"quotes"` for an exact phrase.
 
     **Split a note in two.** When a note has quietly grown to hold two ideas, select the part that wants to stand alone and press **⌥⌘N**. It becomes a note of its own, with a `[[link]]` left in its place — the title taken from the selection's first line. One idea per note, applied after the fact.
 

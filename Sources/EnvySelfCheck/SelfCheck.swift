@@ -1211,6 +1211,35 @@ struct SelfCheck {
             check("-link: excludes notes containing that link",
                   titles("-link:Ideas", graph) == ["Lonely"])
 
+            // --- interlink: ---
+            // Both directions around a hub: Ideas is linked TO by Hub and
+            // Leaf (inbound), and Ideas itself links OUT to Lonely — so
+            // interlink:Ideas is all three, excluding Ideas itself.
+            let ideasHub = note("Ideas", "points at [[Lonely]]")
+            let web = [hub, leaf, lonely, ideasHub]
+            check("interlink: unions inbound and outbound neighbors",
+                  titles("interlink:Ideas", web).sorted() == ["Hub", "Leaf", "Lonely"])
+            check("interlink: excludes the hub note itself",
+                  !titles("interlink:Ideas", web).contains("Ideas"))
+            check("interlink: with a nonexistent outbound side degrades to inbound",
+                  titles("interlink:\"Meeting Notes\"", web) == ["Hub"])
+            check("-interlink: excludes the whole neighborhood",
+                  titles("-interlink:Ideas", web).sorted() == ["Ideas"])
+            check("interlink: composes with free terms",
+                  titles("interlink:Ideas just", web) == ["Leaf"])
+
+            // A quoted argument containing a comma must survive the OR-group
+            // split — the naive comma split used to cut it mid-title.
+            let comma = note("Debrief (Sep 24, 2025)", "notes")
+            let commaFan = note("Fan", "see [[Debrief (Sep 24, 2025)]]")
+            let commaSet = [comma, commaFan, lonely]
+            check("a comma inside a quoted link: argument doesn't split the group",
+                  titles("link:\"Debrief (Sep 24, 2025)\"", commaSet) == ["Fan"])
+            check("a comma inside a quoted interlink: argument doesn't split the group",
+                  titles("interlink:\"Debrief (Sep 24, 2025)\"", commaSet) == ["Fan"])
+            check("unquoted commas still split OR groups",
+                  titles("nothing, notes", commaSet).sorted() == ["Debrief (Sep 24, 2025)", "Lonely"])
+
             // --- orphan: ---
             // "Meeting Notes" and "Ideas" are linked-to; Hub and Leaf link
             // out. Lonely does neither — the only orphan here. A note that

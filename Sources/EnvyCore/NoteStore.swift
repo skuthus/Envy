@@ -1502,7 +1502,7 @@ public final class NoteStore: ObservableObject {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return notes }
 
-        let groups = trimmed.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+        let groups = splitGroups(trimmed)
         guard !groups.isEmpty else { return notes }
 
         if groups.count == 1 {
@@ -1572,6 +1572,33 @@ public final class NoteStore: ObservableObject {
     /// for the literal string `"mater` and finding nothing until you finish
     /// the quote. The interior stays intact, so `"material sci` matches that
     /// text adjacently, tightening the phrase live as you type it.
+    /// Splits a query into its comma-separated OR groups — but only on
+    /// commas *outside* double quotes, mirroring tokenize()'s own quote
+    /// handling. A naive split broke any quoted argument containing a
+    /// comma: interlink:"Debrief (Sep 24, 2025)" split mid-title into two
+    /// meaningless groups. An unterminated quote swallows every comma after
+    /// it, matching how an open quote already behaves for spaces.
+    nonisolated static func splitGroups(_ query: String) -> [String] {
+        var groups: [String] = []
+        var current = ""
+        var inQuotes = false
+        for character in query {
+            if character == "\"" {
+                inQuotes.toggle()
+                current.append(character)
+            } else if character == "," && !inQuotes {
+                let group = current.trimmingCharacters(in: .whitespaces)
+                if !group.isEmpty { groups.append(group) }
+                current = ""
+            } else {
+                current.append(character)
+            }
+        }
+        let group = current.trimmingCharacters(in: .whitespaces)
+        if !group.isEmpty { groups.append(group) }
+        return groups
+    }
+
     nonisolated public static func unquote(_ text: String) -> String {
         var result = text
         if result.hasPrefix("\"") { result.removeFirst() }
@@ -1605,6 +1632,8 @@ public final class NoteStore: ObservableObject {
         var isEmbedExcluded = false
         var linkFilter: String?
         var excludeLinks: [String] = []
+        var interlinkFilter: String?
+        var excludeInterlinks: [String] = []
         var isOrphanOnly = false
         var isLinkedOnly = false
         // Closed quotes are exact — matched on word boundaries, so "nee"
@@ -1722,6 +1751,19 @@ public final class NoteStore: ObservableObject {
                 // and they point at nothing. Zettelkasten hygiene: the
                 // backlink half is corpus-wide, computed once below.
                 isOrphanOnly = true
+            } else if token.hasPrefix("-interlink:") {
+                let target = unquote(String(token.dropFirst("-interlink:".count)))
+                if !target.isEmpty { excludeInterlinks.append(target) }
+            } else if token.hasPrefix("interlink:") {
+                // Everything connected to Target in either direction — notes
+                // containing [[Target]] plus the notes Target itself links
+                // out to: the Interlinks footer as a searchable list (minus
+                // Suggested, which are mentions, not real links). First one
+                // wins, like link:.
+                if interlinkFilter == nil {
+                    let target = unquote(String(token.dropFirst("interlink:".count)))
+                    interlinkFilter = target.isEmpty ? nil : target
+                }
             } else if token.hasPrefix("-link:") {
                 let target = unquote(String(token.dropFirst("-link:".count)))
                 if !target.isEmpty { excludeLinks.append(target) }
@@ -1759,6 +1801,7 @@ public final class NoteStore: ObservableObject {
         let hasOperator = isInboxOnly || isInboxExcluded
             || isImageOnly || isImageExcluded || isEmbedOnly || isEmbedExcluded
             || linkFilter != nil || !excludeLinks.isEmpty || isOrphanOnly || isLinkedOnly
+            || interlinkFilter != nil || !excludeInterlinks.isEmpty
             || isTodoOnly || isTodoExcluded || tagFilter != nil || !excludeTags.isEmpty
             || dateFilter != nil
             || staleCutoff != nil
@@ -1772,6 +1815,18 @@ public final class NoteStore: ObservableObject {
         let linkedToTitles: Set<String> = (isOrphanOnly || isLinkedOnly)
             ? Set(notes.flatMap { $0.wikiLinks })
             : []
+
+        // interlink:'s outbound half — what the target note itself links out
+        // to. One lookup per group (the inbound half is just each candidate's
+        // own wikiLinks). A target that doesn't exist leaves this empty, so
+        // interlink: gracefully degrades to link:'s inbound-only meaning.
+        let interlinkOutbound: Set<String> = interlinkFilter
+            .flatMap { target in notes.first { $0.lowercasedTitle == target }?.wikiLinks } ?? []
+        let excludeInterlinkOutbound: [String: Set<String>] = Dictionary(
+            uniqueKeysWithValues: excludeInterlinks.map { target in
+                (target, notes.first { $0.lowercasedTitle == target }?.wikiLinks ?? [])
+            }
+        )
 
         // Computed once for the whole group rather than per-note — same
         // reasoning as dateRange's own `now`, just needing today's start
@@ -1797,6 +1852,21 @@ public final class NoteStore: ObservableObject {
             if isEmbedExcluded, note.hasNoteEmbed { return nil }
             if let linkFilter, !note.wikiLinks.contains(linkFilter) { return nil }
             if !excludeLinks.isEmpty, note.wikiLinks.contains(where: { excludeLinks.contains($0) }) { return nil }
+            if let interlinkFilter {
+                // Connected in either direction, excluding the hub note
+                // itself — the footer for X lists X's neighbors, not X.
+                let connected = note.wikiLinks.contains(interlinkFilter)
+                    || interlinkOutbound.contains(note.lowercasedTitle)
+                if !connected || note.lowercasedTitle == interlinkFilter { return nil }
+            }
+            if !excludeInterlinks.isEmpty {
+                for target in excludeInterlinks {
+                    if note.wikiLinks.contains(target)
+                        || (excludeInterlinkOutbound[target]?.contains(note.lowercasedTitle) ?? false) {
+                        return nil
+                    }
+                }
+            }
             let noteIsOrphan = note.wikiLinks.isEmpty && !linkedToTitles.contains(note.lowercasedTitle)
             if isOrphanOnly, !noteIsOrphan { return nil }
             if isLinkedOnly, noteIsOrphan { return nil }
