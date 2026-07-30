@@ -380,7 +380,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     /// never skipped just because the window arrived after launch.
     @MainActor
     @discardableResult
-    private func resolveMainWindow() -> NSWindow? {
+    func resolveMainWindow() -> NSWindow? {
         if let mainWindow { return mainWindow }
         // Prefer the window actually titled "Envy" — the About and What's New
         // scenes are also titled, main-capable windows, and NSApp.windows

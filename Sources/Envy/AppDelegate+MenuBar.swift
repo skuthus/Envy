@@ -314,6 +314,15 @@ extension AppDelegate {
             showStatusMenu()
         } else if let pinnedNoteURL {
             togglePinnedNotePanel(for: pinnedNoteURL)
+        } else if let window = resolveMainWindow(), window.isVisible,
+                  window.styleMask.contains(.fullScreen) {
+            // In full screen the toggle's hide half is wrong: ordering out a
+            // full-screen window strands its empty space, and "hide" isn't
+            // what a click up there means mid-full-screen anyway. Just make
+            // sure Envy is front (jumping to its space if the click came
+            // from another one). The summon hotkey keeps its toggle — it's
+            // the deliberate show/hide gesture; this is a mouse reach.
+            summonMainWindow()
         } else {
             toggleWindow()
         }
