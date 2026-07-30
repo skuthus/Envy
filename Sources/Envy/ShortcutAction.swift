@@ -100,6 +100,7 @@ enum ShortcutAction: String, CaseIterable, Identifiable {
     case toggleBacklinks
     case showPinnedNote
     case unpinFromMenuBar
+    case keepOnTop
     case importFromAppleNotes
     case extractToNote
     case insertImage
@@ -127,6 +128,7 @@ enum ShortcutAction: String, CaseIterable, Identifiable {
         case .toggleBacklinks: "Toggle Backlinks"
         case .showPinnedNote: "Show/Hide Pinned Note (works from any app)"
         case .unpinFromMenuBar: "Unpin Note from Menu Bar (works from any app)"
+        case .keepOnTop: "Keep Envy on Top (works from any app)"
         case .importFromAppleNotes: "Import from Apple Notes"
         case .extractToNote: "Extract Selection to New Note"
         case .insertImage: "Insert Image"
@@ -178,6 +180,11 @@ enum ShortcutAction: String, CaseIterable, Identifiable {
             ShortcutBinding(character: String(KeyEquivalent.downArrow.character), keyCode: kVK_DownArrow, modifiers: SwiftUI.EventModifiers([.command, .option]).rawValue)
         case .unpinFromMenuBar:
             ShortcutBinding(character: "p", keyCode: kVK_ANSI_P, modifiers: SwiftUI.EventModifiers([.command, .option, .shift]).rawValue)
+        case .keepOnTop:
+            // ⌥⌘T — "T for Top." Global like the other window-level
+            // gestures, since the whole point is flipping it while some
+            // other app has focus.
+            ShortcutBinding(character: "t", keyCode: kVK_ANSI_T, modifiers: SwiftUI.EventModifiers([.command, .option]).rawValue)
         case .importFromAppleNotes:
             // ⌘⌥I — plain ⌘I is Italic, so the option modifier keeps them
             // distinct while staying "I for Import."

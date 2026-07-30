@@ -25,9 +25,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var appliedSummonBinding: ShortcutBinding?
     private var appliedPinnedNoteBinding: ShortcutBinding?
     private var appliedUnpinNoteBinding: ShortcutBinding?
+    private var appliedKeepOnTopBinding: ShortcutBinding?
     private static let summonHotKeyID: UInt32 = 1
     private static let pinnedNoteHotKeyID: UInt32 = 2
     private static let unpinNoteHotKeyID: UInt32 = 3
+    private static let keepOnTopHotKeyID: UInt32 = 4
     var blinkTimer: Timer?
     private var appliedVisibility: AppVisibility?
     private var windowStateObservers: [Any] = []
@@ -160,9 +162,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 self?.unpinMenuBarNote()
             }
         }
+        hotKey.handlers[Self.keepOnTopHotKeyID] = { [weak self] in
+            Task { @MainActor in
+                self?.toggleKeepOnTop()
+            }
+        }
         applySummonHotKey()
         applyPinnedNoteHotKey()
         applyUnpinNoteHotKey()
+        applyKeepOnTopHotKey()
         // All three global hotkeys are registered once with whatever keyCode/
         // modifiers were current at launch — re-applied whenever any
         // UserDefaults value changes (cheap: guarded by an equality check
@@ -177,6 +185,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 self?.applySummonHotKey()
                 self?.applyPinnedNoteHotKey()
                 self?.applyUnpinNoteHotKey()
+                self?.applyKeepOnTopHotKey()
                 self?.applyAppVisibility()
             }
         }
@@ -241,6 +250,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     private func hideIfAutoHideEnabled() {
         guard UserDefaults.standard.bool(forKey: "hideOnFocusLoss") else { return }
+        // "Keep Envy on Top" means "stay visible while I work elsewhere" —
+        // the literal opposite of hide-on-focus-loss. The pin wins while
+        // it's on; unpin and auto-hide behaves as configured again.
+        guard !keepOnTop else { return }
         // orderOut on the window itself, not NSApp.hide(nil) — the latter is
         // a full "Hide Application," which ties into Mission Control's
         // per-Space "last active app" bookkeeping. With multiple displays
@@ -273,6 +286,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     private func applyUnpinNoteHotKey() {
         applyHotKey(.unpinFromMenuBar, id: Self.unpinNoteHotKeyID, applied: &appliedUnpinNoteBinding)
+    }
+
+    private func applyKeepOnTopHotKey() {
+        applyHotKey(.keepOnTop, id: Self.keepOnTopHotKeyID, applied: &appliedKeepOnTopBinding)
     }
 
     /// Always targets the pinned note directly. No-op if nothing's
@@ -401,7 +418,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         mainWindow = window
         window.delegate = self
         Self.applyWindowChrome(to: window)
+        applyKeepOnTop()
         updateStatusItemIcon()
+    }
+
+    /// Whether the main window floats above other apps' windows — the
+    /// whole-app version of pinning a peek. Toggled from the menu bar
+    /// icon's right-click menu, persisted across launches, and reapplied
+    /// whenever a (re)created window is adopted.
+    private(set) var keepOnTop = UserDefaults.standard.bool(forKey: "keepMainWindowOnTop")
+
+    func toggleKeepOnTop() {
+        keepOnTop.toggle()
+        UserDefaults.standard.set(keepOnTop, forKey: "keepMainWindowOnTop")
+        applyKeepOnTop()
+    }
+
+    private func applyKeepOnTop() {
+        guard let window = mainWindow else { return }
+        // A full-screen window's level belongs to the system — don't fight
+        // it mid-full-screen; windowDidExitFullScreen re-asserts ours.
+        guard !window.styleMask.contains(.fullScreen) else { return }
+        window.level = keepOnTop ? .floating : .normal
+    }
+
+    func windowDidExitFullScreen(_ notification: Notification) {
+        applyKeepOnTop()
     }
 
     /// A sign-in (login item) launch can complete without SwiftUI ever

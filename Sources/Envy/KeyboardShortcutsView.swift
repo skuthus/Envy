@@ -37,6 +37,7 @@ struct KeyboardShortcutsView: View {
                 Entry(action: .summonApp, description: "Show or hide Envy — works from any app"),
                 Entry(action: .showPinnedNote, description: "Show or hide your pinned note — works from any app"),
                 Entry(action: .unpinFromMenuBar, description: "Unpin the note pinned to the menu bar — works from any app"),
+                Entry(action: .keepOnTop, description: "Keep Envy floating above every other app's windows — works from any app"),
             ]),
             Group(title: "Notes", entries: [
                 Entry(action: .deleteNote, description: "Delete the selected note"),

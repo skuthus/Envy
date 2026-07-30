@@ -352,6 +352,14 @@ extension AppDelegate {
 
         menu.addItem(.separator())
 
+        // The whole-app version of pinning a peek: the main window floats
+        // above every other app's windows until toggled off. Checkmark
+        // shows the current state.
+        let keepOnTopItem = NSMenuItem(title: "Keep Envy on Top", action: #selector(toggleKeepOnTopFromStatusMenu), keyEquivalent: "")
+        keepOnTopItem.target = self
+        keepOnTopItem.state = keepOnTop ? .on : .off
+        menu.addItem(keepOnTopItem)
+
         let settings = NSMenuItem(title: "Settings…", action: #selector(openSettingsFromStatusMenu), keyEquivalent: "")
         settings.target = self
         menu.addItem(settings)
@@ -359,6 +367,11 @@ extension AppDelegate {
         menu.addItem(NSMenuItem(title: "Quit Envy", action: #selector(NSApplication.terminate(_:)), keyEquivalent: ""))
 
         menu.popUp(positioning: nil, at: NSPoint(x: 0, y: button.bounds.maxY + 4), in: button)
+    }
+
+    @MainActor
+    @objc private func toggleKeepOnTopFromStatusMenu() {
+        toggleKeepOnTop()
     }
 
     @MainActor
