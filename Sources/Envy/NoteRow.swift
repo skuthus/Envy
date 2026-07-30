@@ -219,33 +219,14 @@ struct NoteRow: View {
         }
     }
 
-    /// Right-clicking the folder marker recolors its folder — the same menu a
-    /// tag chip offers, writing the same preference the Settings color wells
-    /// edit. Attached to the marker itself, so it wins over the row's own
-    /// context menu only when the click lands on the dot/chip.
+    /// Right-clicking the folder marker recolors its folder — the shared
+    /// FolderColorMenu, same as the title bar's folder chip. Attached to
+    /// the marker itself, so it wins over the row's own context menu only
+    /// when the click lands on the dot/chip.
     @ViewBuilder
     private var folderColorMenu: some View {
         if let folderName {
-            ForEach(FolderColorPreferences.presets, id: \.name) { preset in
-                Button {
-                    folderColorsRaw = FolderColorPreferences.setting(preset.color, for: folderName, in: folderColorsRaw)
-                } label: {
-                    Text("\(preset.emoji)  \(preset.name)")
-                }
-            }
-
-            Button("Custom Color…") {
-                FolderColorPanel.present(
-                    initial: NSColor(folderColor ?? .secondary),
-                    for: folderName)
-            }
-
-            if FolderColorPreferences.color(for: folderName, raw: folderColorsRaw) != nil {
-                Divider()
-                Button("Remove Color", role: .destructive) {
-                    folderColorsRaw = FolderColorPreferences.setting(nil, for: folderName, in: folderColorsRaw)
-                }
-            }
+            FolderColorMenu(folderName: folderName, currentColor: folderColor)
         }
     }
 

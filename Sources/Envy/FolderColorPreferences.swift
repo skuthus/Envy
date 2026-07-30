@@ -89,3 +89,37 @@ enum FolderColorPanel {
         panel.makeKeyAndOrderFront(nil)
     }
 }
+
+/// The right-click recolor menu shared by every folder marker — the list's
+/// dot/name chip (NoteRow) and the editor title bar's folder chip
+/// (NoteEditorView) — all writing the same preference, so a recolor from
+/// any of them repaints the rest live.
+struct FolderColorMenu: View {
+    let folderName: String
+    /// The folder's current resolved color, seeding the custom picker.
+    let currentColor: Color?
+    @AppStorage(FolderColorPreferences.storageKey) private var folderColorsRaw = ""
+
+    var body: some View {
+        ForEach(FolderColorPreferences.presets, id: \.name) { preset in
+            Button {
+                folderColorsRaw = FolderColorPreferences.setting(preset.color, for: folderName, in: folderColorsRaw)
+            } label: {
+                Text("\(preset.emoji)  \(preset.name)")
+            }
+        }
+
+        Button("Custom Color…") {
+            FolderColorPanel.present(
+                initial: NSColor(currentColor ?? .secondary),
+                for: folderName)
+        }
+
+        if FolderColorPreferences.color(for: folderName, raw: folderColorsRaw) != nil {
+            Divider()
+            Button("Remove Color", role: .destructive) {
+                folderColorsRaw = FolderColorPreferences.setting(nil, for: folderName, in: folderColorsRaw)
+            }
+        }
+    }
+}

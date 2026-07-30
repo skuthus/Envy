@@ -391,6 +391,14 @@ struct NoteEditorView: View {
                     .contentShape(Capsule())
                     .onTapGesture { onFolderSearch?(folder) }
                     .help("In \(folder) · click to see this folder's notes")
+                    // Same recolor menu as the list's dot/chip — the color
+                    // is the folder's, so changing it here repaints
+                    // everywhere at once.
+                    .contextMenu {
+                        FolderColorMenu(
+                            folderName: folder,
+                            currentColor: FolderColorPreferences.color(for: folder, raw: folderColorsRaw))
+                    }
                 }
                 if showDuePill, let note, let due = note.due {
                     // "+N" once there's more than one active due date —
