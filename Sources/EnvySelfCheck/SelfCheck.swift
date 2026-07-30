@@ -1573,6 +1573,24 @@ struct SelfCheck {
             try? fm.removeItem(at: tmp)
         }
 
+        // consecutiveInboxSubmitsToTheSameFolderBothLand
+        do {
+            let dir = FileManager.default.temporaryDirectory
+                .appendingPathComponent("EnvySelfCheck-\(UUID().uuidString)", isDirectory: true)
+            let store = NoteStore(directory: dir, includeSubfolders: true)
+            await waitForLoad(store)
+            let first = store.createInboxNote(titled: "First Thought")
+            let second = store.createInboxNote(titled: "Second Thought")
+            let movedFirst = store.submitFromInbox(first, toSubfolder: "Projects")
+            let movedSecond = store.submitFromInbox(second, toSubfolder: "Projects")
+            check("first inbox submit to a folder lands", movedFirst != nil)
+            check("second consecutive submit to the same folder lands", movedSecond != nil)
+            check("both files sit in the folder",
+                  FileManager.default.fileExists(atPath: dir.appendingPathComponent("Projects/First Thought.md").path)
+                  && FileManager.default.fileExists(atPath: dir.appendingPathComponent("Projects/Second Thought.md").path))
+            try? FileManager.default.removeItem(at: dir)
+        }
+
         // tagsByFrequencyOrdersMostUsedFirstTiesAlphabetical
         do {
             let store = await makeTempStore()

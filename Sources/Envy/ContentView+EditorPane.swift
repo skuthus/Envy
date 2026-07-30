@@ -68,8 +68,21 @@ extension ContentView {
                         onNavigate: navigateToNote,
                         onExtractSelection: extractSelectionToNote,
                         onRename: { newTitle in renameSelectedNote(to: newTitle) },
-                        onSubmitFleeting: fleetingNote.map { note in { folder in submitFromInbox(note, toSubfolder: folder) } },
-                        onDeleteFleeting: fleetingNote.map { note in { deleteFromInbox(note) } },
+                        // The note is resolved at CLICK time (self.fleetingNote,
+                        // not the local snapshot above), never captured: the
+                        // Submit menu's action closures can outlive a note
+                        // switch (SwiftUI menus don't reliably refresh what
+                        // they captured when the view updates), and a submit
+                        // auto-advances the selection right under the menu —
+                        // a captured note value meant the second consecutive
+                        // submit re-submitted the already-moved note (refused
+                        // as a collision) instead of the one on screen.
+                        onSubmitFleeting: fleetingNote == nil ? nil : { folder in
+                            if let current = self.fleetingNote { submitFromInbox(current, toSubfolder: folder) }
+                        },
+                        onDeleteFleeting: fleetingNote == nil ? nil : {
+                            if let current = self.fleetingNote { deleteFromInbox(current) }
+                        },
                         // Submit's dropdown offers the same folders Move to
                         // does; empty (a plain button) when subfolder
                         // scanning is off, since folders don't exist then.
