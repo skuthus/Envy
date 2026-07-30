@@ -28,12 +28,12 @@ struct WhatsNewView: View {
             }
 
             VStack(spacing: 10) {
-                Image(systemName: "magnifyingglass")
+                Image(systemName: "folder.fill")
                     .font(.system(size: 44))
                     .foregroundStyle(EnvyBrand.mark)
-                Text("Filing & Finding")
+                Text("Folders, Everywhere You Look")
                     .font(.title3.bold())
-                Text("Four new search operators: interlink: shows everything connected to a note, both directions; folder: searches by pile; title: matches names, not mentions; and ghost: finds unresolved [[links]], which now render dimmed in the editor until their note exists. Operator arguments autocomplete as you type.\n\nFolders meet you everywhere now: Submit a fleeting note straight into one from the button's menu, or create into one from the search box itself: type Work/Note title and press Return.")
+                Text("The open note now names its folder right in the title bar: a chip in the folder's own color, one click from seeing everything else in that pile. The folder dots in the note list do the same on click, and their hover labels no longer get clipped at the window edge.\n\nAlso new: typing # completes your existing tags as ghost text, just like [[link]] titles; the footer can show your vault's note and folder totals; and clicking the menu bar icon in full screen no longer hides the window.")
                     .font(.body)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)

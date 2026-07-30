@@ -2,6 +2,16 @@
 
 Also published at [envynote.app/changelog.html](https://envynote.app/changelog.html).
 
+## 1.8.5 — July 29, 2026
+
+Folders, everywhere you look: the answer to "where does this note live?" is now one glance (or one click) away from wherever you are.
+
+- **The open note names its folder in the title bar.** A chip in the folder's own color, beside the title: a folder glyph in an outlined capsule, deliberately a different species from the filled tag chips. Click it to see that folder's notes; absent for root and Inbox notes. Settings > General > "Show folder in title bar" hides it.
+- **Click a folder dot to see that folder.** The dot (or name chip) in the note list now pivots the search to `folder:"Name"` on click, the same jump a tag chip makes. Right-click still recolors; hover still names it.
+- **Ghost text for tags.** Start typing `#` in a note and the rest of an existing tag appears in grey, your most-used match first, exactly like `[[link]]` completion: Tab or Right-arrow accepts. Works in peeks and pop-outs too.
+- **Vault totals in the footer.** How many notes and folders you have, sitting to the right of the word and character counts behind a small divider. Settings > General turns it off.
+- **Fixed:** a long folder name on a dot's hover label no longer gets cut off at the window edge (it now grows inward over the list). Clicking the menu bar icon while Envy is in full screen no longer hides the window into a stranded empty space; it just brings Envy front, jumping to its space if you clicked from another one.
+
 ## 1.8.4 — July 29, 2026
 
 Filing and finding: every organizing axis in Envy now has a first-class search operator, and folders can be targeted from everywhere a note is born or reviewed.
