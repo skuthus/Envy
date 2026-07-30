@@ -252,9 +252,20 @@ extension ContentView {
                     }
                     if showFooterVaultCounts {
                         if selectedID != nil {
-                            RoundedRectangle(cornerRadius: 1)
-                                .fill(.secondary.opacity(0.45))
-                                .frame(width: 2, height: 10)
+                            Rectangle()
+                                // The same color and 1pt thickness as the
+                                // horizontal rule above the bar, so the two
+                                // read as one family of chrome lines meeting
+                                // at a right angle.
+                                .fill(Color(nsColor: .separatorColor))
+                                // Spans the bar's full height: tall enough to
+                                // cover the text row plus the footer's 4pt
+                                // vertical paddings, with the negative padding
+                                // letting that extra height draw into the
+                                // paddings instead of growing the bar. Sharp
+                                // corners, since its ends meet the edges.
+                                .frame(width: 1, height: 12 * interfaceFontScale + 8)
+                                .padding(.vertical, -4)
                         }
                         Text(vaultCountsLabel)
                             .foregroundStyle(.secondary)
