@@ -49,6 +49,12 @@ struct NoteRow: View {
     /// (ContentView.searchByFolder) — the same click-to-pivot a tag chip
     /// offers. Optional so surfaces without a search box can omit it.
     var onFolderSearch: ((String) -> Void)? = nil
+    /// The top row's hover label can't float above its dot: "above" is
+    /// outside the scroll area there, so it collided with the sort header
+    /// and clipped. It can't flip below either — the next row paints later
+    /// and would cover it. For this row the label shows inline instead,
+    /// beside the dot within the row itself.
+    var isFirstRow: Bool = false
     /// How the subfolder shows in the list — a colored dot, a labelled chip, or
     /// nothing.
     var folderDisplay: FolderListDisplay = .dot
@@ -70,7 +76,12 @@ struct NoteRow: View {
                     .foregroundStyle(textColor ?? Color.secondary)
             }
             fleetingMark
-            if !dotTrailing { folderIndicator }
+            // zIndex(1): the hover label is an overlay on the dot, and
+            // siblings that come later in this HStack (the title, most
+            // importantly) otherwise paint on top of it — which made the
+            // first row's inline label look like it was drawn behind its
+            // own title text. Raised, the opaque capsule covers cleanly.
+            if !dotTrailing { folderIndicator.zIndex(1) }
             // The ⎈ AI-provenance mark is hidden until the feature is
             // designed. Note.aiProvenance still parses it, so restoring the
             // badge is re-adding this block — nothing downstream was removed.
@@ -84,7 +95,7 @@ struct NoteRow: View {
                 .foregroundStyle(textColor ?? Color.primary)
                 .fontWeight(bold ? .bold : nil)
                 .layoutPriority(1)
-            if dotTrailing { folderIndicator }
+            if dotTrailing { folderIndicator.zIndex(1) }  // same reason as above
             if showPreview && !note.preview.isEmpty {
                 Text(note.preview)
                     .font(.system(size: 11 * interfaceFontScale))
@@ -157,7 +168,9 @@ struct NoteRow: View {
                         // window edge (clipped, since nothing can draw
                         // outside the window), worst in full screen or a
                         // tiled half where the window edge is the screen's.
-                        .overlay(alignment: dotTrailing ? .topTrailing : .topLeading) {
+                        .overlay(alignment: isFirstRow
+                            ? (dotTrailing ? .trailing : .leading)
+                            : (dotTrailing ? .topTrailing : .topLeading)) {
                             if showsFolderTip, let folderName {
                                 Text(folderName)
                                     .font(.system(size: 10 * interfaceFontScale))
@@ -170,8 +183,13 @@ struct NoteRow: View {
                                     .overlay(Capsule().strokeBorder(folderColor.opacity(0.4), lineWidth: 1))
                                     // Floats above the dot, over the previous
                                     // row — which paints earlier, so this
-                                    // draws on top of it.
-                                    .offset(y: -(16 * interfaceFontScale))
+                                    // draws on top of it. The first row has
+                                    // no room above (see isFirstRow), so its
+                                    // label sits beside the dot instead.
+                                    .offset(
+                                        x: isFirstRow ? (dotTrailing ? -(12 * interfaceFontScale) : 12 * interfaceFontScale) : 0,
+                                        y: isFirstRow ? 0 : -(16 * interfaceFontScale)
+                                    )
                                     .allowsHitTesting(false)
                             }
                         }
