@@ -28,12 +28,12 @@ struct WhatsNewView: View {
             }
 
             VStack(spacing: 10) {
-                Image(systemName: "folder.fill")
+                Image(systemName: "square.stack.3d.up.fill")
                     .font(.system(size: 44))
                     .foregroundStyle(EnvyBrand.mark)
-                Text("Folders, Everywhere You Look")
+                Text("Keep Envy on Top")
                     .font(.title3.bold())
-                Text("The open note now names its folder right in the title bar: a chip in the folder's own color, one click from seeing everything else in that pile. The folder dots in the note list do the same on click, and their hover labels no longer get clipped at the window edge.\n\nAlso new: typing # completes your existing tags as ghost text, just like [[link]] titles; the footer can show your vault's note and folder totals; and clicking the menu bar icon in full screen no longer hides the window.")
+                Text("Right-click the menu bar eye and choose Keep Envy on Top: the whole window floats above every other app until you toggle it off, for transcribing or referencing while you work elsewhere. ⌥⌘T flips it from anywhere, rebindable in Settings.\n\nAlso in this update: submitting several fleeting notes to the same folder in a row works every time now (the second used to silently do nothing), and the footer's vault-counts divider matches the bar's own lines.")
                     .font(.body)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)

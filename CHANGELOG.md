@@ -2,6 +2,12 @@
 
 Also published at [envynote.app/changelog.html](https://envynote.app/changelog.html).
 
+## 1.8.6 — July 30, 2026
+
+- **Keep Envy on Top.** Right-click the menu bar eye → "Keep Envy on Top" and the whole window floats above every other app's windows until you toggle it off: the whole-app version of pinning a peek, for transcribing or referencing while you work elsewhere. **⌥⌘T** flips it from anywhere (rebindable in Settings > Shortcuts), it survives relaunches, and it wins over "hide when clicking another app" while on. Deliberate hiding (hotkey, menu bar click) still works.
+- **Fixed:** submitting several fleeting notes to the same folder in a row: the second consecutive submit silently did nothing until you left and re-entered the inbox (the Submit menu was still holding the note you'd already filed). Each submit now files the note actually on screen.
+- The footer's vault-counts divider now matches the bar's own rule: full height, same 1pt thickness and color, so the two read as one family of chrome lines.
+
 ## 1.8.5 — July 29, 2026
 
 Folders, everywhere you look: the answer to "where does this note live?" is now one glance (or one click) away from wherever you are.
