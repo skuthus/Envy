@@ -63,3 +63,82 @@ struct HoverScrollingText: View {
         .onHover { isHovering = $0 }
     }
 }
+
+/// A hover-scrolling label that sizes to its text's *natural* width and
+/// only clips (and scrolls) when the row can't give it that much — so an
+/// element placed right after it (the note list's trailing folder dot)
+/// hugs the end of the title when it fits, and sits at the clipped
+/// boundary when it doesn't. HoverScrollingText fills whatever width it's
+/// offered, which pushes a following element to the far edge; this one
+/// doesn't.
+///
+/// A hidden, ordinary truncating Text drives the layout: it reports the
+/// title's natural width, and shrinks under HStack pressure exactly like a
+/// plain title would, so the slot is always min(natural, available). The
+/// visible, scrolling copy is overlaid within whatever width that measures
+/// out.
+struct HuggingScrollingText: View {
+    let text: String
+    var font: Font = .body
+
+    @State private var isHovering = false
+    @State private var scrollOffset: CGFloat = 0
+    @State private var textWidth: CGFloat = 0
+    @State private var containerWidth: CGFloat = 0
+
+    var body: some View {
+        Text(text)
+            .font(font)
+            .lineLimit(1)
+            .hidden()
+            .overlay(alignment: .leading) {
+                GeometryReader { proxy in
+                    Text(text)
+                        .font(font)
+                        .lineLimit(1)
+                        .fixedSize(horizontal: true, vertical: false)
+                        .offset(x: scrollOffset)
+                        .background(
+                            GeometryReader { textProxy in
+                                Color.clear
+                                    .onAppear { textWidth = textProxy.size.width }
+                                    .onChange(of: textProxy.size.width) { _, v in textWidth = v }
+                            }
+                        )
+                        .onAppear { containerWidth = proxy.size.width }
+                        .onChange(of: proxy.size.width) { _, v in containerWidth = v }
+                        .frame(height: proxy.size.height, alignment: .leading)
+                }
+                .clipped()
+                // Fades the clipped edge so it reads as "continues" rather
+                // than a hard cut. Only when the text actually overflows, and
+                // not while hovering — then the scroll itself reveals the
+                // end, and a fade over it would hide the last characters. The
+                // 0-width gradient when off keeps the mask always present so
+                // the transition animates rather than snaps.
+                .mask(
+                    HStack(spacing: 0) {
+                        Rectangle().fill(Color.black)
+                        LinearGradient(
+                            colors: [Color.black, Color.black.opacity(0)],
+                            startPoint: .leading, endPoint: .trailing
+                        )
+                        .frame(width: (textWidth > containerWidth + 1 && !isHovering) ? 18 : 0)
+                    }
+                    .animation(.easeOut(duration: 0.2), value: isHovering)
+                )
+            }
+            .onChange(of: isHovering) { _, hovering in
+                guard hovering else {
+                    withAnimation(.easeOut(duration: 0.2)) { scrollOffset = 0 }
+                    return
+                }
+                let overflow = textWidth - containerWidth + 2
+                guard overflow > 0 else { return }
+                withAnimation(.linear(duration: Double(overflow) / 40).delay(0.2)) {
+                    scrollOffset = -overflow
+                }
+            }
+            .onHover { isHovering = $0 }
+    }
+}

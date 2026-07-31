@@ -85,31 +85,60 @@ struct NoteRow: View {
             // The ⎈ AI-provenance mark is hidden until the feature is
             // designed. Note.aiProvenance still parses it, so restoring the
             // badge is re-adding this block — nothing downstream was removed.
-            // layoutPriority(1) so the title always keeps its full width —
-            // the preview (default priority) is what gives way and
-            // truncates when the row is too narrow for both, never the
-            // other way around.
-            Text(note.title)
-                .font(.system(size: 13 * interfaceFontScale))
-                .lineLimit(1)
-                .foregroundStyle(textColor ?? Color.primary)
-                .fontWeight(bold ? .bold : nil)
-                .layoutPriority(1)
-            if dotTrailing { folderIndicator.zIndex(1) }  // same reason as above
             if showPreview && !note.preview.isEmpty {
+                // Title + inline preview share the row; both truncate (the
+                // title keeps priority, the preview gives way), the Spacer
+                // right-aligns the date. HoverScrollingText can't share a
+                // flexible row with the preview, so this denser mode stays
+                // plain truncating text.
+                Text(note.title)
+                    .font(.system(size: 13 * interfaceFontScale))
+                    .lineLimit(1)
+                    .foregroundStyle(textColor ?? Color.primary)
+                    .fontWeight(bold ? .bold : nil)
+                    .layoutPriority(1)
+                if dotTrailing { folderIndicator.zIndex(1) }
                 Text(note.preview)
                     .font(.system(size: 11 * interfaceFontScale))
                     .foregroundStyle(.secondary)
                     .fontWeight(bold ? .bold : nil)
                     .lineLimit(1)
-            }
-            if showDateModified, let displayedDate {
-                Spacer()
-                dateText(displayedDate)
-                    .font(.system(size: 11 * interfaceFontScale))
-                    .foregroundStyle(dateTextColor(for: displayedDate))
-                    .fontWeight(bold ? .bold : nil)
-                    .lineLimit(1)
+                if showDateModified, let displayedDate {
+                    Spacer()
+                    dateText(displayedDate)
+                        .font(.system(size: 11 * interfaceFontScale))
+                        .foregroundStyle(dateTextColor(for: displayedDate))
+                        .fontWeight(bold ? .bold : nil)
+                        .lineLimit(1)
+                        .fixedSize()
+                }
+            } else {
+                // The title takes its natural width so the trailing dot
+                // hugs its end; when it's too long for the row it hard-stops
+                // at the available width (the dot then sitting at that
+                // boundary) and scrolls on hover to reveal the rest, the
+                // same feel as the editor title bar and pinned popover. The
+                // date is fixedSize, so it always keeps its full width;
+                // layoutPriority(1) makes the title (not the Spacer) claim
+                // the row's free space, and gives it up first when there
+                // isn't enough. Weight is baked into the font; color
+                // inherits via the foregroundStyle wrapper.
+                HuggingScrollingText(
+                    text: note.title,
+                    font: .system(size: 13 * interfaceFontScale, weight: bold ? .bold : .regular)
+                )
+                .foregroundStyle(textColor ?? Color.primary)
+                .layoutPriority(1)
+                if dotTrailing { folderIndicator.zIndex(1) }
+                if showDateModified, let displayedDate {
+                    Spacer(minLength: 6)
+                    dateText(displayedDate)
+                        .font(.system(size: 11 * interfaceFontScale))
+                        .foregroundStyle(dateTextColor(for: displayedDate))
+                        .fontWeight(bold ? .bold : nil)
+                        .lineLimit(1)
+                        .fixedSize()
+                }
             }
         }
     }
