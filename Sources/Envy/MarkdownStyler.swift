@@ -1664,32 +1664,24 @@ enum MarkdownStyler {
 
     // Shared between the checkbox-collapsing above and the checkbox overlay
     // in MarkdownTextView.Coordinator.updateCheckboxOverlays() — both need
-    // to agree on the exact same font so the reserved space matches what's
-    // actually drawn on top of it.
-    static func checkboxSymbolFont(baseFont: NSFont) -> NSFont {
-        NSFont(name: "Apple Symbols", size: baseFont.pointSize + 5)
-            ?? NSFontManager.shared.convert(baseFont, toSize: baseFont.pointSize + 5)
+    // to agree on the exact same metrics so the reserved space matches
+    // what's actually drawn on top of it.
+
+    /// The drawn checkbox's square side, proportional to the body font so
+    /// editor zoom scales the box with the text. (Its predecessor — an
+    /// Apple Symbols glyph at pointSize + 5 — stayed visually near-constant
+    /// while zoomed text grew around it.) 0.95 reproduces the box's
+    /// familiar size at the default 13pt body.
+    static func checkboxBoxSide(baseFont: NSFont) -> CGFloat {
+        max(9, round(baseFont.pointSize * 0.95))
     }
 
+    /// The horizontal room a checkbox occupies in the line: the box plus a
+    /// gap before the task's text. Plain arithmetic on the font size — no
+    /// glyph measurement, so no cache needed.
     static func checkboxSymbolWidth(baseFont: NSFont) -> CGFloat {
-        // Memoized through the same advance-width cache collapse() uses —
-        // this runs per checkbox per restyle, and the font lookup plus two
-        // measurements only depend on the base font.
-        let key = "checkbox\u{0}\(baseFont.fontName)\u{0}\(baseFont.pointSize)"
-        advanceWidthLock.lock()
-        if let cached = advanceWidthCache[key] {
-            advanceWidthLock.unlock()
-            return cached
-        }
-        advanceWidthLock.unlock()
-        let symbolFont = checkboxSymbolFont(baseFont: baseFont)
-        let checked = NSAttributedString(string: "☑", attributes: [.font: symbolFont]).size().width
-        let unchecked = NSAttributedString(string: "☐", attributes: [.font: symbolFont]).size().width
-        let width = max(checked, unchecked)
-        advanceWidthLock.lock()
-        advanceWidthCache[key] = width
-        advanceWidthLock.unlock()
-        return width
+        let side = checkboxBoxSide(baseFont: baseFont)
+        return side + max(4, round(side * 0.45))
     }
 
     private static func applyEmphasis(
