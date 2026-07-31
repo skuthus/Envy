@@ -1620,6 +1620,33 @@ struct SelfCheck {
                   counts.map(\.name) == store.allTagsByFrequency())
         }
 
+        // renameTagRewritesEveryOccurrenceAtBoundariesOnly
+        do {
+            let store = await makeTempStore()
+            var a = store.create(title: "A")
+            a.content = "morning #work and #workshop and homework#work notes"
+            store.save(a)
+            var b = store.create(title: "B")
+            b.content = "#WORK in caps, plus #home"
+            store.save(b)
+
+            store.renameTag(from: "work", to: "job")
+            let ra = store.notes.first { $0.title == "A" }?.content ?? ""
+            let rb = store.notes.first { $0.title == "B" }?.content ?? ""
+            check("renameTag rewrites the tag", ra.contains("#job"))
+            check("renameTag leaves #workshop (not a boundary match) alone", ra.contains("#workshop"))
+            check("renameTag leaves word#work (blocked start) alone", ra.contains("homework#work"))
+            check("renameTag is case-insensitive", rb.contains("#job") && !rb.lowercased().contains("#work"))
+            check("renameTag doesn't touch unrelated tags", rb.contains("#home"))
+            check("renameTag updates the tag index",
+                  store.allTagsByFrequency().contains("job") && !store.allTagsByFrequency().contains("work"))
+
+            let unchanged = store.notes.first { $0.title == "B" }?.modifiedDate
+            store.renameTag(from: "home", to: "home")   // no-op: unchanged name
+            check("renameTag no-ops on an unchanged name",
+                  store.notes.first { $0.title == "B" }?.modifiedDate == unchanged)
+        }
+
         print("")
         if failures.isEmpty {
             print("All checks passed.")

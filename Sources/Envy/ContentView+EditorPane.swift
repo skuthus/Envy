@@ -58,6 +58,9 @@ extension ContentView {
                 } else if isTagBrowseQuery {
                     ContentUnavailableView("Browsing Tags", systemImage: "tag", description: Text("Pick a tag to see its notes."))
 
+                } else if isFolderBrowseQuery {
+                    ContentUnavailableView("Browsing Folders", systemImage: "folder", description: Text("Pick a folder to see its notes."))
+
                 } else if let selectedID, store.note(withID: selectedID) != nil {
                     // Resolved once per render — the computed property is an
                     // O(notes) scan, and the two closure parameters below

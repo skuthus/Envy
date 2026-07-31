@@ -8,6 +8,11 @@ struct TagChipView: View {
     let tag: String
     let theme: Theme
     let onTagSearch: (String) -> Void
+    /// When set, the context menu offers "Rename Tag…", which hands the tag
+    /// back for the caller to run a vault-wide rename (NoteStore.renameTag).
+    /// Left nil where rename doesn't belong (the title-bar chip today), so
+    /// the item only appears in the tag browser.
+    var onRename: ((String) -> Void)? = nil
 
     @AppStorage(TagColorPreferences.storageKey) private var tagColorsRaw = ""
 
@@ -41,6 +46,11 @@ struct TagChipView: View {
                     TagColorPanel.present(
                         initial: NSColor(customColor ?? Color(nsColor: theme.resolvedTagColor)),
                         for: tag)
+                }
+
+                if let onRename {
+                    Divider()
+                    Button("Rename Tag…") { onRename(tag) }
                 }
 
                 if customColor != nil {

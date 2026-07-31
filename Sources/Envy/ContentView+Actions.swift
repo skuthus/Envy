@@ -30,6 +30,14 @@ extension ContentView {
             }
             return
         }
+        // Bare "folder:" browser: the same drill-in, into the highlighted
+        // folder.
+        if isFolderBrowseQuery {
+            if let name = highlightedFolderName ?? subfolderCache.first {
+                searchByFolder(name)
+            }
+            return
+        }
         // inbox: is the one browse operator where Return *writes*. Typing
         // "inbox: call mom" and pressing Return captures it, because the
         // operator that scopes the box is the one that routes writing into
@@ -193,7 +201,40 @@ extension ContentView {
     /// in that list, so it stays selected with no extra handling needed here.
     func searchByTag(_ tag: String) {
         query = "tag:\(tag)"
+        // Fill the results synchronously so drilling in from the tag browser
+        // shows the tag's notes at once, with no flash of the previous list
+        // while the debounced search catches up (reconcile settles the
+        // selection off the fresh cache in the same frame).
+        recomputeFilteredNotesSync()
+        reconcileSelection()
         focusedField = .search
+    }
+
+    /// Opens the rename dialog for a tag (from the tag browser's context
+    /// menu), seeding the field with its current name.
+    func beginTagRename(_ tag: String) {
+        tagRenameText = tag
+        tagRenameTarget = tag
+    }
+
+    /// Commits a tag rename across the whole vault, and carries the tag's
+    /// custom color over to the new name (the color is keyed by name, so a
+    /// rename would otherwise silently drop it). No-ops on an empty or
+    /// unchanged name; NoteStore.renameTag sanitizes either way.
+    func commitTagRename() {
+        defer { tagRenameTarget = nil }
+        guard let old = tagRenameTarget else { return }
+        let new = NoteStore.sanitizedTagName(tagRenameText)
+        guard !new.isEmpty, new != old else { return }
+
+        let raw = UserDefaults.standard.string(forKey: TagColorPreferences.storageKey) ?? ""
+        if let color = TagColorPreferences.color(for: old, raw: raw) {
+            var updated = TagColorPreferences.setting(color, for: new, in: raw)
+            updated = TagColorPreferences.setting(nil, for: old, in: updated)
+            UserDefaults.standard.set(updated, forKey: TagColorPreferences.storageKey)
+        }
+        store.renameTag(from: old, to: new)
+        highlightedTagName = new.lowercased()
     }
 
     /// Clicking a row's folder dot or name chip — the folder twin of
@@ -203,6 +244,10 @@ extension ContentView {
     /// parent folder's search includes its nested folders' notes too.
     func searchByFolder(_ folder: String) {
         query = "folder:\"\(folder)\""
+        // See searchByTag: synchronous so the folder's notes replace the
+        // browser without the full list flashing in between.
+        recomputeFilteredNotesSync()
+        reconcileSelection()
         focusedField = .search
     }
 

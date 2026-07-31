@@ -243,6 +243,8 @@ extension ContentView {
             if shiftHeld { extendTrashSelection(delta) } else { moveTrashSelection(delta) }
         } else if isTagBrowseQuery {
             moveTagHighlight(delta)
+        } else if isFolderBrowseQuery {
+            moveFolderHighlight(delta)
         } else if shiftHeld {
             extendSelection(delta)
         } else {
@@ -258,6 +260,13 @@ extension ContentView {
         guard !tags.isEmpty else { return }
         let current = tags.firstIndex { $0.name == highlightedTagName } ?? 0
         highlightedTagName = tags[min(max(current + delta, 0), tags.count - 1)].name
+    }
+
+    /// The bare-"folder:" browser's twin of moveTagHighlight.
+    func moveFolderHighlight(_ delta: Int) {
+        guard !subfolderCache.isEmpty else { return }
+        let current = subfolderCache.firstIndex(of: highlightedFolderName ?? "") ?? 0
+        highlightedFolderName = subfolderCache[min(max(current + delta, 0), subfolderCache.count - 1)]
     }
 
     func moveSelection(_ delta: Int) {

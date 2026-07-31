@@ -21,6 +21,26 @@ private let searchFieldBorderColor = NSColor(name: nil) { appearance in
 
 extension ContentView {
     var listPane: some View {
+        listPaneBody
+            // Vault-wide tag rename, launched from the tag browser's
+            // right-click menu. A confirm step is right for a rename that
+            // rewrites every note — unlike the inline color changes beside
+            // it, this can't just be undone by re-picking.
+            .alert("Rename Tag", isPresented: Binding(
+                get: { tagRenameTarget != nil },
+                set: { if !$0 { tagRenameTarget = nil } }
+            )) {
+                TextField("Tag name", text: $tagRenameText)
+                Button("Cancel", role: .cancel) { tagRenameTarget = nil }
+                Button("Rename") { commitTagRename() }
+            } message: {
+                if let old = tagRenameTarget {
+                    Text("Rename #\(old) everywhere it appears in your notes. The tag on disk changes in every note that carries it.")
+                }
+            }
+    }
+
+    private var listPaneBody: some View {
         VStack(spacing: 0) {
             VStack(spacing: 0) {
                 searchRow
@@ -44,6 +64,8 @@ extension ContentView {
                             matchingTrashRows
                         } else if isTagBrowseQuery {
                             matchingTagRows
+                        } else if isFolderBrowseQuery {
+                            matchingFolderRows
                         } else {
                             ForEach(filteredNotes) { note in
                                 noteRow(for: note)
@@ -87,6 +109,9 @@ extension ContentView {
                         // default): fills "tag:name" and the list flips to
                         // that tag's notes, the picker step complete.
                         if let name = highlightedTagName ?? store.tagCounts().first?.name { searchByTag(name) }
+                    }
+                    else if isFolderBrowseQuery {
+                        if let name = highlightedFolderName ?? subfolderCache.first { searchByFolder(name) }
                     }
                     else if !isTrashQuery { focusedField = .editor }
                     return .handled
@@ -656,7 +681,12 @@ extension ContentView {
     @ViewBuilder
     private func tagBrowseRow(name: String, count: Int, highlighted: Bool) -> some View {
         HStack(spacing: 8) {
-            TagChipView(tag: name, theme: theme, onTagSearch: { searchByTag($0) })
+            TagChipView(
+                tag: name,
+                theme: theme,
+                onTagSearch: { searchByTag($0) },
+                onRename: { beginTagRename($0) }
+            )
             Spacer()
             Text("\(count)")
                 .font(.system(size: 11 * interfaceFontScale))
@@ -674,6 +704,63 @@ extension ContentView {
         // The pill's own tap wins on the pill; this catches the rest of the
         // row (the count, the gap) so the whole row is a target.
         .onTapGesture { searchByTag(name) }
+    }
+
+    /// The folder catalog, shown for a bare "folder:". Each folder as a
+    /// colored dot (its own color) and relative path, with a direct note
+    /// count, sorted like every other folder list (subfolderCache order).
+    /// Gated on subfolder scanning, since folders don't exist without it.
+    private var matchingFolderRows: some View {
+        let counts = folderNoteCounts
+        let active = highlightedFolderName ?? subfolderCache.first
+        return Group {
+            if !indexIncludeSubfolders {
+                Text("Folders are off. Turn on Settings → General → \"Show items in subfolders.\"")
+                    .font(.system(size: 11 * interfaceFontScale))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+            } else if subfolderCache.isEmpty {
+                Text("No folders yet.")
+                    .font(.system(size: 11 * interfaceFontScale))
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+            } else {
+                ForEach(subfolderCache, id: \.self) { folder in
+                    folderBrowseRow(name: folder, count: counts[folder] ?? 0, highlighted: folder == active)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func folderBrowseRow(name: String, count: Int, highlighted: Bool) -> some View {
+        HStack(spacing: 8) {
+            Circle()
+                .fill(folderColorMap[name] ?? Color.secondary)
+                .frame(width: 8 * interfaceFontScale, height: 8 * interfaceFontScale)
+            Text(name)
+                .font(.system(size: 13 * interfaceFontScale))
+                .lineLimit(1)
+                .truncationMode(.middle)
+            Spacer()
+            Text("\(count)")
+                .font(.system(size: 11 * interfaceFontScale))
+                .foregroundStyle(.secondary)
+                .monospacedDigit()
+        }
+        .padding(.vertical, listDensity.rowVerticalPadding)
+        .padding(.horizontal, 8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .fill(highlighted ? Color(nsColor: theme.resolvedSelectionColor) : Color.clear)
+        )
+        .contentShape(Rectangle())
+        .onTapGesture { searchByFolder(name) }
+        .contextMenu { FolderColorMenu(folderName: name, currentColor: folderColorMap[name]) }
     }
 
     @ViewBuilder
@@ -840,6 +927,21 @@ extension ContentView {
     /// browse prefixes (template:/trash:) already use.
     var isTagBrowseQuery: Bool {
         query.trimmingCharacters(in: .whitespaces).lowercased() == "tag:"
+    }
+
+    /// The `folder:` twin of isTagBrowseQuery — a bare "folder:" reveals the
+    /// folder catalog to pick from, same bare-operator pattern.
+    var isFolderBrowseQuery: Bool {
+        query.trimmingCharacters(in: .whitespaces).lowercased() == "folder:"
+    }
+
+    /// Direct note count per folder (a note's immediate folder, not its
+    /// nested descendants) — drives the folder browser's counts, read
+    /// straight off the cache the list already maintains.
+    var folderNoteCounts: [String: Int] {
+        var counts: [String: Int] = [:]
+        for path in noteSubfolderCache.values { counts[path, default: 0] += 1 }
+        return counts
     }
 
     /// The fleeting notes currently listed — just the filtered list, since

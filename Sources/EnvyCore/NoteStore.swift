@@ -1439,6 +1439,56 @@ public final class NoteStore: ObservableObject {
     /// memory and on disk), so renaming a widely-linked note doesn't shove all
     /// its referrers to the top of a date-sorted list — the user renamed one
     /// note, they didn't edit thirty others.
+    /// Cleans arbitrary text into a valid tag name: drops a leading `#` and
+    /// any character a tag can't contain (Note.tagRegex's `[A-Za-z0-9_-]`).
+    /// Empty means "not a usable name."
+    nonisolated public static func sanitizedTagName(_ raw: String) -> String {
+        let allowed = CharacterSet(charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-")
+        let trimmed = raw.trimmingCharacters(in: .whitespaces)
+        let body = trimmed.hasPrefix("#") ? String(trimmed.dropFirst()) : trimmed
+        return String(String.UnicodeScalarView(body.unicodeScalars.filter { allowed.contains($0) }))
+    }
+
+    /// Rewrites every `#oldName` to `#newName` across the whole vault, the
+    /// tag-wide twin of the note-rename reference rewrite above. Matches the
+    /// tag case-insensitively at its real boundaries (so `#work` is renamed
+    /// but `#workshop` and `homework#work` are left alone), preserves each
+    /// note's modified date (a global rename shouldn't reshuffle a
+    /// date-sorted list), and only touches notes that actually carry the
+    /// tag. Caller sanitizes/validates the new name; this no-ops on an empty
+    /// or unchanged one.
+    public func renameTag(from oldName: String, to newName: String) {
+        let old = oldName.lowercased()
+        let new = Self.sanitizedTagName(newName)
+        guard !new.isEmpty, new != old else { return }
+        let escaped = NSRegularExpression.escapedPattern(for: old)
+        guard let regex = try? NSRegularExpression(
+            pattern: "(?<![\\w#])#\(escaped)(?![A-Za-z0-9_-])",
+            options: [.caseInsensitive]
+        ) else { return }
+        let template = "#" + NSRegularExpression.escapedTemplate(for: new)
+
+        for idx in notes.indices where notes[idx].tags.contains(old) {
+            let content = notes[idx].content
+            let updated = regex.stringByReplacingMatches(
+                in: content,
+                range: NSRange(location: 0, length: (content as NSString).length),
+                withTemplate: template
+            )
+            guard updated != content else { continue }
+            let url = notes[idx].url
+            let originalDate = notes[idx].modifiedDate
+            markInternalWrite()
+            do {
+                try updated.write(to: url, atomically: true, encoding: .utf8)
+            } catch {
+                continue
+            }
+            try? FileManager.default.setAttributes([.modificationDate: originalDate], ofItemAtPath: url.path)
+            notes[idx].content = updated
+        }
+    }
+
     private func updateWikiLinkReferences(from oldTitle: String, to newTitle: String) {
         guard oldTitle.caseInsensitiveCompare(newTitle) != .orderedSame else { return }
         let oldLower = oldTitle.lowercased()

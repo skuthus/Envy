@@ -133,7 +133,7 @@ enum WelcomeContent {
 
     Start typing a `#tag` you've used before and the rest appears as grey ghost text — your most-used matching tag first, same as `[[link]]` completion. Press **⇥** or **→** to accept it.
 
-    Forgotten what tags you have? Type a bare `tag:` in the search box (just the operator, nothing after) and the list becomes your whole tag catalog, most-used first with a note count each. Click one, or arrow to it and press Return, to see its notes. Right-click a tag there to color it, same as anywhere else.
+    Forgotten what tags you have? Type a bare `tag:` in the search box (just the operator, nothing after) and the list becomes your whole tag catalog, most-used first with a note count each. Click one, or arrow to it and press Return, to see its notes. Right-click a tag there to color it, or choose **Rename Tag…** to rename it everywhere at once (every note carrying it is rewritten). A bare `folder:` does the same for your folders.
 
     Search `tag:work` to see every note tagged that way — it's not case-sensitive, and partial names work too: `tag:techn` matches `#technology`. A bare `tag:` finds every note carrying any tag; a bare `-tag:` finds the completely untagged (pair it with `orphan:` and `stale:` for a full hygiene sweep). And `title:word` restricts a search to titles only — the note *named* for a thing, not every note that mentions it.
 

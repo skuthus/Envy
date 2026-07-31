@@ -114,6 +114,9 @@ struct ContentView: View {
     // real changes — a reload, the pref changing, a move, the toggle.
     @State var subfolderCache: [String] = []              // for the "Move to" menu
     @State var highlightedTagName: String?                // arrow-key highlight in the bare-"tag:" browser
+    @State var highlightedFolderName: String?             // arrow-key highlight in the bare-"folder:" browser
+    @State var tagRenameTarget: String?                   // the tag a rename dialog is open for
+    @State var tagRenameText: String = ""
     @State var folderColorMap: [String: Color] = [:]      // folder path -> color
     @State var folderSwatchCache: [String: NSImage] = [:] // folder path -> menu swatch
     @State var noteSubfolderCache: [String: String] = [:] // note id -> its folder path
@@ -361,6 +364,28 @@ struct ContentView: View {
             Self.computeSearch(notes: notesSnapshot, query: querySnapshot, pinnedIDs: pinnedSnapshot, sortField: field, sortAscending: ascending, showInbox: showInbox, inboxDirectory: inboxDirectory)
         }.value
         guard generation == searchComputeGeneration else { return }
+        filteredNotesCache = result.notes
+        suggestionNoteCache = result.suggestion
+        queryHasExactTitleMatch = result.hasExactTitleMatch
+        fleetingCountCache = result.fleetingCount
+        inboxNoteIDsCache = result.inboxNoteIDs
+    }
+
+    /// Synchronous, main-actor recompute of the results caches — for a
+    /// deliberate drill-in from a bare-operator browser (searchByTag/
+    /// searchByFolder), where the query jumps straight to a filtered result
+    /// and the list leaves browse mode the same frame. Filling the cache
+    /// inline (rather than through the 60ms-debounced async pipeline) means
+    /// the folder's/tag's notes are already there when that frame renders,
+    /// instead of the previous full list flashing first. A single click can
+    /// afford the main-thread scan the per-keystroke path offloads; the
+    /// generation bump supersedes any async pass still in flight.
+    func recomputeFilteredNotesSync() {
+        searchComputeGeneration += 1
+        let result = Self.computeSearch(
+            notes: store.notes, query: query, pinnedIDs: pinnedNoteIDs,
+            sortField: sortField, sortAscending: sortAscending,
+            showInbox: showInboxInMainList, inboxDirectory: store.inboxDirectory)
         filteredNotesCache = result.notes
         suggestionNoteCache = result.suggestion
         queryHasExactTitleMatch = result.hasExactTitleMatch
