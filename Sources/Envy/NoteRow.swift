@@ -162,15 +162,18 @@ struct NoteRow: View {
                                 showsFolderTip = false
                             }
                         }
-                        // Anchored to the dot's window-edge side so the label
-                        // grows inward, over the list — centering it on the
-                        // dot pushed half of a long folder name past the
-                        // window edge (clipped, since nothing can draw
-                        // outside the window), worst in full screen or a
-                        // tiled half where the window edge is the screen's.
-                        .overlay(alignment: isFirstRow
-                            ? (dotTrailing ? .trailing : .leading)
-                            : (dotTrailing ? .topTrailing : .topLeading)) {
+                        // Placement depends on which side the dot is on. A
+                        // trailing dot has the title to its left and empty
+                        // gutter to its right, so the label sits inline just
+                        // right of the dot — never over the text, on every
+                        // row (centered on the dot it needs no room above, so
+                        // it can't clip against the sort header either). A
+                        // leading dot has the title to *its* right, so going
+                        // right would cover the text; there the label floats
+                        // above the dot over the previous row instead, except
+                        // the first row (nothing above to borrow) where it
+                        // sits inline to the right of the dot.
+                        .overlay(alignment: dotTrailing ? .leading : (isFirstRow ? .leading : .topLeading)) {
                             if showsFolderTip, let folderName {
                                 Text(folderName)
                                     .font(.system(size: 10 * interfaceFontScale))
@@ -181,14 +184,13 @@ struct NoteRow: View {
                                     .padding(.vertical, 2)
                                     .background(Color(nsColor: .windowBackgroundColor), in: Capsule())
                                     .overlay(Capsule().strokeBorder(folderColor.opacity(0.4), lineWidth: 1))
-                                    // Floats above the dot, over the previous
-                                    // row — which paints earlier, so this
-                                    // draws on top of it. The first row has
-                                    // no room above (see isFirstRow), so its
-                                    // label sits beside the dot instead.
                                     .offset(
-                                        x: isFirstRow ? (dotTrailing ? -(12 * interfaceFontScale) : 12 * interfaceFontScale) : 0,
-                                        y: isFirstRow ? 0 : -(16 * interfaceFontScale)
+                                        // Trailing/leading-first-row: just
+                                        // right of the dot (7pt wide) with a
+                                        // small gap. Leading non-first: no x
+                                        // shift, lifted a row's-worth up.
+                                        x: dotTrailing || isFirstRow ? (7 * interfaceFontScale) + 5 : 0,
+                                        y: dotTrailing || isFirstRow ? 0 : -(16 * interfaceFontScale)
                                     )
                                     .allowsHitTesting(false)
                             }
