@@ -51,9 +51,12 @@ struct HoverScrollingText: View {
                     // very last character clears the clipped edge instead of
                     // stopping flush against it — unlike the +6 this
                     // replaced, this is just rounding slack, not compensating
-                    // for an unreliable estimate.
+                    // for an unreliable estimate. Decide whether to scroll on
+                    // the *real* overflow, before adding that slack — otherwise
+                    // a title that fits exactly (its slot equals its own width)
+                    // reads as 2pt over and scrolls a hair on hover.
+                    guard textWidth > containerWidth + 0.5 else { return }
                     let overflow = textWidth - containerWidth + 2
-                    guard overflow > 0 else { return }
                     withAnimation(.linear(duration: Double(overflow) / 40).delay(0.2)) {
                         scrollOffset = -overflow
                     }
@@ -133,8 +136,12 @@ struct HuggingScrollingText: View {
                     withAnimation(.easeOut(duration: 0.2)) { scrollOffset = 0 }
                     return
                 }
+                // Scroll only when the title genuinely doesn't fit. Testing
+                // the *real* overflow before the +2 slack is the fix for a
+                // title that fits exactly (this view's slot is its own natural
+                // width) reading as 2pt over and scrolling a hair on hover.
+                guard textWidth > containerWidth + 0.5 else { return }
                 let overflow = textWidth - containerWidth + 2
-                guard overflow > 0 else { return }
                 withAnimation(.linear(duration: Double(overflow) / 40).delay(0.2)) {
                     scrollOffset = -overflow
                 }
