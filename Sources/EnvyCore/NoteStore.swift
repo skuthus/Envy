@@ -1695,6 +1695,35 @@ public final class NoteStore: ObservableObject {
         return result
     }
 
+    /// An operator's argument, split into its text and whether it was
+    /// quoted. Quoting now *demands exactness* — tag:"work" matches only
+    /// #work, folder:"Work" only that folder (and its descendants) — while
+    /// a bare argument keeps the friendlier partial match (tag:techn
+    /// matches #technology). The tag/folder browsers and chips generate the
+    /// quoted form, so the count a row shows is exactly what clicking it
+    /// yields.
+    nonisolated private static func operatorArgument(_ raw: String) -> (text: String, exact: Bool)? {
+        let quoted = raw.hasPrefix("\"")
+        let text = unquote(raw)
+        guard !text.isEmpty else { return nil }
+        return (text, quoted)
+    }
+
+    /// folder:'s matching rule: exact means the folder itself or anything
+    /// nested inside it; partial means the path merely contains the text
+    /// (so "work" also hits "workshop" — fine while typing, wrong for a
+    /// click on a specific folder).
+    nonisolated private static func folderMatches(_ path: String, filter: (text: String, exact: Bool)) -> Bool {
+        if filter.exact { return path == filter.text || path.hasPrefix(filter.text + "/") }
+        return fastContains(path, filter.text)
+    }
+
+    /// tag:'s matching rule, same shape as folderMatches (minus the
+    /// descendant case — tags have no hierarchy).
+    nonisolated private static func tagMatches(_ tag: String, filter: (text: String, exact: Bool)) -> Bool {
+        filter.exact ? tag == filter.text : fastContains(tag, filter.text)
+    }
+
     /// A note's folder path relative to the Index root, lowercased ("" at
     /// the root, "projects/work" nested) — what folder: matches against.
     /// Without a root there's no way to know where the vault starts, so the
@@ -1712,8 +1741,8 @@ public final class NoteStore: ObservableObject {
         let q = group.lowercased()
         let tokens = Self.tokenize(q)
 
-        var tagFilter: String?
-        var excludeTags: [String] = []
+        var tagFilter: (text: String, exact: Bool)?
+        var excludeTags: [(text: String, exact: Bool)] = []
         var dateFilter: (start: Date, end: Date)?
         var staleCutoff: Date?
         var excludeStaleCutoff: Date?
@@ -1736,8 +1765,8 @@ public final class NoteStore: ObservableObject {
         var excludeLinks: [String] = []
         var interlinkFilter: String?
         var excludeInterlinks: [String] = []
-        var folderFilter: String?
-        var excludeFolders: [String] = []
+        var folderFilter: (text: String, exact: Bool)?
+        var excludeFolders: [(text: String, exact: Bool)] = []
         var isFolderedOnly = false     // bare folder: — any note in a subfolder
         var isRootOnly = false         // bare -folder: — notes at the Index root
         var titleTerms: [String] = []
@@ -1809,12 +1838,10 @@ public final class NoteStore: ObservableObject {
             } else if token == "-tag:" {
                 isUntaggedOnly = true
             } else if token.hasPrefix("-tag:") {
-                let name = String(token.dropFirst("-tag:".count))
-                if !name.isEmpty { excludeTags.append(name) }
+                if let arg = operatorArgument(String(token.dropFirst("-tag:".count))) { excludeTags.append(arg) }
             } else if token.hasPrefix("tag:") {
                 if tagFilter == nil {
-                    let name = String(token.dropFirst("tag:".count))
-                    tagFilter = name.isEmpty ? nil : name
+                    tagFilter = operatorArgument(String(token.dropFirst("tag:".count)))
                 }
             } else if token.hasPrefix("-title:") {
                 let term = unquote(String(token.dropFirst("-title:".count)))
@@ -1893,16 +1920,16 @@ public final class NoteStore: ObservableObject {
             } else if token == "-folder:" {
                 isRootOnly = true
             } else if token.hasPrefix("-folder:") {
-                let target = unquote(String(token.dropFirst("-folder:".count)))
-                if !target.isEmpty { excludeFolders.append(target) }
+                if let arg = operatorArgument(String(token.dropFirst("-folder:".count))) { excludeFolders.append(arg) }
             } else if token.hasPrefix("folder:") {
-                // Notes filed under that folder — partial and case-insensitive
-                // like tag: (folder:proj matches Projects), matched against
-                // the note's whole relative path, so a nested folder is
-                // findable by any of its segments. First one wins, like tag:.
+                // Notes filed under that folder — bare arguments are partial
+                // and case-insensitive like tag: (folder:proj matches
+                // Projects), matched against the note's whole relative path,
+                // so a nested folder is findable by any of its segments.
+                // Quoted arguments are exact-or-descendant (see
+                // operatorArgument). First one wins, like tag:.
                 if folderFilter == nil {
-                    let target = unquote(String(token.dropFirst("folder:".count)))
-                    folderFilter = target.isEmpty ? nil : target
+                    folderFilter = operatorArgument(String(token.dropFirst("folder:".count)))
                 }
             } else if token.hasPrefix("-interlink:") {
                 let target = unquote(String(token.dropFirst("-interlink:".count)))
@@ -2017,8 +2044,8 @@ public final class NoteStore: ObservableObject {
                 let folderPath = Self.relativeFolderPath(of: note, rootLower: rootLower)
                 if isFolderedOnly, folderPath.isEmpty { return nil }
                 if isRootOnly, !folderPath.isEmpty { return nil }
-                if let folderFilter, !Self.fastContains(folderPath, folderFilter) { return nil }
-                if !excludeFolders.isEmpty, excludeFolders.contains(where: { Self.fastContains(folderPath, $0) }) { return nil }
+                if let folderFilter, !Self.folderMatches(folderPath, filter: folderFilter) { return nil }
+                if !excludeFolders.isEmpty, excludeFolders.contains(where: { Self.folderMatches(folderPath, filter: $0) }) { return nil }
             }
             if isImageOnly, !note.hasImageEmbed { return nil }
             if isImageExcluded, note.hasImageEmbed { return nil }
@@ -2072,8 +2099,8 @@ public final class NoteStore: ObservableObject {
             if !excludeTitles.isEmpty, excludeTitles.contains(where: { Self.fastContains(note.lowercasedTitle, $0) }) { return nil }
             if isTaggedOnly, note.tags.isEmpty { return nil }
             if isUntaggedOnly, !note.tags.isEmpty { return nil }
-            if let tagFilter, !note.tags.contains(where: { Self.fastContains($0, tagFilter) }) { return nil }
-            if !excludeTags.isEmpty, note.tags.contains(where: { tag in excludeTags.contains { Self.fastContains(tag, $0) } }) { return nil }
+            if let tagFilter, !note.tags.contains(where: { Self.tagMatches($0, filter: tagFilter) }) { return nil }
+            if !excludeTags.isEmpty, note.tags.contains(where: { tag in excludeTags.contains { Self.tagMatches(tag, filter: $0) } }) { return nil }
             if let dateFilter, !(note.modifiedDate >= dateFilter.start && note.modifiedDate < dateFilter.end) { return nil }
             // stale: is date:'s complement — untouched since the cutoff.
             if let staleCutoff, !(note.modifiedDate < staleCutoff) { return nil }

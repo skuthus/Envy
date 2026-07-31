@@ -87,7 +87,7 @@ extension AppDelegate {
         panel.standardWindowButton(.miniaturizeButton)?.isHidden = true
         panel.standardWindowButton(.zoomButton)?.isHidden = true
         panel.isFloatingPanel = true
-        panel.level = .floating
+        panel.level = .envyFloatingNote
         panel.hidesOnDeactivate = false
         panel.isReleasedWhenClosed = false
         panel.delegate = self

@@ -81,6 +81,11 @@ struct ContentView: View {
     @State var showLoadingIndicator = false
     @State var loadingIndicatorTask: Task<Void, Never>?
     @State var searchDebounceTask: Task<Void, Never>?
+    /// Set by a browser drill-in right before it changes `query`, having
+    /// already recomputed and settled synchronously — tells the query
+    /// onChange to skip the debounced pipeline that would redo the same
+    /// work. Consumed (reset) by that onChange.
+    @State var suppressNextQueryDebounce = false
     @State var trashSweepTask: Task<Void, Never>?
     @FocusState var focusedField: FocusField?
     @AppStorage("layoutMode") var layoutModeRaw = LayoutMode.vertical.rawValue
@@ -117,6 +122,9 @@ struct ContentView: View {
     @State var highlightedFolderName: String?             // arrow-key highlight in the bare-"folder:" browser
     @State var tagRenameTarget: String?                   // the tag a rename dialog is open for
     @State var tagRenameText: String = ""
+    /// A rename whose new name is an existing tag — i.e. a merge — waiting
+    /// on its confirmation alert.
+    @State var pendingTagMerge: (old: String, new: String)?
     @State var folderColorMap: [String: Color] = [:]      // folder path -> color
     @State var folderSwatchCache: [String: NSImage] = [:] // folder path -> menu swatch
     @State var noteSubfolderCache: [String: String] = [:] // note id -> its folder path
@@ -617,7 +625,10 @@ struct ContentView: View {
             restoreLastDeleted()
         }
         .onReceive(NotificationCenter.default.publisher(for: .togglePinRequested)) { _ in
-            guard let selectedID, let note = store.notes.first(where: { $0.id == selectedID }) else { return }
+            // Same hidden-selection guard as deleteSelected(): while a browse
+            // surface is showing, the underlying note selection isn't visible
+            // and shortcuts must not act on it.
+            guard !isBrowseQuery, let selectedID, let note = store.notes.first(where: { $0.id == selectedID }) else { return }
             togglePin(note)
         }
         .onReceive(NotificationCenter.default.publisher(for: .toggleLayoutRequested)) { _ in

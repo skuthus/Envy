@@ -1314,6 +1314,31 @@ struct SelfCheck {
             check("folder: composes with free terms",
                   folderTitles("folder:work body", folderSet) == ["Filed", "Deep Note"])
 
+            // Quoted = exact-or-descendant (the form the folder browser and
+            // dots emit): "Work" must not also match "Workshop", but must
+            // include nested "Work/Sub".
+            let inWorkshop = filed("Shop Note", "Workshop")
+            let inWorkExact = filed("Work Note", "Work")
+            let inWorkNested = filed("Nested Note", "Work/Sub")
+            let exactSet = [atRoot, inWorkshop, inWorkExact, inWorkNested]
+            check("quoted folder: is exact plus descendants",
+                  folderTitles("folder:\"Work\"", exactSet) == ["Work Note", "Nested Note"])
+            check("unquoted folder: stays partial",
+                  folderTitles("folder:work", exactSet) == ["Shop Note", "Work Note", "Nested Note"])
+            check("quoted -folder: excludes exactly",
+                  folderTitles("-folder:\"Work\"", exactSet) == ["Loose", "Shop Note"])
+
+            // Same rule for tags: quoted (what the tag browser and chips
+            // emit) is exact, bare stays the friendlier partial match.
+            let tagNote = note("Tagged", "#tag here")
+            let tagsNote = note("Tagsed", "#tags here")
+            check("quoted tag: matches only the exact tag",
+                  Set(NoteStore.filtered([tagNote, tagsNote], query: "tag:\"tag\"").map(\.title)) == ["Tagged"])
+            check("unquoted tag: stays partial",
+                  Set(NoteStore.filtered([tagNote, tagsNote], query: "tag:tag").map(\.title)) == ["Tagged", "Tagsed"])
+            check("quoted -tag: excludes exactly",
+                  Set(NoteStore.filtered([tagNote, tagsNote], query: "-tag:\"tag\"").map(\.title)) == ["Tagsed"])
+
             // --- title: ---
             let named = note("Meeting Notes", "about the dog")
             let mentions = note("Random Thoughts", "my meeting notes say otherwise")

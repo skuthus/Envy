@@ -270,6 +270,12 @@ struct NoteEditorView: View {
         // save over it — the 400ms debounce can no longer straddle a focus
         // change. Fires for any window's resign (cheap dirty-check guard)
         // rather than trying to identify "our" window from SwiftUI.
+        .onReceive(NotificationCenter.default.publisher(for: .flushPendingEditsRequested)) { _ in
+            // A vault-wide rewrite (tag rename) is about to run — commit any
+            // in-flight typing first so the rewrite starts from it, and our
+            // debounced save can't later stomp the rewrite.
+            flushIfDirty()
+        }
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didResignKeyNotification)) { _ in
             flushIfDirty()
         }

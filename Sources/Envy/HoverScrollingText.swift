@@ -63,6 +63,21 @@ struct HoverScrollingText: View {
                 }
         }
         .clipped()
+        // Same trailing fade the file list's titles carry: a clipped title
+        // reads as "continues" rather than a hard cut. Present only when the
+        // text genuinely overflows, and lifted while hovering — the scroll
+        // reveals the end, and a fade over it would hide the last characters.
+        .mask(
+            HStack(spacing: 0) {
+                Rectangle().fill(Color.black)
+                LinearGradient(
+                    colors: [Color.black, Color.black.opacity(0)],
+                    startPoint: .leading, endPoint: .trailing
+                )
+                .frame(width: (textWidth > containerWidth + 0.5 && !isHovering) ? 18 : 0)
+            }
+            .animation(.easeOut(duration: 0.2), value: isHovering)
+        )
         .onHover { isHovering = $0 }
     }
 }

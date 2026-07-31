@@ -25,7 +25,7 @@ extension ContentView {
         // top/most-used one by default), filling "tag:name" so the list
         // flips to that tag's notes — the picker step complete.
         if isTagBrowseQuery {
-            if let name = highlightedTagName ?? store.tagCounts().first?.name {
+            if let name = highlightedTagName ?? browserTagCounts.first?.name {
                 searchByTag(name)
             }
             return
@@ -200,13 +200,18 @@ extension ContentView {
     /// since this note itself has the tag being searched, it's always still
     /// in that list, so it stays selected with no extra handling needed here.
     func searchByTag(_ tag: String) {
-        query = "tag:\(tag)"
+        // Quoted, and quoting means exact (see NoteStore.operatorArgument) —
+        // clicking #tag must not also surface #tags, and the browser's count
+        // must equal what the click shows.
+        query = "tag:\"\(tag)\""
         // Fill the results synchronously so drilling in from the tag browser
         // shows the tag's notes at once, with no flash of the previous list
-        // while the debounced search catches up (reconcile settles the
-        // selection off the fresh cache in the same frame).
+        // while the debounced search catches up — then settle exactly as the
+        // debounced pipeline would, and tell it to stand down (it would only
+        // redo this same work 60ms later).
         recomputeFilteredNotesSync()
-        reconcileSelection()
+        settleAfterQueryChange()
+        suppressNextQueryDebounce = true
         focusedField = .search
     }
 
@@ -217,24 +222,54 @@ extension ContentView {
         tagRenameTarget = tag
     }
 
-    /// Commits a tag rename across the whole vault, and carries the tag's
-    /// custom color over to the new name (the color is keyed by name, so a
-    /// rename would otherwise silently drop it). No-ops on an empty or
-    /// unchanged name; NoteStore.renameTag sanitizes either way.
+    /// Commits a tag rename — or, when the new name is an existing tag,
+    /// stops to confirm first: that rename is really a *merge* (every #old
+    /// becomes #new, and the two are one tag forever after), which deserves
+    /// a deliberate yes rather than happening as a side effect of a typo.
+    /// No-ops on an empty or unchanged name; NoteStore.renameTag sanitizes
+    /// either way.
     func commitTagRename() {
         defer { tagRenameTarget = nil }
         guard let old = tagRenameTarget else { return }
         let new = NoteStore.sanitizedTagName(tagRenameText)
-        guard !new.isEmpty, new != old else { return }
+        guard !new.isEmpty, new.lowercased() != old else { return }
+        if store.allTagsByFrequency().contains(new.lowercased()) {
+            // One tick later, not inline — presenting the merge alert in the
+            // same update that dismisses the rename alert can silently drop
+            // the presentation.
+            Task { @MainActor in pendingTagMerge = (old: old, new: new) }
+            return
+        }
+        performTagRename(from: old, to: new)
+    }
 
+    /// The rename itself, after any confirmation. Carries the old tag's
+    /// custom color to the new name only when the new name has none — on a
+    /// merge the surviving tag keeps its own color (you folded #old *into*
+    /// it, it doesn't change identity); either way the old name's color
+    /// entry is cleaned up.
+    func performTagRename(from old: String, to new: String) {
+        // Any editor (main, peek, pop-out, pinned popup) may hold unsaved
+        // typing containing the old tag; a debounced save landing after the
+        // rewrite would put pre-rename text back. Flush first — notification
+        // delivery is synchronous, so everything is committed before the
+        // rename below reads the store.
+        NotificationCenter.default.post(name: .flushPendingEditsRequested, object: nil)
+
+        // Color entries are keyed by the lowercased tag name (tags are
+        // lowercased everywhere), regardless of how the new name was typed.
+        let newKey = new.lowercased()
         let raw = UserDefaults.standard.string(forKey: TagColorPreferences.storageKey) ?? ""
         if let color = TagColorPreferences.color(for: old, raw: raw) {
-            var updated = TagColorPreferences.setting(color, for: new, in: raw)
+            var updated = raw
+            if TagColorPreferences.color(for: newKey, raw: raw) == nil {
+                updated = TagColorPreferences.setting(color, for: newKey, in: updated)
+            }
             updated = TagColorPreferences.setting(nil, for: old, in: updated)
             UserDefaults.standard.set(updated, forKey: TagColorPreferences.storageKey)
         }
         store.renameTag(from: old, to: new)
-        highlightedTagName = new.lowercased()
+        highlightedTagName = newKey
     }
 
     /// Clicking a row's folder dot or name chip — the folder twin of
@@ -243,11 +278,19 @@ extension ContentView {
     /// the folder: operator's own (against the whole relative path), so a
     /// parent folder's search includes its nested folders' notes too.
     func searchByFolder(_ folder: String) {
-        query = "folder:\"\(folder)\""
+        if folder.contains("\"") {
+            // A quote inside the name would break the quoted-exact form's
+            // own quoting — fall back to the partial match on the
+            // un-quotable text rather than emitting a malformed query.
+            query = "folder:" + folder.replacingOccurrences(of: "\"", with: "")
+        } else {
+            query = "folder:\"\(folder)\""
+        }
         // See searchByTag: synchronous so the folder's notes replace the
-        // browser without the full list flashing in between.
+        // browser without the full list flashing in between, settled once.
         recomputeFilteredNotesSync()
-        reconcileSelection()
+        settleAfterQueryChange()
+        suppressNextQueryDebounce = true
         focusedField = .search
     }
 
@@ -412,6 +455,12 @@ extension ContentView {
     // MARK: - Delete / restore / move / rename
 
     func deleteSelected() {
+        // Browsing templates/trash/tags/folders: a note selection still
+        // exists underneath but isn't what's on screen — ⌘⌫ acting on it
+        // would silently trash a note the user can't see. Each browse
+        // surface has its own explicit delete affordances where deletion
+        // makes sense.
+        guard !isBrowseQuery else { return }
         if fullSelection.count > 1 {
             bulkDelete()
             return

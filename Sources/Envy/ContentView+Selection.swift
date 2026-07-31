@@ -256,7 +256,9 @@ extension ContentView {
     /// (no wrap) like the note list. Falls back to the top when the current
     /// highlight is stale (a tag that no longer exists).
     func moveTagHighlight(_ delta: Int) {
-        let tags = store.tagCounts()
+        // browserTagCounts, not store.tagCounts() — the highlight must walk
+        // the rows actually displayed (which exclude a hidden Inbox's tags).
+        let tags = browserTagCounts
         guard !tags.isEmpty else { return }
         let current = tags.firstIndex { $0.name == highlightedTagName } ?? 0
         highlightedTagName = tags[min(max(current + delta, 0), tags.count - 1)].name

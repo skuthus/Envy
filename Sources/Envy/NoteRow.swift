@@ -64,10 +64,6 @@ struct NoteRow: View {
     @State private var showsFolderTip = false
     @State private var dotHoverTask: Task<Void, Never>?
 
-    /// Written by the marker's right-click color menu; ContentView observes
-    /// this key and rebuilds the folder-color caches, so every row repaints.
-    @AppStorage(FolderColorPreferences.storageKey) private var folderColorsRaw = ""
-
     var body: some View {
         HStack(spacing: 6) {
             if isPinned {
@@ -111,6 +107,12 @@ struct NoteRow: View {
                         .fontWeight(bold ? .bold : nil)
                         .lineLimit(1)
                         .fixedSize()
+                        // The hover label sits just right of a trailing dot —
+                        // on a long row that's where the date is. The date
+                        // steps aside while the label shows, so the overlap
+                        // reads as a deliberate swap, not a collision.
+                        .opacity(showsFolderTip && dotTrailing ? 0 : 1)
+                        .animation(.easeOut(duration: 0.15), value: showsFolderTip)
                 }
             } else {
                 // The title takes its natural width so the trailing dot
@@ -138,6 +140,9 @@ struct NoteRow: View {
                         .fontWeight(bold ? .bold : nil)
                         .lineLimit(1)
                         .fixedSize()
+                        // Same deliberate step-aside as the preview branch.
+                        .opacity(showsFolderTip && dotTrailing ? 0 : 1)
+                        .animation(.easeOut(duration: 0.15), value: showsFolderTip)
                 }
             }
         }

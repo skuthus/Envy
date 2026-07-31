@@ -227,6 +227,16 @@ struct PinnedNotePopoverView: View {
         // padding. Ignoring the safe area here lets the header sit flush
         // at the very top instead.
         .ignoresSafeArea(edges: .top)
+        .onReceive(NotificationCenter.default.publisher(for: .flushPendingEditsRequested)) { _ in
+            // A vault-wide rewrite (tag rename) is about to run; commit any
+            // unsaved typing so the debounced save can't overwrite it after.
+            saveTask?.cancel()
+            saveTask = nil
+            if content != lastSyncedContent {
+                try? content.write(to: url, atomically: true, encoding: .utf8)
+                lastSyncedContent = content
+            }
+        }
         .onChange(of: content) { _, newValue in
             guard newValue != lastSyncedContent else { return }
             scheduleSave(newValue)

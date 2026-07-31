@@ -38,6 +38,22 @@ extension ContentView {
                     Text("Rename #\(old) everywhere it appears in your notes. The tag on disk changes in every note that carries it.")
                 }
             }
+            // Renaming into an existing tag merges the two — a bigger deal
+            // than a rename, so it gets its own deliberate confirmation.
+            .alert("Merge Tags?", isPresented: Binding(
+                get: { pendingTagMerge != nil },
+                set: { if !$0 { pendingTagMerge = nil } }
+            )) {
+                Button("Cancel", role: .cancel) { pendingTagMerge = nil }
+                Button("Merge") {
+                    if let merge = pendingTagMerge { performTagRename(from: merge.old, to: merge.new) }
+                    pendingTagMerge = nil
+                }
+            } message: {
+                if let merge = pendingTagMerge {
+                    Text("#\(merge.new) already exists. Every note tagged #\(merge.old) will become #\(merge.new), and the two will be one tag from then on. #\(merge.new) keeps its color.")
+                }
+            }
     }
 
     private var listPaneBody: some View {
@@ -79,6 +95,13 @@ extension ContentView {
                         proxy.scrollTo(newValue)
                     }
                 }
+                // Every browse mode's arrow-key highlight scrolls into view
+                // the same way the note selection does — without these, the
+                // highlight could walk right off the visible area.
+                .onChange(of: highlightedTemplateID) { _, v in if let v { proxy.scrollTo(v) } }
+                .onChange(of: highlightedTrashID) { _, v in if let v { proxy.scrollTo(v) } }
+                .onChange(of: highlightedTagName) { _, v in if let v { proxy.scrollTo(v) } }
+                .onChange(of: highlightedFolderName) { _, v in if let v { proxy.scrollTo(v) } }
                 // Makes the list itself a real stop for Focus Next/Previous
                 // Area, not just something you tap into — arrow keys move the
                 // selection the same as they do from the search box, and
@@ -106,9 +129,9 @@ extension ContentView {
                     if isTemplateQuery { actOnHighlightedTemplate() }
                     else if isTagBrowseQuery {
                         // Drill into the highlighted tag (top/most-used by
-                        // default): fills "tag:name" and the list flips to
+                        // default): fills tag:"name" and the list flips to
                         // that tag's notes, the picker step complete.
-                        if let name = highlightedTagName ?? store.tagCounts().first?.name { searchByTag(name) }
+                        if let name = highlightedTagName ?? browserTagCounts.first?.name { searchByTag(name) }
                     }
                     else if isFolderBrowseQuery {
                         if let name = highlightedFolderName ?? subfolderCache.first { searchByFolder(name) }
@@ -339,23 +362,23 @@ extension ContentView {
             // the threshold where typing itself starts to feel delayed,
             // but coalesces anything faster than that (fast typing bursts,
             // rapid backspacing) into one recompute instead of many.
+            // A browser drill-in (searchByTag/searchByFolder) already
+            // recomputed and settled synchronously — running the debounced
+            // pipeline again would just redo identical work 60ms later.
+            if suppressNextQueryDebounce {
+                suppressNextQueryDebounce = false
+                return
+            }
             searchDebounceTask?.cancel()
             searchDebounceTask = Task { @MainActor in
                 try? await Task.sleep(for: .milliseconds(60))
                 guard !Task.isCancelled else { return }
                 // The pipeline itself runs on a background task (see
                 // recomputeFilteredNotes) — this await is just sequencing,
-                // so the reconciles below read the fresh results.
+                // so the settle below reads the fresh results.
                 await recomputeFilteredNotes()
                 guard !Task.isCancelled else { return }
-                reconcileSelection()
-                reconcileTemplateHighlight()
-                reconcileTrashHighlight()
-                // The open note's search-match highlighting settles here
-                // too, on the same debounce as the results list — see
-                // editorSearchQuery's declaration for why the editor never
-                // sees the live per-keystroke query.
-                editorSearchQuery = query
+                settleAfterQueryChange()
             }
         }
         // A plain .glassEffect alone reads as barely-there against the
@@ -535,7 +558,10 @@ extension ContentView {
     @ViewBuilder
     private var matchingTemplateRows: some View {
         ForEach(matchingTemplatesForQuery) { template in
+            // .id so the ScrollViewReader can follow the arrow-key highlight
+            // (ForEach identity alone isn't scrollTo-addressable).
             templateRow(for: template)
+                .id(template.id)
         }
         if matchingTemplatesForQuery.isEmpty {
             if let fragment = templateNameFragment?.trimmingCharacters(in: .whitespaces), !fragment.isEmpty {
@@ -647,6 +673,7 @@ extension ContentView {
     private var matchingTrashRows: some View {
         ForEach(matchingTrashForQuery) { note in
             trashRow(for: note)
+                .id(note.id)   // scrollTo-addressable, same as template rows
         }
         if matchingTrashForQuery.isEmpty {
             Text("Trash is empty.")
@@ -662,11 +689,12 @@ extension ContentView {
     /// from TagChipView, the same pill the title bar uses) with its note
     /// count, most-used first. Click or Return-on-highlight drills in.
     private var matchingTagRows: some View {
-        let tags = store.tagCounts()
+        let tags = browserTagCounts
         let active = highlightedTagName ?? tags.first?.name
         return Group {
             ForEach(tags, id: \.name) { entry in
                 tagBrowseRow(name: entry.name, count: entry.count, highlighted: entry.name == active)
+                    .id(entry.name)   // scrollTo-addressable for the arrow-key highlight
             }
             if tags.isEmpty {
                 Text("No tags yet. Write #something in a note.")
@@ -730,6 +758,7 @@ extension ContentView {
             } else {
                 ForEach(subfolderCache, id: \.self) { folder in
                     folderBrowseRow(name: folder, count: counts[folder] ?? 0, highlighted: folder == active)
+                        .id(folder)   // scrollTo-addressable for the arrow-key highlight
                 }
             }
         }
@@ -935,13 +964,60 @@ extension ContentView {
         query.trimmingCharacters(in: .whitespaces).lowercased() == "folder:"
     }
 
-    /// Direct note count per folder (a note's immediate folder, not its
-    /// nested descendants) — drives the folder browser's counts, read
-    /// straight off the cache the list already maintains.
+    /// Note count per folder as a drill-in counts them: the folder's own
+    /// notes plus everything nested beneath it, matching folder:"..."'s
+    /// exact-or-descendant rule — so the number a browser row shows is the
+    /// number clicking it yields. Built off the cache the list already
+    /// maintains.
     var folderNoteCounts: [String: Int] {
         var counts: [String: Int] = [:]
-        for path in noteSubfolderCache.values { counts[path, default: 0] += 1 }
+        for path in noteSubfolderCache.values {
+            counts[path, default: 0] += 1
+            var parent = path
+            while let slash = parent.lastIndex(of: "/") {
+                parent = String(parent[..<slash])
+                counts[parent, default: 0] += 1
+            }
+        }
         return counts
+    }
+
+    /// The tag catalog's counts. Fast path is the store's cache; when the
+    /// Inbox is hidden from the main list, its notes won't appear in a
+    /// drill-in's results, so their tags are excluded from the counts too —
+    /// the number you see is the number you get.
+    var browserTagCounts: [(name: String, count: Int)] {
+        if showInboxInMainList || fleetingCountCache == 0 { return store.tagCounts() }
+        return NoteStore.tagCounts(in: store.notes.filter { !inboxNoteIDsCache.contains($0.id) })
+    }
+
+    /// Any query whose list shows something other than the notes themselves.
+    /// While one of these is active a note selection still exists underneath
+    /// (the browse pipelines don't clear it) but isn't what's on screen —
+    /// note-level shortcuts (delete, pin) must not act on it invisibly.
+    var isBrowseQuery: Bool {
+        isTemplateQuery || isTrashQuery || isTagBrowseQuery || isFolderBrowseQuery
+    }
+
+    /// Everything that settles after the results caches are fresh for a new
+    /// query — selection reconciled, every browse highlight cleared the
+    /// moment its mode ends, and the editor's search-match highlighting
+    /// caught up. One function shared by the debounced pipeline and the
+    /// synchronous drill-in path (searchByTag/searchByFolder), so the two
+    /// can't drift apart.
+    func settleAfterQueryChange() {
+        reconcileSelection()
+        reconcileTemplateHighlight()
+        reconcileTrashHighlight()
+        // The tag/folder browsers' arrow-key highlight resets the moment
+        // the query stops being that browser — same idea as the reconciles
+        // above, so a later visit starts at the top instead of drilling
+        // into a row remembered from last time.
+        if !isTagBrowseQuery { highlightedTagName = nil }
+        if !isFolderBrowseQuery { highlightedFolderName = nil }
+        // See editorSearchQuery's declaration for why the editor never sees
+        // the live per-keystroke query.
+        editorSearchQuery = query
     }
 
     /// The fleeting notes currently listed — just the filtered list, since

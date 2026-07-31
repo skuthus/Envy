@@ -5,6 +5,12 @@ extension Notification.Name {
     static let newFromTemplateRequested = Notification.Name("newFromTemplateRequested")
     static let summonRequested = Notification.Name("summonRequested")
     static let deleteSelectedRequested = Notification.Name("deleteSelectedRequested")
+    /// Every editing surface (main editor, peeks/pop-outs, the pinned
+    /// popup) immediately commits any unsaved typing. Posted before a
+    /// vault-wide content rewrite (tag rename) so a debounced save can't
+    /// land afterward and write pre-rewrite text back over it. Delivery is
+    /// synchronous — observers have flushed by the time post() returns.
+    static let flushPendingEditsRequested = Notification.Name("flushPendingEditsRequested")
     static let toggleLayoutRequested = Notification.Name("toggleLayoutRequested")
     static let zoomInRequested = Notification.Name("zoomInRequested")
     static let zoomOutRequested = Notification.Name("zoomOutRequested")

@@ -2,6 +2,16 @@ import SwiftUI
 import AppKit
 import EnvyCore
 
+extension NSWindow.Level {
+    /// One step above .floating, where every floating note (peeks, pop-outs,
+    /// the menu-bar pinned panel) lives — not .floating itself, because
+    /// "Keep Envy on Top" raises the *main window* to .floating, and at
+    /// equal levels ordering is by recency: clicking the pinned-on-top main
+    /// window would bury the floating notes that exist precisely to stay
+    /// above it.
+    static let envyFloatingNote = NSWindow.Level(rawValue: NSWindow.Level.floating.rawValue + 1)
+}
+
 /// An invisible, zero-content NSView whose only job is to exist as a real
 /// AppKit anchor for a SwiftUI row — WikilinkPreviewController.show(in:)
 /// needs an actual NSView to compute a screen-space frame from and to
@@ -275,6 +285,19 @@ struct WikilinkPreviewContentView: View {
             lastSyncedContent = fresh
             reloadToken += 1
         }
+        // A vault-wide rewrite (tag rename) is about to run — same flush as
+        // the blur below, minus the which-window check: every open peek and
+        // pop-out must commit before the rewrite reads the store.
+        .onReceive(NotificationCenter.default.publisher(for: .flushPendingEditsRequested)) { _ in
+            guard isEditable, content != lastSyncedContent else { return }
+            saveTask?.cancel()
+            saveTask = nil
+            guard let note else { return }
+            var updated = note
+            updated.content = content
+            store.save(updated)
+            lastSyncedContent = content
+        }
         // Commit in-flight edits the moment this window stops being key, so
         // the 400ms debounce can never straddle a focus change into another
         // editor showing the same note.
@@ -352,7 +375,7 @@ private func makePeekPanel(frame: NSRect, backgroundColor: NSColor) -> PreviewPa
     panel.standardWindowButton(.miniaturizeButton)?.isHidden = true
     panel.standardWindowButton(.zoomButton)?.isHidden = true
     panel.isFloatingPanel = true
-    panel.level = .floating
+    panel.level = .envyFloatingNote
     panel.hasShadow = true
     panel.isReleasedWhenClosed = false
     panel.minSize = NSSize(width: 200, height: 150)
