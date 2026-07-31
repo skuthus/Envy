@@ -927,6 +927,73 @@ public final class NoteStore: ObservableObject {
         return moved
     }
 
+    /// Renames a user subfolder — or, when the new relative path names a
+    /// different parent, moves it — carrying every note inside along.
+    /// Purely a filesystem + bookkeeping operation: wikilinks are
+    /// title-based, so no note content changes at all. Each contained
+    /// note's id/url is swapped in place with an id-change recorded, so a
+    /// debounced save typed against the old path lands on the new one
+    /// instead of resurrecting the old folder. Returns the folder's new
+    /// relative path (post-sanitization), or nil when refused: an empty or
+    /// unchanged name, a reserved root name (Templates/Inbox/Trash/
+    /// Attachments) on either side, a missing source, or a name collision —
+    /// merging directories would mean resolving file collisions inside,
+    /// a different feature; the one allowed "collision" is a case-only
+    /// rename of the folder itself.
+    public func renameFolder(from oldPath: String, to newPathRaw: String) -> String? {
+        // Sanitize each component the way filenames are (":" → "-"); "/"
+        // stays meaningful as the separator.
+        let newPath = newPathRaw
+            .split(separator: "/")
+            .map { Self.sanitizedBase(for: String($0)).trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+            .joined(separator: "/")
+        guard !newPath.isEmpty, newPath != oldPath else { return nil }
+
+        let reserved = ["Templates", Self.inboxFolderName, Self.trashFolderName, Self.attachmentsFolderName]
+        guard let newFirst = newPath.split(separator: "/").first,
+              let oldFirst = oldPath.split(separator: "/").first,
+              !reserved.contains(where: { $0.caseInsensitiveCompare(newFirst) == .orderedSame }),
+              !reserved.contains(where: { $0.caseInsensitiveCompare(oldFirst) == .orderedSame })
+        else { return nil }
+
+        let fm = FileManager.default
+        let oldURL = noteDirectory.appendingPathComponent(oldPath, isDirectory: true)
+        let newURL = noteDirectory.appendingPathComponent(newPath, isDirectory: true)
+        var isDirectory: ObjCBool = false
+        guard fm.fileExists(atPath: oldURL.path, isDirectory: &isDirectory), isDirectory.boolValue else { return nil }
+        let caseOnly = newPath.lowercased() == oldPath.lowercased()
+        if !caseOnly, fm.fileExists(atPath: newURL.path) { return nil }
+
+        markInternalWrite()
+        try? fm.createDirectory(at: newURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        guard (try? fm.moveItem(at: oldURL, to: newURL)) != nil else { return nil }
+
+        let oldPrefix = oldURL.path + "/"
+        let newPrefix = newURL.path + "/"
+        for index in notes.indices where notes[index].url.path.hasPrefix(oldPrefix) {
+            let old = notes[index]
+            let movedURL = URL(fileURLWithPath: newPrefix + old.url.path.dropFirst(oldPrefix.count))
+            notes[index] = Note(id: movedURL.path, url: movedURL, content: old.content, modifiedDate: old.modifiedDate)
+            recordIDChange(from: old.id, to: movedURL.path)
+        }
+
+        // The Trash mirrors the folder structure (Trash/Work/x.md restores
+        // to Work/) — carry the mirror along so restores land in the
+        // renamed folder rather than resurrecting the old name.
+        // Best-effort: left in place if the mirrored destination exists.
+        let oldTrash = trashDirectory.appendingPathComponent(oldPath, isDirectory: true)
+        if fm.fileExists(atPath: oldTrash.path) {
+            let newTrash = trashDirectory.appendingPathComponent(newPath, isDirectory: true)
+            if !fm.fileExists(atPath: newTrash.path) {
+                markInternalWrite()
+                try? fm.createDirectory(at: newTrash.deletingLastPathComponent(), withIntermediateDirectories: true)
+                try? fm.moveItem(at: oldTrash, to: newTrash)
+            }
+        }
+        return newPath
+    }
+
     // MARK: - Attachments
 
     /// Where image attachments live: a hidden folder at the Index root.

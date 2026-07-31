@@ -272,6 +272,73 @@ extension ContentView {
         highlightedTagName = newKey
     }
 
+    /// Opens the rename dialog for a folder (from the folder browser's
+    /// context menu), seeding the field with its current relative path — so
+    /// editing the last segment renames it, and editing an earlier segment
+    /// re-files it under a different parent.
+    func beginFolderRename(_ folder: String) {
+        folderRenameText = folder
+        folderRenameTarget = folder
+    }
+
+    /// Commits a folder rename: the directory moves (notes' contents are
+    /// untouched — wikilinks are title-based), colors re-key for the folder
+    /// and every descendant (the thing a Finder rename silently loses), and
+    /// the selection/pinned-note paths follow. Refusals (collision,
+    /// reserved name) surface as an error alert rather than silence.
+    func commitFolderRename() {
+        defer { folderRenameTarget = nil }
+        guard let old = folderRenameTarget else { return }
+        let typed = folderRenameText.trimmingCharacters(in: CharacterSet(charactersIn: "/ "))
+        guard !typed.isEmpty, typed != old else { return }
+
+        // Same pre-flush as a tag rename: an editor open on a note inside
+        // this folder may hold typing whose debounced save would otherwise
+        // fire against the old path and resurrect the old folder.
+        NotificationCenter.default.post(name: .flushPendingEditsRequested, object: nil)
+
+        guard let newPath = store.renameFolder(from: old, to: typed) else {
+            // One tick later — presenting this alert in the same update that
+            // dismisses the rename alert can silently drop it.
+            Task { @MainActor in
+                folderRenameError = "Couldn't rename \"\(old)\" to \"\(typed)\". A folder by that name may already exist, or the name is reserved (Templates, Inbox, Trash, Attachments)."
+            }
+            return
+        }
+
+        // Colors are keyed by relative path — re-key the folder and every
+        // descendant so nothing loses its color.
+        let colors = FolderColorPreferences.loadAll(from: folderColorsRaw)
+        var rekeyed: [String: CodableColor] = [:]
+        for (key, value) in colors {
+            if key == old {
+                rekeyed[newPath] = value
+            } else if key.hasPrefix(old + "/") {
+                rekeyed[newPath + key.dropFirst(old.count)] = value
+            } else {
+                rekeyed[key] = value
+            }
+        }
+        folderColorsRaw = FolderColorPreferences.encode(rekeyed)
+
+        // Paths stored outside the store follow by prefix swap: the open
+        // note's selection, and the menu-bar pinned note (whose stored path
+        // is read live, so updating the preference is enough).
+        let oldAbs = store.noteDirectory.appendingPathComponent(old, isDirectory: true).path + "/"
+        let newAbs = store.noteDirectory.appendingPathComponent(newPath, isDirectory: true).path + "/"
+        if let sel = selectedID, sel.hasPrefix(oldAbs) {
+            selectedID = newAbs + sel.dropFirst(oldAbs.count)
+        }
+        let pinned = UserDefaults.standard.string(forKey: "menuBarPinnedNotePath") ?? ""
+        if pinned.hasPrefix(oldAbs) {
+            UserDefaults.standard.set(newAbs + pinned.dropFirst(oldAbs.count), forKey: "menuBarPinnedNotePath")
+        }
+
+        recomputeFolderState()
+        highlightedFolderName = newPath
+        Task { await recomputeFilteredNotes() }
+    }
+
     /// Clicking a row's folder dot or name chip — the folder twin of
     /// searchByTag above, showing just that folder's notes. Always quoted:
     /// folder names carry spaces far more often than tags do. Matching is

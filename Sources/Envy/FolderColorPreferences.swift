@@ -98,6 +98,12 @@ struct FolderColorMenu: View {
     let folderName: String
     /// The folder's current resolved color, seeding the custom picker.
     let currentColor: Color?
+    /// When set, the menu offers "Rename Folder…", handing the folder back
+    /// for the caller to run the vault-wide rename (see
+    /// ContentView.commitFolderRename). Left nil where rename doesn't
+    /// belong (the list's dots, the title-bar chip), so the item appears
+    /// only in the folder browser — mirroring TagChipView's onRename.
+    var onRename: ((String) -> Void)? = nil
     @AppStorage(FolderColorPreferences.storageKey) private var folderColorsRaw = ""
 
     var body: some View {
@@ -113,6 +119,11 @@ struct FolderColorMenu: View {
             FolderColorPanel.present(
                 initial: NSColor(currentColor ?? .secondary),
                 for: folderName)
+        }
+
+        if let onRename {
+            Divider()
+            Button("Rename Folder…") { onRename(folderName) }
         }
 
         if FolderColorPreferences.color(for: folderName, raw: folderColorsRaw) != nil {

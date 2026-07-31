@@ -54,6 +54,28 @@ extension ContentView {
                     Text("#\(merge.new) already exists. Every note tagged #\(merge.old) will become #\(merge.new), and the two will be one tag from then on. #\(merge.new) keeps its color.")
                 }
             }
+            // Folder rename, launched from the folder browser's right-click
+            // menu — the folder twin of Rename Tag above.
+            .alert("Rename Folder", isPresented: Binding(
+                get: { folderRenameTarget != nil },
+                set: { if !$0 { folderRenameTarget = nil } }
+            )) {
+                TextField("Folder name", text: $folderRenameText)
+                Button("Cancel", role: .cancel) { folderRenameTarget = nil }
+                Button("Rename") { commitFolderRename() }
+            } message: {
+                if let old = folderRenameTarget {
+                    Text("Rename the folder \"\(old)\". Every note inside moves with it; titles, links, and colors are all preserved. Include a / to file it under another folder.")
+                }
+            }
+            .alert("Rename Failed", isPresented: Binding(
+                get: { folderRenameError != nil },
+                set: { if !$0 { folderRenameError = nil } }
+            )) {
+                Button("OK", role: .cancel) { folderRenameError = nil }
+            } message: {
+                if let message = folderRenameError { Text(message) }
+            }
     }
 
     private var listPaneBody: some View {
@@ -789,7 +811,13 @@ extension ContentView {
         )
         .contentShape(Rectangle())
         .onTapGesture { searchByFolder(name) }
-        .contextMenu { FolderColorMenu(folderName: name, currentColor: folderColorMap[name]) }
+        .contextMenu {
+            FolderColorMenu(
+                folderName: name,
+                currentColor: folderColorMap[name],
+                onRename: { beginFolderRename($0) }
+            )
+        }
     }
 
     @ViewBuilder

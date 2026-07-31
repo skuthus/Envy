@@ -125,6 +125,9 @@ struct ContentView: View {
     /// A rename whose new name is an existing tag — i.e. a merge — waiting
     /// on its confirmation alert.
     @State var pendingTagMerge: (old: String, new: String)?
+    @State var folderRenameTarget: String?                // the folder a rename dialog is open for
+    @State var folderRenameText: String = ""
+    @State var folderRenameError: String?                 // shown when a rename is refused
     @State var folderColorMap: [String: Color] = [:]      // folder path -> color
     @State var folderSwatchCache: [String: NSImage] = [:] // folder path -> menu swatch
     @State var noteSubfolderCache: [String: String] = [:] // note id -> its folder path

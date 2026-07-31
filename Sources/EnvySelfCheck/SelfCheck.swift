@@ -1672,6 +1672,44 @@ struct SelfCheck {
                   store.notes.first { $0.title == "B" }?.modifiedDate == unchanged)
         }
 
+        // renameFolderMovesEverythingAndKeepsIdentity
+        do {
+            let fm = FileManager.default
+            let tmp = fm.temporaryDirectory.appendingPathComponent("EnvyRenameFolder-\(UUID().uuidString)", isDirectory: true)
+            let store = NoteStore(directory: tmp, includeSubfolders: true)
+            await waitForLoad(store)
+            let alpha = store.create(title: "Alpha", inSubfolder: "Work")
+            _ = store.create(title: "Beta", inSubfolder: "Work/Sub")
+            _ = store.create(title: "Shop", inSubfolder: "Workshop")
+
+            let renamed = store.renameFolder(from: "Work", to: "Job")
+            check("renameFolder returns the new path", renamed == "Job")
+            check("renameFolder moves the directory",
+                  fm.fileExists(atPath: tmp.appendingPathComponent("Job/Alpha.md").path))
+            check("renameFolder carries nested folders",
+                  fm.fileExists(atPath: tmp.appendingPathComponent("Job/Sub/Beta.md").path))
+            check("renameFolder leaves lookalike folders alone",
+                  fm.fileExists(atPath: tmp.appendingPathComponent("Workshop/Shop.md").path))
+            check("contained notes' identities follow",
+                  store.note(withID: tmp.appendingPathComponent("Job/Alpha.md").path) != nil)
+
+            // A debounced save typed before the rename follows the redirect
+            // instead of resurrecting the old folder.
+            var stale = alpha
+            stale.content = "typed before the rename"
+            store.save(stale)
+            check("a stale-id save lands in the renamed folder",
+                  (try? String(contentsOf: tmp.appendingPathComponent("Job/Alpha.md"), encoding: .utf8))?.contains("typed before the rename") == true)
+            check("the old folder is gone", !fm.fileExists(atPath: tmp.appendingPathComponent("Work").path))
+
+            check("renameFolder refuses a collision", store.renameFolder(from: "Job", to: "Workshop") == nil)
+            check("renameFolder refuses reserved names", store.renameFolder(from: "Job", to: "Trash") == nil)
+            check("renameFolder can re-parent via a path",
+                  store.renameFolder(from: "Job", to: "Archive/Job") == "Archive/Job"
+                  && fm.fileExists(atPath: tmp.appendingPathComponent("Archive/Job/Alpha.md").path))
+            try? fm.removeItem(at: tmp)
+        }
+
         print("")
         if failures.isEmpty {
             print("All checks passed.")
