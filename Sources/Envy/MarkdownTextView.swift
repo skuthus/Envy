@@ -3167,14 +3167,58 @@ struct MarkdownTextView: NSViewRepresentable {
         @MainActor
         func checkboxHitRects() -> [NSRect] {
             guard let textView else { return [] }
-            return paddedRects(for: MarkdownStyler.taskCheckboxRanges(in: textView.string).map { $0.glyphRange }, padding: 6)
+            return MarkdownStyler.taskCheckboxRanges(in: textView.string).compactMap {
+                checkboxBoxRect(forGlyphRange: $0.glyphRange)?.insetBy(dx: -Self.checkboxHitPadding, dy: -Self.checkboxHitPadding)
+            }
+        }
+
+        /// A comfortable margin around the drawn box for the click/cursor
+        /// target — small, because the box is now the target rather than the
+        /// old reserved-glyph slot, which reached well past the box (its full
+        /// symbol width plus the gap before the task text) and made the
+        /// checkbox clickable far to its right.
+        private static let checkboxHitPadding: CGFloat = 4
+
+        /// The drawn checkbox box's on-screen rect, matching
+        /// updateCheckboxOverlays' placement exactly (same body font, same
+        /// side, same vertical centering within the line) — so the hit test
+        /// lines up with what's actually painted instead of the wider glyph
+        /// slot MarkdownStyler reserves for it.
+        @MainActor
+        private func checkboxBoxRect(forGlyphRange charRange: NSRange) -> NSRect? {
+            guard let textView, let layoutManager = textView.layoutManager, let textContainer = textView.textContainer else { return nil }
+            let unadjusted = parent.theme.resolvedFont
+            let bodyFont = parent.fontZoom == 0
+                ? unadjusted
+                : NSFontManager.shared.convert(unadjusted, toSize: max(6, unadjusted.pointSize + parent.fontZoom))
+            let side = MarkdownStyler.checkboxBoxSide(baseFont: bodyFont)
+            let origin = textView.textContainerOrigin
+            let glyphRange = layoutManager.glyphRange(forCharacterRange: charRange, actualCharacterRange: nil)
+            let rect = layoutManager.boundingRect(forGlyphRange: glyphRange, in: textContainer)
+            let lineRect = layoutManager.lineFragmentRect(forGlyphAt: glyphRange.location, effectiveRange: nil)
+            return NSRect(
+                x: rect.origin.x + origin.x,
+                y: lineRect.origin.y + origin.y + (lineRect.height - side) / 2,
+                width: side,
+                height: side
+            )
         }
 
         @MainActor
         private func checkboxAndRect(at point: NSPoint) -> (checkbox: (glyphRange: NSRange, toggleRange: NSRange, isChecked: Bool), rect: NSRect)? {
             guard let textView else { return nil }
-            return closestHit(at: point, items: MarkdownStyler.taskCheckboxRanges(in: textView.string), range: { $0.glyphRange }, padding: 6)
-                .map { ($0.item, $0.rect) }
+            let pad = Self.checkboxHitPadding
+            var best: (checkbox: (glyphRange: NSRange, toggleRange: NSRange, isChecked: Bool), rect: NSRect, distance: CGFloat)?
+            for checkbox in MarkdownStyler.taskCheckboxRanges(in: textView.string) {
+                guard let box = checkboxBoxRect(forGlyphRange: checkbox.glyphRange) else { continue }
+                let padded = box.insetBy(dx: -pad, dy: -pad)
+                guard padded.contains(point) else { continue }
+                let distance = hypot(point.x - box.midX, point.y - box.midY)
+                if best == nil || distance < best!.distance {
+                    best = (checkbox, padded, distance)
+                }
+            }
+            return best.map { ($0.checkbox, $0.rect) }
         }
 
         @MainActor
