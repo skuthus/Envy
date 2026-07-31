@@ -2,6 +2,16 @@
 
 Also published at [envynote.app/changelog.html](https://envynote.app/changelog.html).
 
+## 1.8.8 — July 31, 2026
+
+Your vault, browsable: type an operator with nothing after it and the list becomes a catalog you can pick from, rename from, and trust.
+
+- **Bare `tag:` reveals your whole tag catalog.** Every tag as its colored pill with a note count, most-used first. Click one (or arrow to it and press Return) to see its notes; right-click to recolor, or **Rename Tag…** to rename it across every note at once. Renaming into an existing tag asks first, because that's really a merge: every note follows, and the surviving tag keeps its color.
+- **Bare `folder:` does the same for folders**, each with its colored dot and note count. Right-click for **Rename Folder…**: every note inside moves along, colors follow for the folder and everything nested in it (the thing a Finder rename silently loses), and adding a `/` re-files it under another folder. Renaming onto an existing folder or a reserved name is refused with a clear message.
+- **What you click is exactly what you get.** Quoting an operator argument now demands an exact match: `tag:"tag"` matches only `#tag`, never `#tags`; `folder:"Work"` means that folder and its nested folders, never a lookalike like `Workshop`. Every click (browser rows, tag chips, folder dots) produces the quoted form, so a row's count always equals what clicking it shows. Bare arguments keep the friendlier partial match for typing.
+- **Long titles in the note list now yield gracefully**: the date is never cut off; the title hard-stops before it, fades at the edge so it reads as continuing, and scrolls on hover to reveal the rest (the editor's title bar got the same fade). The folder dot keeps hugging the title's end.
+- **Fixed:** checkbox clicks no longer register far to the right of the box; a title that fits no longer twitches on hover; keyboard shortcuts (Delete, Pin) no longer act on an invisible note while you're browsing tags, folders, templates, or trash; tag and folder renames commit any unsaved typing first so nothing is lost or undone; floating notes stay above the main window even with Keep Envy on Top active; arrow-key highlights in every browser now scroll into view; and the date steps aside while a folder dot's hover label shows.
+
 ## 1.8.7 — July 30, 2026
 
 - **Checkboxes redrawn.** Task checkboxes are now crisp vector shapes instead of a symbol glyph, so they scale properly with editor zoom (⌘+): the box grows with your text instead of staying tiny beside it, and a checked box is a filled box with a contrasting checkmark. They sit right at every size and on every theme.

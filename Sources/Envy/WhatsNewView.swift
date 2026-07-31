@@ -28,12 +28,12 @@ struct WhatsNewView: View {
             }
 
             VStack(spacing: 10) {
-                Image(systemName: "checkmark.square.fill")
+                Image(systemName: "square.grid.2x2")
                     .font(.system(size: 44))
                     .foregroundStyle(EnvyBrand.mark)
-                Text("Sharper Checkboxes")
+                Text("Your Vault, Browsable")
                     .font(.title3.bold())
-                Text("Task checkboxes are redrawn as crisp vector shapes, so they scale properly when you zoom the editor (⌘+) instead of staying tiny beside big text, and a checked box now fills with a clean checkmark on any theme.\n\nAlso in this update: right-click the folder chip beside a note's title to recolor its folder, and the folder-dot hover label no longer clips at the top of the list or floats over the title.")
+                Text("Type tag: or folder: with nothing after it and the list becomes a catalog: every tag or folder with its color and note count, one click (or Return) from its notes. Right-click there to recolor, or to rename across your whole vault at once: tags merge with a confirmation, folders carry their notes and colors along, even nested ones.\n\nClicks are exact now, too: choosing #tag never also shows #tags, and a folder never pulls in a lookalike, so the count you see is what you get. Plus long titles fade and scroll in the list instead of cutting off the date.")
                     .font(.body)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
