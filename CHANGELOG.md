@@ -2,6 +2,12 @@
 
 Also published at [envynote.app/changelog.html](https://envynote.app/changelog.html).
 
+## 1.8.7 — July 30, 2026
+
+- **Checkboxes redrawn.** Task checkboxes are now crisp vector shapes instead of a symbol glyph, so they scale properly with editor zoom (⌘+): the box grows with your text instead of staying tiny beside it, and a checked box is a filled box with a contrasting checkmark. They sit right at every size and on every theme.
+- **Recolor a folder from the title bar.** Right-click the folder chip beside a note's title for the same color menu the list's dot offers: presets, a custom color, or Remove Color. The color belongs to the folder, so it repaints everywhere at once.
+- **Fixed:** the folder-dot hover label no longer clips at the top of the list or floats over the note title. On a trailing dot (the default) it now sits in the empty space just to the right of the dot, on every row.
+
 ## 1.8.6 — July 30, 2026
 
 - **Keep Envy on Top.** Right-click the menu bar eye → "Keep Envy on Top" and the whole window floats above every other app's windows until you toggle it off: the whole-app version of pinning a peek, for transcribing or referencing while you work elsewhere. **⌥⌘T** flips it from anywhere (rebindable in Settings > Shortcuts), it survives relaunches, and it wins over "hide when clicking another app" while on. Deliberate hiding (hotkey, menu bar click) still works.

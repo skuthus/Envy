@@ -28,12 +28,12 @@ struct WhatsNewView: View {
             }
 
             VStack(spacing: 10) {
-                Image(systemName: "square.stack.3d.up.fill")
+                Image(systemName: "checkmark.square.fill")
                     .font(.system(size: 44))
                     .foregroundStyle(EnvyBrand.mark)
-                Text("Keep Envy on Top")
+                Text("Sharper Checkboxes")
                     .font(.title3.bold())
-                Text("Right-click the menu bar eye and choose Keep Envy on Top: the whole window floats above every other app until you toggle it off, for transcribing or referencing while you work elsewhere. ⌥⌘T flips it from anywhere, rebindable in Settings.\n\nAlso in this update: submitting several fleeting notes to the same folder in a row works every time now (the second used to silently do nothing), and the footer's vault-counts divider matches the bar's own lines.")
+                Text("Task checkboxes are redrawn as crisp vector shapes, so they scale properly when you zoom the editor (⌘+) instead of staying tiny beside big text, and a checked box now fills with a clean checkmark on any theme.\n\nAlso in this update: right-click the folder chip beside a note's title to recolor its folder, and the folder-dot hover label no longer clips at the top of the list or floats over the title.")
                     .font(.body)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
