@@ -1610,6 +1610,14 @@ struct SelfCheck {
             store.save(d)
             check("tagsByFrequency cache refreshes after a notes change",
                   store.allTagsByFrequency().contains("newest"))
+
+            // tagCounts (the bare-"tag:" browser's source) carries the same
+            // order plus a per-tag note count.
+            let counts = store.tagCounts()
+            check("tagCounts leads with the most-used tag and its count",
+                  counts.first?.name == "work" && counts.first?.count == 3)
+            check("tagCounts and allTagsByFrequency agree on order",
+                  counts.map(\.name) == store.allTagsByFrequency())
         }
 
         print("")

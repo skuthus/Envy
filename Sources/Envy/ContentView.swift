@@ -113,6 +113,7 @@ struct ContentView: View {
     // per visible row per render would cripple a large vault. Rebuilt only on
     // real changes — a reload, the pref changing, a move, the toggle.
     @State var subfolderCache: [String] = []              // for the "Move to" menu
+    @State var highlightedTagName: String?                // arrow-key highlight in the bare-"tag:" browser
     @State var folderColorMap: [String: Color] = [:]      // folder path -> color
     @State var folderSwatchCache: [String: NSImage] = [:] // folder path -> menu swatch
     @State var noteSubfolderCache: [String: String] = [:] // note id -> its folder path

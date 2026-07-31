@@ -21,6 +21,15 @@ extension ContentView {
         if isTrashQuery {
             return
         }
+        // Bare "tag:" browser: Return drills into the highlighted tag (the
+        // top/most-used one by default), filling "tag:name" so the list
+        // flips to that tag's notes — the picker step complete.
+        if isTagBrowseQuery {
+            if let name = highlightedTagName ?? store.tagCounts().first?.name {
+                searchByTag(name)
+            }
+            return
+        }
         // inbox: is the one browse operator where Return *writes*. Typing
         // "inbox: call mom" and pressing Return captures it, because the
         // operator that scopes the box is the one that routes writing into

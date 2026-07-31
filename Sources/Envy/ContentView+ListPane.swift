@@ -42,7 +42,8 @@ extension ContentView {
                             matchingTemplateRows
                         } else if isTrashQuery {
                             matchingTrashRows
-
+                        } else if isTagBrowseQuery {
+                            matchingTagRows
                         } else {
                             ForEach(filteredNotes) { note in
                                 noteRow(for: note)
@@ -81,6 +82,12 @@ extension ContentView {
                     // Return here is intentionally a no-op rather than
                     // mirroring actOnHighlightedTemplate()'s create-on-Return.
                     if isTemplateQuery { actOnHighlightedTemplate() }
+                    else if isTagBrowseQuery {
+                        // Drill into the highlighted tag (top/most-used by
+                        // default): fills "tag:name" and the list flips to
+                        // that tag's notes, the picker step complete.
+                        if let name = highlightedTagName ?? store.tagCounts().first?.name { searchByTag(name) }
+                    }
                     else if !isTrashQuery { focusedField = .editor }
                     return .handled
                 }
@@ -625,6 +632,50 @@ extension ContentView {
         }
     }
 
+    /// The tag catalog, shown when the query is a bare "tag:". Each tag as
+    /// its own pill (color, tap-to-search, right-click-to-recolor all come
+    /// from TagChipView, the same pill the title bar uses) with its note
+    /// count, most-used first. Click or Return-on-highlight drills in.
+    private var matchingTagRows: some View {
+        let tags = store.tagCounts()
+        let active = highlightedTagName ?? tags.first?.name
+        return Group {
+            ForEach(tags, id: \.name) { entry in
+                tagBrowseRow(name: entry.name, count: entry.count, highlighted: entry.name == active)
+            }
+            if tags.isEmpty {
+                Text("No tags yet. Write #something in a note.")
+                    .font(.system(size: 11 * interfaceFontScale))
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func tagBrowseRow(name: String, count: Int, highlighted: Bool) -> some View {
+        HStack(spacing: 8) {
+            TagChipView(tag: name, theme: theme, onTagSearch: { searchByTag($0) })
+            Spacer()
+            Text("\(count)")
+                .font(.system(size: 11 * interfaceFontScale))
+                .foregroundStyle(.secondary)
+                .monospacedDigit()
+        }
+        .padding(.vertical, listDensity.rowVerticalPadding)
+        .padding(.horizontal, 8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .fill(highlighted ? Color(nsColor: theme.resolvedSelectionColor) : Color.clear)
+        )
+        .contentShape(Rectangle())
+        // The pill's own tap wins on the pill; this catches the rest of the
+        // row (the count, the gap) so the whole row is a target.
+        .onTapGesture { searchByTag(name) }
+    }
+
     @ViewBuilder
     private func trashRow(for note: Note) -> some View {
         HStack(spacing: 8) {
@@ -780,6 +831,16 @@ extension ContentView {
     }
 
     var isInboxQuery: Bool { inboxNameFragment != nil }
+
+    /// A bare "tag:" (the operator with no argument) reveals the whole tag
+    /// catalog in the list to pick from, the browsable form of the `tag:`
+    /// ghost-text completion. The moment a character follows, it's the
+    /// ordinary tag filter again, so this owns only the empty-argument
+    /// state. The same "bare operator lists its own vocabulary" shape the
+    /// browse prefixes (template:/trash:) already use.
+    var isTagBrowseQuery: Bool {
+        query.trimmingCharacters(in: .whitespaces).lowercased() == "tag:"
+    }
 
     /// The fleeting notes currently listed — just the filtered list, since
     /// `inbox:` is a real search operator handled in NoteStore.filtered.

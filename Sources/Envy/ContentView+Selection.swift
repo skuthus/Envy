@@ -241,11 +241,23 @@ extension ContentView {
             if shiftHeld { extendTemplateSelection(delta) } else { moveTemplateSelection(delta) }
         } else if isTrashQuery {
             if shiftHeld { extendTrashSelection(delta) } else { moveTrashSelection(delta) }
+        } else if isTagBrowseQuery {
+            moveTagHighlight(delta)
         } else if shiftHeld {
             extendSelection(delta)
         } else {
             moveSelection(delta)
         }
+    }
+
+    /// Moves the highlight in the bare-"tag:" browser, clamped to the ends
+    /// (no wrap) like the note list. Falls back to the top when the current
+    /// highlight is stale (a tag that no longer exists).
+    func moveTagHighlight(_ delta: Int) {
+        let tags = store.tagCounts()
+        guard !tags.isEmpty else { return }
+        let current = tags.firstIndex { $0.name == highlightedTagName } ?? 0
+        highlightedTagName = tags[min(max(current + delta, 0), tags.count - 1)].name
     }
 
     func moveSelection(_ delta: Int) {

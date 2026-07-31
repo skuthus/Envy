@@ -76,29 +76,37 @@ public final class NoteStore: ObservableObject {
     /// most once per `notes` change, and only when someone actually asks —
     /// i.e. while a hashtag is being typed — so it costs nothing on the
     /// keystroke/save hot paths.
-    private var tagsByFrequencyCache: [String] = []
+    private var tagsByFrequencyCache: [(name: String, count: Int)] = []
     private var tagsByFrequencyGeneration = -1
 
-    public func allTagsByFrequency() -> [String] {
+    /// Every tag with its note count, most-used first (ties alphabetical).
+    /// Feeds the editor's `#` completion (names only, via
+    /// allTagsByFrequency) and the omnibar's bare-`tag:` browser (names and
+    /// counts). Rebuilt at most once per notes change, and only when asked.
+    public func tagCounts() -> [(name: String, count: Int)] {
         if tagsByFrequencyGeneration != notesGeneration {
-            tagsByFrequencyCache = Self.tagsByFrequency(in: notes)
+            tagsByFrequencyCache = Self.tagCounts(in: notes)
             tagsByFrequencyGeneration = notesGeneration
         }
         return tagsByFrequencyCache
     }
 
+    public func allTagsByFrequency() -> [String] { tagCounts().map(\.name) }
+
     /// Most-used first, ties alphabetical. Per-note tag sets are memoized
     /// (Note.tags), so this is set iteration, not a regex pass.
-    nonisolated public static func tagsByFrequency(in notes: [Note]) -> [String] {
+    nonisolated public static func tagCounts(in notes: [Note]) -> [(name: String, count: Int)] {
         var frequency: [String: Int] = [:]
         for note in notes {
-            for tag in note.tags {
-                frequency[tag, default: 0] += 1
-            }
+            for tag in note.tags { frequency[tag, default: 0] += 1 }
         }
-        return frequency.keys.sorted {
-            frequency[$0]! != frequency[$1]! ? frequency[$0]! > frequency[$1]! : $0 < $1
-        }
+        return frequency
+            .sorted { $0.value != $1.value ? $0.value > $1.value : $0.key < $1.key }
+            .map { (name: $0.key, count: $0.value) }
+    }
+
+    nonisolated public static func tagsByFrequency(in notes: [Note]) -> [String] {
+        tagCounts(in: notes).map(\.name)
     }
     /// The Index — the one folder Envy reads and watches. Singular by
     /// design: Envy used to support several folders merged into one list,
