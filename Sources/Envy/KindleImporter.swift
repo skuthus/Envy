@@ -51,28 +51,14 @@ final class KindleImporter: ObservableObject {
 
     // MARK: - Ledger
 
-    /// Per-bundle-id home (so EnvyTest's experiments never pollute the real
-    /// app's ledger, mirroring their separate prefs domains).
-    nonisolated private static var ledgerURL: URL {
+    /// The pre-1.8.9 per-Mac home, handed to KindleLedger.load once for
+    /// migration into the vault.
+    nonisolated private static var legacyLedgerURL: URL {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
             ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support")
         let bundleID = Bundle.main.bundleIdentifier ?? "com.skylerschoos.envy"
         return base.appendingPathComponent(bundleID, isDirectory: true)
             .appendingPathComponent("kindle-imported.json")
-    }
-
-    nonisolated static func loadLedger() -> Set<String> {
-        guard let data = try? Data(contentsOf: ledgerURL),
-              let keys = try? JSONDecoder().decode(Set<String>.self, from: data) else { return [] }
-        return keys
-    }
-
-    nonisolated static func saveLedger(_ keys: Set<String>) {
-        try? FileManager.default.createDirectory(
-            at: ledgerURL.deletingLastPathComponent(), withIntermediateDirectories: true)
-        if let data = try? JSONEncoder().encode(keys) {
-            try? data.write(to: ledgerURL, options: .atomic)
-        }
     }
 
     // MARK: - Import
@@ -94,7 +80,7 @@ final class KindleImporter: ObservableObject {
             return
         }
 
-        var ledger = Self.loadLedger()
+        var ledger = KindleLedger.load(for: indexDirectory, migratingFrom: Self.legacyLedgerURL)
         let fresh = parsed.filter { !ledger.contains($0.key) }
         let alreadyImported = parsed.count - fresh.count
         guard !fresh.isEmpty else {
@@ -119,7 +105,7 @@ final class KindleImporter: ObservableObject {
             }
             phase = .writing(done: index + 1, total: fresh.count)
         }
-        Self.saveLedger(ledger)
+        KindleLedger.save(ledger, for: indexDirectory)
         phase = .finished(imported: written, alreadyImported: alreadyImported)
     }
 

@@ -199,8 +199,9 @@ public enum KindleClippings {
 
     /// The fleeting note's body. A highlight is a blockquote with its
     /// attribution (the book as a [[link]], dimmed until a book note exists,
-    /// at which point interlink: makes a per-book hub) and the #quote tag; a
-    /// typed note is your own words, so it stays plain and untagged.
+    /// at which point interlink: makes a per-book hub); a typed note is your
+    /// own words, so it stays plain. Deliberately no auto-tag — tagging is
+    /// the user's call at review time, not the importer's.
     public static func noteBody(for record: Record) -> String {
         var attribution = "[[\(record.book)]]"
         if let author = record.author { attribution += ", \(author)" }
@@ -221,7 +222,7 @@ public enum KindleClippings {
         if let note = record.attachedNote {
             body += "\n**My note:** \(note)\n"
         }
-        body += "\n\(attribution)\n\n#quote\n"
+        body += "\n\(attribution)\n"
         return body
     }
 }

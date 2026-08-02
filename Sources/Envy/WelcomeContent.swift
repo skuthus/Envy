@@ -173,9 +173,9 @@ enum WelcomeContent {
 
     ## 📚 Importing Kindle Highlights
 
-    Reading on a Kindle? Turn on **Settings → Import → Enable Kindle import**, plug the Kindle in, and press **Import from Kindle** (also in the File menu). Every highlight arrives in your Inbox as its own fleeting note — titled by the quote's first words and page (`the map is not the territory, p42`), the full passage as a blockquote, the book as a `[[link]]`, tagged `#quote`. A note you typed on the Kindle attaches beneath the passage it belongs to.
+    Reading on a Kindle? Turn on **Settings → Import → Enable Kindle import**, plug the Kindle in, and press **Import from Kindle** (also in the File menu). Every highlight arrives in your Inbox as its own fleeting note — titled by the quote's first words and page (`the map is not the territory, p42`), the full passage as a blockquote, the book as a `[[link]]`. A note you typed on the Kindle attaches beneath the passage it belongs to.
 
-    Envy remembers what it has imported, so plugging in after every reading session only adds what's new — even if you've since filed, retitled, or deleted the earlier ones. Adjusted highlights are collapsed to their final form, and bookmarks are skipped. (No Kindle on hand? "Choose Clippings File…" imports a copied `My Clippings.txt` from anywhere.)
+    Envy remembers what it has imported, so plugging in after every reading session only adds what's new — even if you've since filed, retitled, or deleted the earlier ones. That memory lives in an `Envy Data` folder inside your Index, so it travels with your vault: import on one Mac, and a second Mac syncing the same vault won't re-import the same highlights. Adjusted highlights are collapsed to their final form, and bookmarks are skipped. (No Kindle on hand? "Choose Clippings File…" imports a copied `My Clippings.txt` from anywhere.)
 
     ## 📁 Folders & Colors
 

@@ -1710,6 +1710,39 @@ struct SelfCheck {
             try? fm.removeItem(at: tmp)
         }
 
+        // kindleLedgerVaultResidentAndMigrating
+        do {
+            let fm = FileManager.default
+            let index = fm.temporaryDirectory.appendingPathComponent("EnvyLedger-\(UUID().uuidString)", isDirectory: true)
+            try? fm.createDirectory(at: index, withIntermediateDirectories: true)
+
+            KindleLedger.save(["a", "b"], for: index)
+            let expected = index.appendingPathComponent("Envy Data/kindle-imported.json")
+            check("ledger writes into the vault's Envy Data folder", fm.fileExists(atPath: expected.path))
+            check("ledger round-trips", KindleLedger.decode(at: expected) == ["a", "b"])
+            check("ledger loads without a legacy file", KindleLedger.load(for: index, migratingFrom: nil) == ["a", "b"])
+
+            // Migration unions a legacy file, persists it, and retires it.
+            let legacy = fm.temporaryDirectory.appendingPathComponent("EnvyLegacy-\(UUID().uuidString).json")
+            try? JSONEncoder().encode(Set(["b", "c"])).write(to: legacy)
+            let merged = KindleLedger.load(for: index, migratingFrom: legacy)
+            check("migration unions vault + legacy keys", merged == ["a", "b", "c"])
+            check("migration persists the union", KindleLedger.decode(at: expected) == ["a", "b", "c"])
+            check("migration retires the legacy file", !fm.fileExists(atPath: legacy.path))
+
+            // A note file inside Envy Data is not treated as a note.
+            let store = NoteStore(directory: index)
+            await waitForLoad(store)
+            try? "not a real note".write(to: index.appendingPathComponent("Envy Data/decoy.md"), atomically: true, encoding: .utf8)
+            _ = store.create(title: "Real Note")
+            let reloaded = NoteStore(directory: index)
+            await waitForLoad(reloaded)
+            check("the scan excludes Envy Data",
+                  reloaded.notes.contains { $0.title == "Real Note" }
+                  && !reloaded.notes.contains { $0.title == "decoy" })
+            try? fm.removeItem(at: index)
+        }
+
         // kindleClippingsParseTitleBodyAndKeys
         do {
             let sample = """
@@ -1763,11 +1796,11 @@ struct SelfCheck {
                   KindleClippings.title(for: deepWork) == "focus is the new IQ, loc. 210")
 
             let body = KindleClippings.noteBody(for: cultish)
-            check("clippings: body quotes, attaches the note, links the book, tags #quote",
+            check("clippings: body quotes, attaches the note, links the book, adds no tag",
                   body.contains("> the swan suicide support group met on tuesdays without fail")
                   && body.contains("**My note:** reminds me of the moonies study")
                   && body.contains("[[Cultish: The Language of Fanaticism]], Montell, Amanda · p. 92 · loc. 1387-1392")
-                  && body.contains("#quote"))
+                  && !body.contains("#quote"))
 
             check("clippings: keys are stable across parses",
                   KindleClippings.parse(sample).map(\.key) == records.map(\.key))

@@ -318,7 +318,7 @@ public final class NoteStore: ObservableObject {
     /// them, which means the scan excludes them by name, the Templates way.)
     nonisolated private static func notesRecursively(under directory: URL, fm: FileManager) -> [URL] {
         let serviceDirectories = Set(
-            ["Templates", trashFolderName, attachmentsFolderName].map {
+            ["Templates", trashFolderName, attachmentsFolderName, dataFolderName].map {
                 directory.appendingPathComponent($0, isDirectory: true).resolvingSymlinksInPath()
             }
         )
@@ -714,6 +714,19 @@ public final class NoteStore: ObservableObject {
     public nonisolated static let trashFolderName = "Trash"
     nonisolated static let legacyTrashDirectoryName = ".trash"
 
+    /// A visible service folder at the Index root for Envy's vault-bound
+    /// derived state — data that belongs to *this* collection of notes and
+    /// should travel with it across machines (the Kindle import ledger
+    /// today; room for more, e.g. an OCR cache, later). Visible, not a
+    /// dot-folder, for the 1.8.3 reason: cloud clients skip hidden items, so
+    /// a hidden ledger would look synced while never leaving one Mac. Not
+    /// notes, so the scan excludes it by name like Templates/Trash.
+    public nonisolated static let dataFolderName = "Envy Data"
+
+    public var dataDirectory: URL {
+        noteDirectory.appendingPathComponent(Self.dataFolderName, isDirectory: true)
+    }
+
     public var trashDirectory: URL {
         noteDirectory.appendingPathComponent(Self.trashFolderName, isDirectory: true)
     }
@@ -857,7 +870,8 @@ public final class NoteStore: ObservableObject {
             guard (try? url.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true else { continue }
             let name = url.lastPathComponent
             if name == "Templates" || name == inboxFolderName
-                || name == trashFolderName || name == attachmentsFolderName {
+                || name == trashFolderName || name == attachmentsFolderName
+                || name == dataFolderName {
                 enumerator.skipDescendants()
                 continue
             }
@@ -950,7 +964,7 @@ public final class NoteStore: ObservableObject {
             .joined(separator: "/")
         guard !newPath.isEmpty, newPath != oldPath else { return nil }
 
-        let reserved = ["Templates", Self.inboxFolderName, Self.trashFolderName, Self.attachmentsFolderName]
+        let reserved = ["Templates", Self.inboxFolderName, Self.trashFolderName, Self.attachmentsFolderName, Self.dataFolderName]
         guard let newFirst = newPath.split(separator: "/").first,
               let oldFirst = oldPath.split(separator: "/").first,
               !reserved.contains(where: { $0.caseInsensitiveCompare(newFirst) == .orderedSame }),
