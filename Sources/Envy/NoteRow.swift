@@ -63,6 +63,14 @@ struct NoteRow: View {
     /// because .help()'s system delay isn't tunable.
     @State private var showsFolderTip = false
     @State private var dotHoverTask: Task<Void, Never>?
+    /// Where the date starts and the hover label ends, in the row's own
+    /// coordinate space — the date steps aside for the label only when the
+    /// two would genuinely meet, not on every hover (a short title leaves
+    /// the label nowhere near the date).
+    @State private var dateLeadingX: CGFloat = .infinity
+    @State private var tipTrailingX: CGFloat = 0
+
+    private var tipOverlapsDate: Bool { tipTrailingX + 4 >= dateLeadingX }
 
     var body: some View {
         HStack(spacing: 6) {
@@ -109,10 +117,12 @@ struct NoteRow: View {
                         .fixedSize()
                         // The hover label sits just right of a trailing dot —
                         // on a long row that's where the date is. The date
-                        // steps aside while the label shows, so the overlap
-                        // reads as a deliberate swap, not a collision.
-                        .opacity(showsFolderTip && dotTrailing ? 0 : 1)
+                        // steps aside while the label shows, but only when
+                        // the two would genuinely meet (measured below), so
+                        // a short title's hover never blanks a far-away date.
+                        .opacity(showsFolderTip && dotTrailing && tipOverlapsDate ? 0 : 1)
                         .animation(.easeOut(duration: 0.15), value: showsFolderTip)
+                        .onGeometryChange(for: CGFloat.self) { $0.frame(in: .named("noteRow")).minX } action: { dateLeadingX = $0 }
                 }
             } else {
                 // The title takes its natural width so the trailing dot
@@ -140,12 +150,15 @@ struct NoteRow: View {
                         .fontWeight(bold ? .bold : nil)
                         .lineLimit(1)
                         .fixedSize()
-                        // Same deliberate step-aside as the preview branch.
-                        .opacity(showsFolderTip && dotTrailing ? 0 : 1)
+                        // Same overlap-gated step-aside as the preview branch.
+                        .opacity(showsFolderTip && dotTrailing && tipOverlapsDate ? 0 : 1)
                         .animation(.easeOut(duration: 0.15), value: showsFolderTip)
+                        .onGeometryChange(for: CGFloat.self) { $0.frame(in: .named("noteRow")).minX } action: { dateLeadingX = $0 }
                 }
             }
         }
+        // The space the tip/date measurements above resolve their frames in.
+        .coordinateSpace(name: "noteRow")
     }
 
     /// The Inbox mark (amber "!"), for a fleeting note. Always leads the title,
@@ -227,6 +240,10 @@ struct NoteRow: View {
                                         y: dotTrailing || isFirstRow ? 0 : -(16 * interfaceFontScale)
                                     )
                                     .allowsHitTesting(false)
+                                    // Measured after the offset so the frame
+                                    // reflects where the label actually sits;
+                                    // feeds tipOverlapsDate.
+                                    .onGeometryChange(for: CGFloat.self) { $0.frame(in: .named("noteRow")).maxX } action: { tipTrailingX = $0 }
                             }
                         }
                         // On the dot itself, so it wins over the row's own
