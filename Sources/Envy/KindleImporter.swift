@@ -89,13 +89,22 @@ final class KindleImporter: ObservableObject {
         }
 
         let inbox = indexDirectory.appendingPathComponent(NoteStore.inboxFolderName, isDirectory: true)
+        // The title's locator is the user's choice (Settings → Import),
+        // defaulting to page — matching the hand-written convention this
+        // feature automates.
+        let reference = KindleClippings.TitleReference(
+            rawValue: UserDefaults.standard.string(forKey: "kindleTitleReference") ?? "") ?? .page
+        // Body composition, also the user's choice; both default to included
+        // (register-less bool reads false, so invert to keep the default on).
+        let includeAuthor = !UserDefaults.standard.bool(forKey: "kindleBodyOmitAuthor")
+        let includeLocation = !UserDefaults.standard.bool(forKey: "kindleBodyOmitLocation")
         phase = .writing(done: 0, total: fresh.count)
         var written = 0
         for (index, record) in fresh.enumerated() {
             let url = await Task.detached { () -> URL? in
                 NoteStore.writeImportedNote(
-                    titled: KindleClippings.title(for: record),
-                    content: KindleClippings.noteBody(for: record),
+                    titled: KindleClippings.title(for: record, reference: reference),
+                    content: KindleClippings.noteBody(for: record, includeAuthor: includeAuthor, includeLocation: includeLocation),
                     date: Date(),
                     directory: inbox)
             }.value

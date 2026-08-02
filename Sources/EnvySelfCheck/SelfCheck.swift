@@ -1730,6 +1730,10 @@ struct SelfCheck {
             check("migration persists the union", KindleLedger.decode(at: expected) == ["a", "b", "c"])
             check("migration retires the legacy file", !fm.fileExists(atPath: legacy.path))
 
+            KindleLedger.clear(for: index)
+            check("clear removes the ledger, so a fresh load is empty",
+                  KindleLedger.load(for: index, migratingFrom: nil).isEmpty)
+
             // A note file inside Envy Data is not treated as a note.
             let store = NoteStore(directory: index)
             await waitForLoad(store)
@@ -1794,13 +1798,34 @@ struct SelfCheck {
             let deepWork = records.first { $0.book == "Deep Work" && $0.type == .highlight }!
             check("clippings: pageless title falls back to loc.",
                   KindleClippings.title(for: deepWork) == "focus is the new IQ, loc. 210")
+            check("clippings: location-reference title",
+                  KindleClippings.title(for: cultish, reference: .location) == "the swan suicide support group, loc. 1387")
+            check("clippings: both-reference title",
+                  KindleClippings.title(for: cultish, reference: .both) == "the swan suicide support group, p92 · loc. 1387")
+            check("clippings: none-reference title is just the words",
+                  KindleClippings.title(for: cultish, reference: .none) == "the swan suicide support group")
+            check("clippings: page-reference on a pageless book falls back to location",
+                  KindleClippings.title(for: deepWork, reference: .page) == "focus is the new IQ, loc. 210")
+            check("clippings: both-reference on a pageless book shows only location",
+                  KindleClippings.title(for: deepWork, reference: .both) == "focus is the new IQ, loc. 210")
 
             let body = KindleClippings.noteBody(for: cultish)
             check("clippings: body quotes, attaches the note, links the book, adds no tag",
                   body.contains("> the swan suicide support group met on tuesdays without fail")
                   && body.contains("**My note:** reminds me of the moonies study")
-                  && body.contains("[[Cultish: The Language of Fanaticism]], Montell, Amanda · p. 92 · loc. 1387-1392")
+                  && body.contains("[[Cultish- The Language of Fanaticism]], Montell, Amanda · p92 · loc. 1387-1392")
                   && !body.contains("#quote"))
+            check("clippings: omitting the author drops it from the attribution",
+                  KindleClippings.noteBody(for: cultish, includeAuthor: false)
+                      .contains("[[Cultish- The Language of Fanaticism]] · p92 · loc. 1387-1392"))
+            check("clippings: omitting the location drops it but keeps the page",
+                  {
+                      let b = KindleClippings.noteBody(for: cultish, includeLocation: false)
+                      return b.contains("[[Cultish- The Language of Fanaticism]], Montell, Amanda · p92") && !b.contains("loc.")
+                  }())
+            check("clippings: omitting both leaves the book link and page",
+                  KindleClippings.noteBody(for: cultish, includeAuthor: false, includeLocation: false)
+                      .contains("[[Cultish- The Language of Fanaticism]] · p92"))
 
             check("clippings: keys are stable across parses",
                   KindleClippings.parse(sample).map(\.key) == records.map(\.key))

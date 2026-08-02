@@ -175,11 +175,35 @@ public enum KindleClippings {
 
     // MARK: - Note shaping
 
+    /// Which locator, if any, a highlight's title carries after the quote
+    /// words — the user's choice (Settings → Import). `page` and `location`
+    /// each fall back to the other when the book lacks the preferred one
+    /// (a Kindle highlight nearly always has a location, rarely a page), so
+    /// the title is never left bare unless `none` is chosen.
+    public enum TitleReference: String, CaseIterable, Sendable {
+        case page, location, both, none
+    }
+
+    /// The "p92" / "loc. 210" / "p92 · loc. 210" fragment for a record under
+    /// the chosen reference, or nil when there's nothing to show.
+    static func referenceString(for record: Record, reference: TitleReference) -> String? {
+        let page = record.page.map { "p\($0)" }
+        let location = record.locationStart.map { "loc. \($0)" }
+        switch reference {
+        case .none: return nil
+        case .page: return page ?? location
+        case .location: return location ?? page
+        case .both:
+            let parts = [page, location].compactMap { $0 }
+            return parts.isEmpty ? nil : parts.joined(separator: " · ")
+        }
+    }
+
     /// "first few words of the quote, p92" — the title convention. Up to
     /// `wordLimit` words, capped near 48 characters at a word boundary
-    /// (one word minimum, hard-clipped if that single word is itself huge);
-    /// falls back to ", loc. 1387" for books without page numbers.
-    public static func title(for record: Record, wordLimit: Int = 5) -> String {
+    /// (one word minimum, hard-clipped if that single word is itself huge),
+    /// then the chosen locator.
+    public static func title(for record: Record, reference: TitleReference = .page, wordLimit: Int = 5) -> String {
         var words: [String] = []
         var length = 0
         for word in record.text.split(whereSeparator: { $0.isWhitespace || $0.isNewline }) {
@@ -192,9 +216,8 @@ public enum KindleClippings {
         if lead.count > 48 { lead = String(lead.prefix(48)) }
         if lead.isEmpty { lead = "Kindle highlight" }
 
-        if let page = record.page { return "\(lead), p\(page)" }
-        if let location = record.locationStart { return "\(lead), loc. \(location)" }
-        return lead
+        guard let reference = referenceString(for: record, reference: reference) else { return lead }
+        return "\(lead), \(reference)"
     }
 
     /// The fleeting note's body. A highlight is a blockquote with its
@@ -202,11 +225,19 @@ public enum KindleClippings {
     /// at which point interlink: makes a per-book hub); a typed note is your
     /// own words, so it stays plain. Deliberately no auto-tag — tagging is
     /// the user's call at review time, not the importer's.
-    public static func noteBody(for record: Record) -> String {
-        var attribution = "[[\(record.book)]]"
-        if let author = record.author { attribution += ", \(author)" }
-        if let page = record.page { attribution += " · p. \(page)" }
-        if let start = record.locationStart {
+    public static func noteBody(for record: Record, includeAuthor: Bool = true, includeLocation: Bool = true) -> String {
+        // Link through the same sanitizer note filenames use, so the link's
+        // target matches the note you'd create by clicking it — otherwise a
+        // book with a colon (most subtitles) links to "Book: Sub" while the
+        // created file becomes "Book- Sub", the two never resolve, and the
+        // per-book interlink: hub never forms. The book link is always
+        // present (it's the hub); the author and location are the user's to
+        // omit (Settings → Import).
+        var attribution = "[[\(NoteStore.sanitizedBase(for: record.book))]]"
+        if includeAuthor, let author = record.author { attribution += ", \(author)" }
+        // "p92", matching the title's format (not "p. 92").
+        if let page = record.page { attribution += " · p\(page)" }
+        if includeLocation, let start = record.locationStart {
             let range = (record.locationEnd.map { $0 != start ? "\(start)-\($0)" : "\(start)" }) ?? "\(start)"
             attribution += " · loc. \(range)"
         }

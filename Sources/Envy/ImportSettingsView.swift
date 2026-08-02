@@ -26,9 +26,13 @@ struct ImportSettingsView: View {
 
     // Kindle import — same layout DNA as the Apple Notes section above.
     @AppStorage("kindleImportEnabled") private var kindleEnabled = false
+    @AppStorage("kindleTitleReference") private var kindleTitleReference = "page"
+    @AppStorage("kindleBodyOmitAuthor") private var kindleOmitAuthor = false
+    @AppStorage("kindleBodyOmitLocation") private var kindleOmitLocation = false
     @ObservedObject private var kindleImporter = KindleImporter.shared
     @State private var kindleClippingsFile: URL?
     @State private var showingKindlePicker = false
+    @State private var confirmingForget = false
 
     private var indexDirectory: URL {
         indexPathRaw.isEmpty ? NoteStore.defaultDirectory() : URL(fileURLWithPath: indexPathRaw, isDirectory: true)
@@ -117,7 +121,27 @@ struct ImportSettingsView: View {
 
             Section("Kindle") {
                 Toggle("Enable Kindle import", isOn: $kindleEnabled)
-                Text("Plug in your Kindle and pull its highlights and typed notes into the Inbox as fleeting notes — one per highlight, titled by the quote's first words and page, with the book as a [[link]]. Envy remembers what it has already imported, so re-importing only ever adds what's new.")
+                Text("Plug in your Kindle and pull its highlights and typed notes into the Inbox as fleeting notes — one per highlight, titled by the quote's first words, with the book as a [[link]]. Envy remembers what it has already imported, so re-importing only ever adds what's new.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Picker("Title locator", selection: $kindleTitleReference) {
+                    Text("Page — first words, p92").tag("page")
+                    Text("Location — first words, loc. 210").tag("location")
+                    Text("Both — first words, p92 · loc. 210").tag("both")
+                    Text("None — first words only").tag("none")
+                }
+                Text("A book without page numbers falls back to its location, so a title's never left bare unless you choose None.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Toggle("Include the author in each note", isOn: Binding(
+                    get: { !kindleOmitAuthor }, set: { kindleOmitAuthor = !$0 }))
+                Toggle("Include the location in each note", isOn: Binding(
+                    get: { !kindleOmitLocation }, set: { kindleOmitLocation = !$0 }))
+                Text("These control the attribution line under each highlight; the book link and page always stay.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -156,6 +180,17 @@ struct ImportSettingsView: View {
                     Spacer()
                     kindleStatusView
                 }
+                Button("Forget Import History…", role: .destructive) { confirmingForget = true }
+                    .disabled(kindleImporterBusy)
+                    .confirmationDialog(
+                        "Forget which highlights have been imported? The next import will re-offer every highlight — useful for redoing them with a different title format. Notes already in your vault aren't touched.",
+                        isPresented: $confirmingForget, titleVisibility: .visible
+                    ) {
+                        Button("Forget Import History", role: .destructive) {
+                            KindleLedger.clear(for: indexDirectory)
+                        }
+                        Button("Cancel", role: .cancel) {}
+                    }
             } footer: {
                 Text("Reads the Kindle's My Clippings.txt (every book's highlights in one file). Adjusted highlights are collapsed to their final form, a typed note attaches beneath the passage it belongs to, and bookmarks are skipped.")
                     .font(.caption)

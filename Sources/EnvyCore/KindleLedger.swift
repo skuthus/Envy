@@ -22,6 +22,14 @@ public enum KindleLedger {
         return keys
     }
 
+    /// Wipes the ledger so the next import re-offers every highlight — for
+    /// redoing imports with a changed title format, or recovering an Inbox
+    /// you cleared. (Already-imported notes you kept aren't touched; you'd
+    /// just get fresh copies of anything no longer present.)
+    public static func clear(for indexDirectory: URL) {
+        try? FileManager.default.removeItem(at: url(for: indexDirectory))
+    }
+
     public static func save(_ keys: Set<String>, for indexDirectory: URL) {
         let target = url(for: indexDirectory)
         try? FileManager.default.createDirectory(
