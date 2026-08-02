@@ -24,6 +24,12 @@ struct ImportSettingsView: View {
     @State private var loadingFolders = false
     @State private var folderError: String?
 
+    // Kindle import — same layout DNA as the Apple Notes section above.
+    @AppStorage("kindleImportEnabled") private var kindleEnabled = false
+    @ObservedObject private var kindleImporter = KindleImporter.shared
+    @State private var kindleClippingsFile: URL?
+    @State private var showingKindlePicker = false
+
     private var indexDirectory: URL {
         indexPathRaw.isEmpty ? NoteStore.defaultDirectory() : URL(fileURLWithPath: indexPathRaw, isDirectory: true)
     }
@@ -108,6 +114,59 @@ struct ImportSettingsView: View {
                     .foregroundStyle(.secondary)
             }
             .disabled(!importEnabled)
+
+            Section("Kindle") {
+                Toggle("Enable Kindle import", isOn: $kindleEnabled)
+                Text("Plug in your Kindle and pull its highlights and typed notes into the Inbox as fleeting notes — one per highlight, titled by the quote's first words and page, tagged #quote, with the book as a [[link]]. Envy remembers what it has already imported, so re-importing only ever adds what's new.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Section {
+                HStack {
+                    if kindleClippingsFile != nil {
+                        Label("Kindle detected", systemImage: "checkmark.circle.fill")
+                            .foregroundStyle(.green)
+                            .font(.caption)
+                    } else {
+                        Text("No Kindle detected — plug it in and refresh, or choose the file by hand.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Spacer()
+                    Button {
+                        kindleClippingsFile = KindleImporter.detectClippingsFile()
+                    } label: {
+                        Image(systemName: "arrow.clockwise")
+                    }
+                    .help("Look for a plugged-in Kindle again")
+                }
+                HStack {
+                    Button("Import from Kindle") {
+                        guard let file = kindleClippingsFile else { return }
+                        Task { await kindleImporter.importClippings(from: file, into: indexDirectory) }
+                    }
+                    .disabled(kindleClippingsFile == nil || kindleImporterBusy)
+
+                    Button("Choose Clippings File…") { showingKindlePicker = true }
+                        .disabled(kindleImporterBusy)
+
+                    Spacer()
+                    kindleStatusView
+                }
+            } footer: {
+                Text("Reads the Kindle's My Clippings.txt (every book's highlights in one file). Adjusted highlights are collapsed to their final form, a typed note attaches beneath the passage it belongs to, and bookmarks are skipped.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .disabled(!kindleEnabled)
+        }
+        .fileImporter(isPresented: $showingKindlePicker, allowedContentTypes: [.plainText, .text]) { result in
+            if case let .success(url) = result {
+                Task { await kindleImporter.importClippings(from: url, into: indexDirectory) }
+            }
         }
         .formStyle(.grouped)
         .frame(width: 520)
@@ -119,6 +178,49 @@ struct ImportSettingsView: View {
             if importEnabled && !outboxFolder.isEmpty && folders.isEmpty {
                 await loadFolders()
             }
+            // Cheap volume scan, so a Kindle plugged in before the tab opened
+            // shows as detected without a manual refresh.
+            if kindleEnabled {
+                kindleClippingsFile = KindleImporter.detectClippingsFile()
+            }
+        }
+    }
+
+    private var kindleImporterBusy: Bool {
+        switch kindleImporter.phase {
+        case .reading, .writing: return true
+        default: return false
+        }
+    }
+
+    @ViewBuilder
+    private var kindleStatusView: some View {
+        switch kindleImporter.phase {
+        case .idle:
+            EmptyView()
+        case .reading:
+            HStack(spacing: 6) {
+                ProgressView().controlSize(.small)
+                Text("Reading Clippings…").foregroundStyle(.secondary)
+            }
+            .font(.caption)
+        case let .writing(done, total):
+            HStack(spacing: 6) {
+                ProgressView().controlSize(.small)
+                Text("Importing \(done) / \(total)…").foregroundStyle(.secondary)
+            }
+            .font(.caption)
+        case let .finished(imported, alreadyImported):
+            Text(imported == 0
+                 ? "Nothing new (\(alreadyImported) already imported)."
+                 : "Imported \(imported) new · \(alreadyImported) already imported.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        case let .failed(message):
+            Text(message)
+                .font(.caption)
+                .foregroundStyle(.red)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 

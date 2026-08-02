@@ -1710,6 +1710,74 @@ struct SelfCheck {
             try? fm.removeItem(at: tmp)
         }
 
+        // kindleClippingsParseTitleBodyAndKeys
+        do {
+            let sample = """
+            \u{FEFF}Cultish: The Language of Fanaticism (Montell, Amanda)\r
+            - Your Highlight on page 92 | Location 1387-1390 | Added on Friday, July 25, 2026\r
+            \r
+            the swan suicide support group met on tuesdays\r
+            ==========\r
+            Cultish: The Language of Fanaticism (Montell, Amanda)\r
+            - Your Highlight on page 92 | Location 1387-1392 | Added on Friday, July 25, 2026\r
+            \r
+            the swan suicide support group met on tuesdays without fail\r
+            ==========\r
+            Cultish: The Language of Fanaticism (Montell, Amanda)\r
+            - Your Note on page 92 | Location 1389 | Added on Friday, July 25, 2026\r
+            \r
+            reminds me of the moonies study\r
+            ==========\r
+            Cultish: The Language of Fanaticism (Montell, Amanda)\r
+            - Your Bookmark on page 100 | Location 1500 | Added on Friday, July 25, 2026\r
+            \r
+            ==========\r
+            Deep Work (Newport, Cal)\r
+            - Your Highlight at location 210-214 | Added on Saturday, July 26, 2026\r
+            \r
+            focus is the new IQ\r
+            ==========\r
+            Deep Work (Newport, Cal)\r
+            - Your Note at location 900 | Added on Saturday, July 26, 2026\r
+            \r
+            a standalone thought far from any highlight\r
+            ==========\r
+            """
+            let records = KindleClippings.parse(sample)
+            check("clippings: nudged highlight collapses to the longest",
+                  records.filter { $0.book.hasPrefix("Cultish") && $0.type == .highlight }.count == 1
+                  && records.contains { $0.text.hasSuffix("without fail") })
+            check("clippings: bookmark is skipped", records.count == 3)
+            check("clippings: a note inside a highlight's range attaches to it",
+                  records.first { $0.type == .highlight && $0.book.hasPrefix("Cultish") }?.attachedNote == "reminds me of the moonies study")
+            check("clippings: a note far from any highlight stays standalone",
+                  records.contains { $0.type == .note && $0.text.hasPrefix("a standalone") })
+            check("clippings: author splits off the last parenthetical",
+                  records.first?.author == "Montell, Amanda")
+
+            let cultish = records.first { $0.type == .highlight && $0.book.hasPrefix("Cultish") }!
+            check("clippings: title is first words plus pXX",
+                  KindleClippings.title(for: cultish) == "the swan suicide support group, p92")
+            let deepWork = records.first { $0.book == "Deep Work" && $0.type == .highlight }!
+            check("clippings: pageless title falls back to loc.",
+                  KindleClippings.title(for: deepWork) == "focus is the new IQ, loc. 210")
+
+            let body = KindleClippings.noteBody(for: cultish)
+            check("clippings: body quotes, attaches the note, links the book, tags #quote",
+                  body.contains("> the swan suicide support group met on tuesdays without fail")
+                  && body.contains("**My note:** reminds me of the moonies study")
+                  && body.contains("[[Cultish: The Language of Fanaticism]], Montell, Amanda · p. 92 · loc. 1387-1392")
+                  && body.contains("#quote"))
+
+            check("clippings: keys are stable across parses",
+                  KindleClippings.parse(sample).map(\.key) == records.map(\.key))
+            check("clippings: an attached note doesn't change its highlight's key",
+                  {
+                      var without = cultish; without.attachedNote = nil
+                      return without.key == cultish.key
+                  }())
+        }
+
         print("")
         if failures.isEmpty {
             print("All checks passed.")

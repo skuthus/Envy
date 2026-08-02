@@ -24,6 +24,24 @@ struct EnvyApp: App {
     /// Surfaces only failures (permission, a missing folder): a successful
     /// import shows itself as the notes appearing, and an empty run needs no
     /// interruption.
+    /// Same shape as the Apple Notes trigger below: with the feature on and
+    /// a Kindle actually plugged in, import immediately (the import shows
+    /// itself as fleeting notes appearing); otherwise open the Import tab so
+    /// the user can finish setting up or pick the file by hand.
+    private func triggerKindleImport() {
+        let defaults = UserDefaults.standard
+        guard defaults.bool(forKey: "kindleImportEnabled"),
+              let file = KindleImporter.detectClippingsFile() else {
+            defaults.set("import", forKey: "settingsSelectedTab")
+            NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+            return
+        }
+        let index = IndexPreference.load()
+        Task { @MainActor in
+            await KindleImporter.shared.importClippings(from: file, into: index)
+        }
+    }
+
     private func triggerAppleNotesImport() {
         let defaults = UserDefaults.standard
         let folder = (defaults.string(forKey: "appleNotesOutboxFolder") ?? "")
@@ -107,6 +125,10 @@ struct EnvyApp: App {
                     triggerAppleNotesImport()
                 }
                 .keyboardShortcut(binding(for: .importFromAppleNotes).keyEquivalent, modifiers: binding(for: .importFromAppleNotes).eventModifiers)
+
+                Button("Import from Kindle") {
+                    triggerKindleImport()
+                }
             }
             CommandGroup(after: .newItem) {
                 Button("Delete Note") {

@@ -171,6 +171,12 @@ enum WelcomeContent {
 
     Two limits, so nothing surprises you: images and attachments don't come across (you'll see an `[image omitted]` marker), and Apple Notes checklists arrive as ordinary bullet lists — Apple doesn't hand over the checkbox ticks, so there's nothing to import.
 
+    ## 📚 Importing Kindle Highlights
+
+    Reading on a Kindle? Turn on **Settings → Import → Enable Kindle import**, plug the Kindle in, and press **Import from Kindle** (also in the File menu). Every highlight arrives in your Inbox as its own fleeting note — titled by the quote's first words and page (`the map is not the territory, p42`), the full passage as a blockquote, the book as a `[[link]]`, tagged `#quote`. A note you typed on the Kindle attaches beneath the passage it belongs to.
+
+    Envy remembers what it has imported, so plugging in after every reading session only adds what's new — even if you've since filed, retitled, or deleted the earlier ones. Adjusted highlights are collapsed to their final form, and bookmarks are skipped. (No Kindle on hand? "Choose Clippings File…" imports a copied `My Clippings.txt` from anywhere.)
+
     ## 📁 Folders & Colors
 
     Envy keeps everything in one folder — The Index — so you never *have* to file anything. But if you think in piles, subfolders are a second, color-coded way to organize, sitting alongside tags rather than replacing them.
