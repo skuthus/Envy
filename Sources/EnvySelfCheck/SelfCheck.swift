@@ -1827,6 +1827,53 @@ struct SelfCheck {
                   KindleClippings.noteBody(for: cultish, includeAuthor: false, includeLocation: false)
                       .contains("[[Cultish- The Language of Fanaticism]] · p92"))
 
+            // The Kindle autosaves a typed note's every-few-seconds state as
+            // its own record at the same anchor; a whole ladder should collapse
+            // to its final rung — whether the note is standalone or attaches to
+            // a highlight, and even when a mid-typing typo breaks strict prefix
+            // growth ("andrese" → "andreese" → "andreesen").
+            let autosave = """
+            Cultish (Montell, Amanda)\r
+            - Your Highlight on page 26 | Location 328-332 | Added on Tuesday, July 28, 2026\r
+            \r
+            the US boasts a particularly consistent relationship with cults\r
+            ==========\r
+            Cultish (Montell, Amanda)\r
+            - Your Note on page 26 | Location 330 | Added on Tuesday, July 28, 2026 4:54:39 PM\r
+            \r
+            marc\r
+            ==========\r
+            Cultish (Montell, Amanda)\r
+            - Your Note on page 26 | Location 330 | Added on Tuesday, July 28, 2026 4:54:45 PM\r
+            \r
+            marc andrese\r
+            ==========\r
+            Cultish (Montell, Amanda)\r
+            - Your Note on page 26 | Location 330 | Added on Tuesday, July 28, 2026 4:55:07 PM\r
+            \r
+            marc andreesen - america is not western\r
+            ==========\r
+            Sapiens (Harari, Yuval Noah)\r
+            - Your Note at location 500 | Added on Tuesday, July 28, 2026 5:00:00 PM\r
+            \r
+            firs\r
+            ==========\r
+            Sapiens (Harari, Yuval Noah)\r
+            - Your Note at location 500 | Added on Tuesday, July 28, 2026 5:00:04 PM\r
+            \r
+            first draft of a standalone thought\r
+            ==========\r
+            """
+            let autosaved = KindleClippings.parse(autosave)
+            check("clippings: an autosave ladder collapses to its final rung (attached)",
+                  autosaved.first { $0.type == .highlight && $0.book == "Cultish" }?.attachedNote
+                      == "marc andreesen - america is not western")
+            check("clippings: an attached autosave ladder leaves no standalone stubs",
+                  !autosaved.contains { $0.type == .note && $0.book == "Cultish" })
+            check("clippings: a standalone autosave ladder collapses to one final note",
+                  autosaved.filter { $0.type == .note && $0.book == "Sapiens" }.count == 1
+                  && autosaved.contains { $0.type == .note && $0.text == "first draft of a standalone thought" })
+
             check("clippings: keys are stable across parses",
                   KindleClippings.parse(sample).map(\.key) == records.map(\.key))
             check("clippings: an attached note doesn't change its highlight's key",

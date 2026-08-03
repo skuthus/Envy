@@ -125,16 +125,20 @@ public enum KindleClippings {
         return records
     }
 
-    /// The full parse: raw records, then two refinements. (1) Boundary-nudge
+    /// The full parse: raw records, then three refinements. (1) Boundary-nudge
     /// collapse — adjusting a highlight's edges appends a fresh overlapping
     /// record, so among same-book highlights with intersecting location
-    /// ranges only the longest text survives. (2) Note pairing — a typed
-    /// note whose location falls inside a highlight's range attaches to it;
-    /// the rest stay standalone.
+    /// ranges only the longest text survives. (2) Autosave collapse — the
+    /// Kindle saves a typed note's every-few-seconds state as its own record
+    /// at the same anchor, so one note becomes a ladder of keystroke snapshots
+    /// ("marc", "marc andre", …); same book + same anchor is that one note
+    /// being edited, so only the last (most complete) survives. (3) Note
+    /// pairing — a typed note whose location falls inside a highlight's range
+    /// attaches to it; the rest stay standalone.
     public static func parse(_ raw: String) -> [Record] {
         let all = rawRecords(from: raw)
         var highlights = all.filter { $0.type == .highlight }
-        let notes = all.filter { $0.type == .note }
+        let rawNotes = all.filter { $0.type == .note }
 
         // (1) Later duplicates replace earlier ones when longer, in place —
         // keeping first-seen order either way.
@@ -155,7 +159,26 @@ public enum KindleClippings {
         }
         highlights = collapsed
 
-        // (2)
+        // (2) A typed note anchors to one spot (a single location, or a page
+        // when the book lacks locations); the Kindle can only edit that note
+        // in place, appending a new autosave record at the same anchor. So a
+        // later record at the same book + anchor supersedes the earlier one,
+        // in place, keeping first-seen order — the ladder collapses to its
+        // final rung.
+        var notes: [Record] = []
+        for note in rawNotes {
+            let anchor = note.locationStart ?? note.page
+            if let anchor,
+               let existing = notes.firstIndex(where: {
+                   $0.book == note.book && ($0.locationStart ?? $0.page) == anchor
+               }) {
+                notes[existing] = note
+            } else {
+                notes.append(note)
+            }
+        }
+
+        // (3)
         var standaloneNotes: [Record] = []
         for note in notes {
             if let location = note.locationStart,
