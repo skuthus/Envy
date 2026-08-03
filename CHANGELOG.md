@@ -2,6 +2,15 @@
 
 Also published at [envynote.app/changelog.html](https://envynote.app/changelog.html).
 
+## 1.8.9 — August 2, 2026
+
+Bring your reading home: Envy now imports Kindle highlights.
+
+- **Import Kindle highlights and notes.** Turn on Settings → Import → Kindle, plug in your Kindle, and press Import from Kindle (also in the File menu). Every highlight arrives in your Inbox as its own fleeting note, titled by the quote's first words and page (`the map is not the territory, p42`), the passage as a blockquote, the book as a `[[link]]`. A note you typed on the Kindle attaches beneath the passage it belongs to; adjusted highlights collapse to their final form; bookmarks are skipped. No Kindle handy? "Choose Clippings File…" imports a copied `My Clippings.txt` from anywhere. (Currently older, USB-mounting Kindles only; newer models later.)
+- **It remembers what it imported.** Plug in after each reading session and only new highlights come in, even if you've since filed, retitled, or deleted the earlier ones. That memory lives in an `Envy Data` folder inside your Index, so it travels with your vault: import on one Mac and a second Mac on the same synced vault won't re-import the same highlights. "Forget Import History" resets it if you want to redo everything.
+- **Make the notes yours.** Choose what the title carries (page, location, both, or neither) and whether each note's attribution shows the author and location. All configurable in Settings → Import.
+- **Fixed:** in the note list, a folder dot's hover label no longer blanks the date when the two aren't anywhere near touching.
+
 ## 1.8.8 — July 31, 2026
 
 Your vault, browsable: type an operator with nothing after it and the list becomes a catalog you can pick from, rename from, and trust.

@@ -28,12 +28,12 @@ struct WhatsNewView: View {
             }
 
             VStack(spacing: 10) {
-                Image(systemName: "square.grid.2x2")
+                Image(systemName: "books.vertical.fill")
                     .font(.system(size: 44))
                     .foregroundStyle(EnvyBrand.mark)
-                Text("Your Vault, Browsable")
+                Text("Bring Your Reading Home")
                     .font(.title3.bold())
-                Text("Type tag: or folder: with nothing after it and the list becomes a catalog: every tag or folder with its color and note count, one click (or Return) from its notes. Right-click there to recolor, or to rename across your whole vault at once: tags merge with a confirmation, folders carry their notes and colors along, even nested ones.\n\nClicks are exact now, too: choosing #tag never also shows #tags, and a folder never pulls in a lookalike, so the count you see is what you get. Plus long titles fade and scroll in the list instead of cutting off the date.")
+                Text("Envy now imports your Kindle highlights. Turn it on in Settings → Import, plug in your Kindle, and every highlight lands in your Inbox as a fleeting note: the quote as a blockquote, titled by its first words and page, with the book as a [[link]]. Notes you typed on the Kindle attach beneath their passage.\n\nIt remembers what it imported — stored in your vault, so it travels between Macs — and only ever adds what's new. Titles and attribution are yours to shape in Settings. (Older USB-mounting Kindles for now; newer models later.)")
                     .font(.body)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
