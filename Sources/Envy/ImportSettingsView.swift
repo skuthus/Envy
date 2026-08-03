@@ -121,6 +121,10 @@ struct ImportSettingsView: View {
 
             Section("Kindle") {
                 Toggle("Enable Kindle import", isOn: $kindleEnabled)
+                Label("This currently only works with older Kindles; newer Kindle support is coming later.", systemImage: "exclamationmark.triangle.fill")
+                    .font(.caption)
+                    .foregroundStyle(.yellow)
+                    .fixedSize(horizontal: false, vertical: true)
                 Text("Plug in your Kindle and pull its highlights and typed notes into the Inbox as fleeting notes — one per highlight, titled by the quote's first words, with the book as a [[link]]. Envy remembers what it has already imported, so re-importing only ever adds what's new.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
