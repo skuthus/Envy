@@ -121,7 +121,7 @@ struct ImportSettingsView: View {
 
             Section("Kindle") {
                 Toggle("Enable Kindle import", isOn: $kindleEnabled)
-                Label("This currently only works with older Kindles; newer Kindle support is coming later.", systemImage: "exclamationmark.triangle.fill")
+                Label("Older Kindles that mount as a USB drive work directly. Newer Kindles use MTP and don't appear in Finder — mount one with Moorage and Envy imports from it automatically (it looks under ~/Moorage).", systemImage: "exclamationmark.triangle.fill")
                     .font(.caption)
                     .foregroundStyle(.yellow)
                     .fixedSize(horizontal: false, vertical: true)

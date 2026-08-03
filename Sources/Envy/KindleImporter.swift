@@ -33,18 +33,25 @@ final class KindleImporter: ObservableObject {
 
     // MARK: - Device detection
 
-    /// The mounted Kindle's Clippings file, if one is plugged in — any
-    /// volume carrying `documents/My Clippings.txt` counts, rather than
-    /// trusting the volume to be named "Kindle".
+    /// The mounted Kindle's Clippings file, if one is available — any mount
+    /// carrying `documents/My Clippings.txt` counts, rather than trusting
+    /// its name. Two roots are searched: `/Volumes` (an older Kindle that
+    /// mounts as a USB drive) and `~/Moorage` (an MTP Kindle surfaced by the
+    /// Moorage mounter, which puts each device at `~/Moorage/<device name>/`
+    /// — this is what brings newer, MTP-only Kindles into reach).
     nonisolated static func detectClippingsFile() -> URL? {
-        let volumes = (try? FileManager.default.contentsOfDirectory(
-            at: URL(fileURLWithPath: "/Volumes", isDirectory: true),
-            includingPropertiesForKeys: nil,
-            options: [.skipsHiddenFiles]
-        )) ?? []
-        for volume in volumes {
-            let candidate = volume.appendingPathComponent("documents/My Clippings.txt")
-            if FileManager.default.fileExists(atPath: candidate.path) { return candidate }
+        let roots = [
+            URL(fileURLWithPath: "/Volumes", isDirectory: true),
+            FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Moorage", isDirectory: true),
+        ]
+        for root in roots {
+            let mounts = (try? FileManager.default.contentsOfDirectory(
+                at: root, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]
+            )) ?? []
+            for mount in mounts {
+                let candidate = mount.appendingPathComponent("documents/My Clippings.txt")
+                if FileManager.default.fileExists(atPath: candidate.path) { return candidate }
+            }
         }
         return nil
     }

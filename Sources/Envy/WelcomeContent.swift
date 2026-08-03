@@ -177,6 +177,8 @@ enum WelcomeContent {
 
     Envy remembers what it has imported, so plugging in after every reading session only adds what's new — even if you've since filed, retitled, or deleted the earlier ones. That memory lives in an `Envy Data` folder inside your Index, so it travels with your vault: import on one Mac, and a second Mac syncing the same vault won't re-import the same highlights. Adjusted highlights are collapsed to their final form, and bookmarks are skipped. (No Kindle on hand? "Choose Clippings File…" imports a copied `My Clippings.txt` from anywhere.)
 
+    Older Kindles that mount as a USB drive work directly. Newer Kindles use MTP and never appear in Finder — mount one with **Moorage** and Envy finds it automatically under `~/Moorage`.
+
     ## 📁 Folders & Colors
 
     Envy keeps everything in one folder — The Index — so you never *have* to file anything. But if you think in piles, subfolders are a second, color-coded way to organize, sitting alongside tags rather than replacing them.
