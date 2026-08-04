@@ -18,11 +18,24 @@ public enum ImageOCR {
         return SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
     }
 
+    /// The image file's stored EXIF orientation (`.up` when none / unreadable).
+    /// Recognition works on the raw pixel buffer, which ignores EXIF, so this
+    /// must be handed to Vision — otherwise a rotated photo (common from a phone
+    /// or Photos) is recognized sideways while it displays upright, and every
+    /// box/selection lands rotated.
+    public static func orientation(ofImageAt url: URL) -> CGImagePropertyOrientation {
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+              let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+              let raw = properties[kCGImagePropertyOrientation] as? UInt32,
+              let orientation = CGImagePropertyOrientation(rawValue: raw) else { return .up }
+        return orientation
+    }
+
     /// Recognizes text in an image file, or nil if it can't be decoded.
     public static func recognizeText(in url: URL) -> String? {
         guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
               let image = CGImageSourceCreateImageAtIndex(source, 0, nil) else { return nil }
-        return recognizeText(in: image)
+        return recognizeText(in: image, orientation: orientation(ofImageAt: url))
     }
 
     /// Recognizes text in a decoded image using Vision in accurate mode with
@@ -30,11 +43,11 @@ public enum ImageOCR {
     /// ("" when the image holds no legible text). Printed and whiteboard text
     /// comes back near-perfect; cursive is a coin flip — good enough that
     /// search still wins at partial accuracy.
-    public static func recognizeText(in image: CGImage) -> String {
+    public static func recognizeText(in image: CGImage, orientation: CGImagePropertyOrientation = .up) -> String {
         let request = VNRecognizeTextRequest()
         request.recognitionLevel = .accurate
         request.usesLanguageCorrection = true
-        let handler = VNImageRequestHandler(cgImage: image, options: [:])
+        let handler = VNImageRequestHandler(cgImage: image, orientation: orientation, options: [:])
         guard (try? handler.perform([request])) != nil,
               let observations = request.results else { return "" }
         return observations
@@ -59,14 +72,14 @@ public enum ImageOCR {
     public static func recognizeWords(in url: URL) -> [OCRWord] {
         guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
               let image = CGImageSourceCreateImageAtIndex(source, 0, nil) else { return [] }
-        return recognizeWords(in: image)
+        return recognizeWords(in: image, orientation: orientation(ofImageAt: url))
     }
 
-    public static func recognizeWords(in image: CGImage) -> [OCRWord] {
+    public static func recognizeWords(in image: CGImage, orientation: CGImagePropertyOrientation = .up) -> [OCRWord] {
         let request = VNRecognizeTextRequest()
         request.recognitionLevel = .accurate
         request.usesLanguageCorrection = true
-        let handler = VNImageRequestHandler(cgImage: image, options: [:])
+        let handler = VNImageRequestHandler(cgImage: image, orientation: orientation, options: [:])
         guard (try? handler.perform([request])) != nil,
               let observations = request.results else { return [] }
         var words: [OCRWord] = []

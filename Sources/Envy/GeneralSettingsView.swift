@@ -274,6 +274,7 @@ struct GeneralSettingsView: View {
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                 Toggle("Read text in images (OCR)", isOn: $ocrEnabled)
+                    .onChange(of: ocrEnabled) { _, _ in OCRIndex.shared.applyEnabledSetting() }
                 Text("Envy reads the text inside your images and scans in the background so “img: whiteboard” finds them, and right-click → Copy Text from Image works. On-device, no network. Takes effect on the next launch.")
                     .font(.caption)
                     .foregroundStyle(.secondary)

@@ -159,19 +159,18 @@ public enum KindleClippings {
         }
         highlights = collapsed
 
-        // (2) A typed note anchors to one spot (a single location, or a page
-        // when the book lacks locations); the Kindle can only edit that note
-        // in place, appending a new autosave record at the same anchor. So a
-        // later record at the same book + anchor supersedes the earlier one,
-        // in place, keeping first-seen order — the ladder collapses to its
-        // final rung.
+        // (2) A typed note on an ebook anchors to a single Location, and the
+        // Kindle edits it in place — re-emitting at that same Location — so a
+        // later record at the same book + Location supersedes the earlier one,
+        // keeping first-seen order; the autosave ladder collapses to its final
+        // rung. Collapse ONLY location-anchored notes: page-only content (PDFs
+        // and personal documents, where records carry a page but no Location)
+        // can hold many genuinely distinct notes on one page, so those must
+        // never collapse into each other.
         var notes: [Record] = []
         for note in rawNotes {
-            let anchor = note.locationStart ?? note.page
-            if let anchor,
-               let existing = notes.firstIndex(where: {
-                   $0.book == note.book && ($0.locationStart ?? $0.page) == anchor
-               }) {
+            if let location = note.locationStart,
+               let existing = notes.firstIndex(where: { $0.book == note.book && $0.locationStart == location }) {
                 notes[existing] = note
             } else {
                 notes.append(note)

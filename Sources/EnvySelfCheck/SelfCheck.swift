@@ -1876,6 +1876,27 @@ struct SelfCheck {
                   autosaved.filter { $0.type == .note && $0.book == "Sapiens" }.count == 1
                   && autosaved.contains { $0.type == .note && $0.text == "first draft of a standalone thought" })
 
+            // Page-only notes (PDFs / personal docs — a page but no Location)
+            // must NOT collapse into each other: two distinct notes on one page
+            // are not an autosave ladder. Only Location-anchored notes collapse.
+            let pageOnly = """
+            Doc (Author)\r
+            - Your Note on page 5 | Added on Tuesday, July 28, 2026\r
+            \r
+            remember to cite this\r
+            ==========\r
+            Doc (Author)\r
+            - Your Note on page 5 | Added on Tuesday, July 28, 2026\r
+            \r
+            a totally different second thought\r
+            ==========\r
+            """
+            let pageNotes = KindleClippings.parse(pageOnly).filter { $0.type == .note }
+            check("clippings: two distinct notes on the same page both survive",
+                  pageNotes.count == 2
+                  && pageNotes.contains { $0.text == "remember to cite this" }
+                  && pageNotes.contains { $0.text == "a totally different second thought" })
+
             check("clippings: keys are stable across parses",
                   KindleClippings.parse(sample).map(\.key) == records.map(\.key))
             check("clippings: an attached note doesn't change its highlight's key",
@@ -1922,6 +1943,13 @@ struct SelfCheck {
                   titlesFolded("whiteboard", fold: true).contains("Elsewhere"))
             check("folding on: two plain terms both reach image text",
                   titlesFolded("whiteboard roadmap", fold: true) == ["Meeting"])
+
+            // Exclusions must see image text too, symmetric with inclusions:
+            // "whiteboard -roadmap" should drop Meeting (its image has both).
+            check("folding on: an exclusion also reaches image text",
+                  !titlesFolded("whiteboard -roadmap", fold: true).contains("Meeting"))
+            check("folding off: image text is invisible to include and exclude alike",
+                  titlesFolded("whiteboard -roadmap", fold: false) == ["Elsewhere"])   // body match only; Meeting's image unseen
         }
 
         // OCR: render clear text to a bitmap and read it back with Vision, the

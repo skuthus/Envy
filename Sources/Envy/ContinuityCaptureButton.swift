@@ -75,10 +75,13 @@ final class ContinuityCaptureRequestorView: NSTextView, NSTextViewDelegate {
     /// Receives the capture, saves its images through the shared pipeline, and
     /// hands the filenames back so a note can be built around them.
     override func readSelection(from pboard: NSPasteboard) -> Bool {
-        guard let store = store?() else { return false }
-        let names = CaptureImporter.saveImages(from: pboard, into: store)
-        guard !names.isEmpty else { return false }
-        onCapture?(names)
+        guard let store = store?(), let payload = CaptureImporter.payload(from: pboard) else { return false }
+        // Heavy processing off the main thread; build the note when it lands.
+        Task { @MainActor [weak self] in
+            let names = await CaptureImporter.saveImages(payload, into: store)
+            guard !names.isEmpty else { return }
+            self?.onCapture?(names)
+        }
         return true
     }
 }

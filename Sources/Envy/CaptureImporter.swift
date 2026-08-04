@@ -5,54 +5,72 @@ import CoreImage
 import UniformTypeIdentifiers
 import EnvyCore
 
-/// Turns a Continuity Camera capture (or a pasted/dropped image) into saved
-/// attachment files, shared by the note editor's `readSelection` and the
-/// capture pill beside the search field. A photo becomes one PNG; a document
-/// scan (multi-page PDF) rasterizes to one cropped PNG per page. On-device: the
-/// page-edge crop is Vision + Core Image, no network.
-///
-/// Main-actor isolated: it touches the store's attachment writers and runs from
-/// the capture handlers (readSelection), which are already on the main thread —
-/// same as when this logic lived in the text view.
+/// The raw bytes of a capture, read off the pasteboard synchronously (on the
+/// main thread, while the board is still valid) so the expensive processing can
+/// then run on a background task. Sendable, so it crosses the actor hop.
+enum CapturePayload: Sendable {
+    case pdf(Data)   // Scan Documents → multi-page PDF
+    case png(Data)   // Take Photo (or a screenshot) → image data
+    case tiff(Data)
+    case file(URL)   // a capture delivered only as a file URL
+}
+
+/// Turns a Continuity Camera capture into saved attachment files, shared by the
+/// note editor's `readSelection` and the capture pill. A photo becomes one PNG;
+/// a document scan (multi-page PDF) rasterizes to one cropped PNG per page. The
+/// heavy work — rasterization, the Vision page-edge crop, PNG encoding — runs on
+/// a background task so a multi-page scan never stalls the UI; only the final
+/// attachment writes happen on the main actor. On-device, no network.
 @MainActor
 enum CaptureImporter {
 
-    /// Image UTIs NSImage can read, plus PDF — a "Scan Documents" capture
-    /// arrives as a multi-page PDF rather than an image. What a view vouches for
-    /// as a Continuity Camera return type.
+    /// Image UTIs NSImage can read, plus PDF — a "Scan Documents" capture arrives
+    /// as a multi-page PDF rather than an image. What a view vouches for as a
+    /// Continuity Camera return type.
     static let acceptedTypes: Set<String> = {
         var types = Set(NSImage.imageTypes)
         types.insert(UTType.pdf.identifier)
         return types
     }()
 
-    /// Saves everything on a capture pasteboard into the store's Attachments,
-    /// returning the saved filenames in order — one per scanned page, or one for
-    /// a photo. Empty when the board carries nothing we can use.
-    static func saveImages(from pboard: NSPasteboard, into store: NoteStore) -> [String] {
-        let stamp = captureStamp()
+    /// Reads a capture pasteboard synchronously into a Sendable payload (the
+    /// board isn't safe to touch after the services callback returns), or nil if
+    /// it carries nothing we handle.
+    static func payload(from pboard: NSPasteboard) -> CapturePayload? {
+        if let pdf = pboard.data(forType: NSPasteboard.PasteboardType(UTType.pdf.identifier)) { return .pdf(pdf) }
+        if let png = pboard.data(forType: .png) { return .png(png) }
+        if let tiff = pboard.data(forType: .tiff) { return .tiff(tiff) }
+        if let urls = pboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL],
+           let file = urls.first(where: { MarkdownStyler.imageExtensions.contains($0.pathExtension.lowercased()) }) {
+            return .file(file)
+        }
+        return nil
+    }
 
-        // Scan Documents → PDF: rasterize every page, no PDF attachment.
-        if let pdf = pboard.data(forType: NSPasteboard.PasteboardType(UTType.pdf.identifier)) {
-            return rasterizedPageNames(fromPDF: pdf, store: store, stamp: stamp)
-        }
-        // Take Photo → image data.
-        if let name = imageName(from: pboard, store: store, base: "Photo - \(stamp)") {
+    /// Processes a payload — the heavy rasterize/crop/encode off the main thread —
+    /// then writes the results into the store's Attachments on the main actor,
+    /// returning the saved filenames in order.
+    static func saveImages(_ payload: CapturePayload, into store: NoteStore) async -> [String] {
+        let stamp = captureStamp()
+        switch payload {
+        case .pdf(let data):
+            let pages = await Task.detached { rasterizedPages(fromPDF: data, stamp: stamp) }.value
+            return pages.compactMap { store.saveAttachment(data: $0.data, base: $0.base, ext: "png") }
+        case .png(let data):
+            return [store.saveAttachment(data: data, base: "Photo - \(stamp)", ext: "png")].compactMap { $0 }
+        case .tiff(let data):
+            let png = await Task.detached { NSBitmapImageRep(data: data)?.representation(using: .png, properties: [:]) }.value
+            guard let png, let name = store.saveAttachment(data: png, base: "Photo - \(stamp)", ext: "png") else { return [] }
             return [name]
+        case .file(let url):
+            return [store.copyAttachment(from: url)].compactMap { $0 }
         }
-        // A capture delivered only as a file URL on the board.
-        if let urls = pboard.readObjects(forClasses: [NSURL.self],
-                                         options: [.urlReadingFileURLsOnly: true]) as? [URL],
-           let file = urls.first(where: { MarkdownStyler.imageExtensions.contains($0.pathExtension.lowercased()) }),
-           let name = store.copyAttachment(from: file) {
-            return [name]
-        }
-        return []
     }
 
     /// Pulls PNG (or TIFF, re-encoded to PNG) image data off a pasteboard and
-    /// stores it under `base`, returning the saved filename. Paste and drop keep
-    /// the default "Pasted image"; a captured photo passes "Photo - <stamp>".
+    /// stores it under `base`, returning the saved filename. Used by paste and
+    /// drop (both light and already on the main thread); captures go through
+    /// `payload`/`saveImages` instead.
     static func imageName(from pb: NSPasteboard, store: NoteStore, base: String = "Pasted image") -> String? {
         if let data = pb.data(forType: .png) {
             return store.saveAttachment(data: data, base: base, ext: "png")
@@ -73,15 +91,16 @@ enum CaptureImporter {
         return formatter.string(from: date)
     }
 
-    /// Rasterizes each page of a scanned PDF to a PNG in the vault, returning the
-    /// saved filenames in page order. Rendered at 2× the page's point size so
-    /// text stays crisp on screen (and legible to OCR); a white backdrop stands
-    /// in for paper behind any transparency. Rasterize rather than attach the
-    /// PDF, so scans ride the same image pipeline as every other embed.
-    private static func rasterizedPageNames(fromPDF data: Data, store: NoteStore, stamp: String) -> [String] {
+    // MARK: - Background page processing (nonisolated: runs off the main thread)
+
+    /// Rasterizes each page of a scanned PDF to PNG data, returning them in page
+    /// order with their filename base. Rendered at 2× the page's point size so
+    /// text stays crisp (and legible to OCR); a white backdrop stands in for
+    /// paper behind any transparency. Runs off the main thread — no store access.
+    nonisolated private static func rasterizedPages(fromPDF data: Data, stamp: String) -> [(base: String, data: Data)] {
         guard let doc = PDFDocument(data: data) else { return [] }
         let scale: CGFloat = 2
-        var names: [String] = []
+        var pages: [(base: String, data: Data)] = []
         for index in 0..<doc.pageCount {
             guard let page = doc.page(at: index) else { continue }
             let bounds = page.bounds(for: .mediaBox)
@@ -106,18 +125,16 @@ enum CaptureImporter {
             // "Scan - 260803-214234", the pages of one scan sharing a stamp and
             // numbered "- p2", "- p3"; a single-page scan drops the page suffix.
             let base = doc.pageCount > 1 ? "Scan - \(stamp) - p\(index + 1)" : "Scan - \(stamp)"
-            if let name = store.saveAttachment(data: png, base: base, ext: "png") {
-                names.append(name)
-            }
+            pages.append((base, png))
         }
-        return names
+        return pages
     }
 
-    /// Shared Core Image context for the crop pass — creating one per page spins
-    /// up a fresh GPU pipeline each time.
-    private static let ciContext = CIContext()
+    /// Shared Core Image context for the crop pass (CIContext is thread-safe) —
+    /// creating one per page spins up a fresh GPU pipeline each time.
+    nonisolated private static let ciContext = CIContext()
 
-    private static func pngData(from cgImage: CGImage) -> Data? {
+    nonisolated private static func pngData(from cgImage: CGImage) -> Data? {
         NSBitmapImageRep(cgImage: cgImage).representation(using: .png, properties: [:])
     }
 
@@ -127,7 +144,7 @@ enum CaptureImporter {
     /// page doesn't fill a real share of the frame (a guard against a spurious
     /// tiny quad over-cropping a good scan). On-device (Vision). Identity when
     /// the page already fills the frame, so it's safe to run unconditionally.
-    private static func documentCropped(_ image: CGImage) -> CGImage? {
+    nonisolated private static func documentCropped(_ image: CGImage) -> CGImage? {
         // Opt-out (Settings → Editor → "Crop scans to the page edge"); default on.
         guard UserDefaults.standard.object(forKey: "scanAutoCrop") as? Bool ?? true else { return nil }
         let request = VNDetectDocumentSegmentationRequest()

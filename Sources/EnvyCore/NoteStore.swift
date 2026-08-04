@@ -2162,15 +2162,33 @@ public final class NoteStore: ObservableObject {
             let noteIsOrphan = note.wikiLinks.isEmpty && !linkedToTitles.contains(note.lowercasedTitle)
             if isOrphanOnly, !noteIsOrphan { return nil }
             if isLinkedOnly, noteIsOrphan { return nil }
+            // A note's recognized image text, folded into every term test below —
+            // under a scoped `img:` always, and under `foldImageText` (Settings)
+            // for ordinary searches too — so inclusions AND exclusions both see
+            // it (an exclusion that couldn't see image text would silently fail
+            // to exclude a scanned match). Only image notes pay for it; a plain
+            // body search over text notes stays free.
+            var ocrBlob = ""
+            if !imageText.isEmpty, isImageOnly || foldImageText, note.hasImageEmbed {
+                for link in note.wikiLinks
+                where Note.imageAttachmentExtensions.contains((link as NSString).pathExtension.lowercased()) {
+                    if let recognized = imageText[link] { ocrBlob += recognized + " " }
+                }
+            }
             if !phraseRegexes.isEmpty {
                 let t = note.lowercasedTitle, c = note.lowercasedContent
-                for regex in phraseRegexes where !(Self.wholeWordContains(t, regex) || Self.wholeWordContains(c, regex)) {
+                for regex in phraseRegexes
+                where !(Self.wholeWordContains(t, regex) || Self.wholeWordContains(c, regex)
+                        || (!ocrBlob.isEmpty && Self.wholeWordContains(ocrBlob, regex))) {
                     return nil
                 }
             }
             if !excludePhraseRegexes.isEmpty {
                 let t = note.lowercasedTitle, c = note.lowercasedContent
-                if excludePhraseRegexes.contains(where: { Self.wholeWordContains(t, $0) || Self.wholeWordContains(c, $0) }) { return nil }
+                if excludePhraseRegexes.contains(where: {
+                    Self.wholeWordContains(t, $0) || Self.wholeWordContains(c, $0)
+                        || (!ocrBlob.isEmpty && Self.wholeWordContains(ocrBlob, $0))
+                }) { return nil }
             }
             if isTodoOnly, !note.hasUncheckedTask { return nil }
             if isTodoExcluded, note.hasUncheckedTask { return nil }
@@ -2194,7 +2212,10 @@ public final class NoteStore: ObservableObject {
             if !excludeTerms.isEmpty {
                 let titleLower = note.lowercasedTitle
                 let contentLower = note.lowercasedContent
-                if excludeTerms.contains(where: { Self.fastContains(titleLower, $0) || Self.fastContains(contentLower, $0) }) { return nil }
+                if excludeTerms.contains(where: {
+                    Self.fastContains(titleLower, $0) || Self.fastContains(contentLower, $0)
+                        || (!ocrBlob.isEmpty && Self.fastContains(ocrBlob, $0))
+                }) { return nil }
             }
 
             // An operator (or 2+ free terms) combines with whatever else is
@@ -2202,27 +2223,17 @@ public final class NoteStore: ObservableObject {
             // scoring — matches original behavior exactly, including that
             // scoreByTermPresence already treats an empty terms list as an
             // automatic 0-score match (a pure operator query like "todo:"
-            // with nothing else to search for).
-            // A note's recognized image text, folded into the terms search: under
-            // a scoped `img:` always, and under `foldImageText` (Settings) for
-            // ordinary searches too, so "whiteboard" finds a scanned whiteboard
-            // with no operator typed. Only image notes pay it, and only when
-            // there's text to match — a plain body search stays free.
-            var ocrBlob = ""
-            if !freeTerms.isEmpty, !imageText.isEmpty, isImageOnly || foldImageText, note.hasImageEmbed {
-                for link in note.wikiLinks
-                where Note.imageAttachmentExtensions.contains((link as NSString).pathExtension.lowercased()) {
-                    if let recognized = imageText[link] { ocrBlob += recognized + " " }
-                }
-            }
+            // with nothing else to search for). `ocrBlob` (computed above) folds
+            // the note's image text in.
             if hasOperator || freeTerms.count > 1 {
                 return Self.scoreByTermPresence(note: note, terms: freeTerms, extra: ocrBlob).map { (note, $0) }
             }
             guard let term = freeTerms.first else { return (note, 0) }
 
             // A single free term, no operators — the original scored
-            // exact/prefix/contains ranking, with image text as a last, lowest
-            // rung (below body) when folding is on.
+            // exact/prefix/contains ranking, with an image-text match added at
+            // the content rung (same score as body; Vision gives no better
+            // granularity to rank within).
             let titleLower = note.lowercasedTitle
             let contentLower = note.lowercasedContent
             let score: Int

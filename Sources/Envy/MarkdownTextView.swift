@@ -297,12 +297,17 @@ extension HoverAwareTextView {
     /// `![[name]]` pipeline. A non-image board falls to the text view's own
     /// handling.
     override func readSelection(from pboard: NSPasteboard) -> Bool {
-        guard let store = attachmentStore, isEditable else {
+        guard let store = attachmentStore, isEditable,
+              let payload = CaptureImporter.payload(from: pboard) else {
             return super.readSelection(from: pboard)
         }
-        let names = CaptureImporter.saveImages(from: pboard, into: store)
-        guard !names.isEmpty else { return super.readSelection(from: pboard) }
-        for name in names { insertImageReference(name) }
+        // Read the board now (done, in payload); do the heavy rasterize/crop off
+        // the main thread, then insert when it lands.
+        Task { @MainActor [weak self] in
+            let names = await CaptureImporter.saveImages(payload, into: store)
+            guard let self else { return }
+            for name in names { self.insertImageReference(name) }
+        }
         return true
     }
 }
@@ -2627,6 +2632,10 @@ struct MarkdownTextView: NSViewRepresentable {
         /// exclusions. A closed-quote term (`"super"`) highlights whole words
         /// only; anything else is a substring, mirroring body-text highlighting.
         nonisolated static func imageSearchTerms(from query: String) -> [ImageHighlightTerm] {
+            // Operators whose trailing text becomes a free term the search then
+            // matches against image content — strip the prefix and keep the word,
+            // so what highlights matches what searched.
+            let scopePrefixes = ["img:", "inbox:", "embed:"]
             var terms: [ImageHighlightTerm] = []
             for token in NoteStore.tokenize(query) {
                 if token.hasPrefix("-") { continue }         // an exclusion, not a match to light
@@ -2635,8 +2644,9 @@ struct MarkdownTextView: NSViewRepresentable {
                 if !quoted {
                     let lower = token.lowercased()
                     if lower.hasSuffix(":") { continue }     // bare operator (img:, tag:, …)
-                    if lower.hasPrefix("img:") { body = String(token.dropFirst("img:".count)) }
-                    else if lower.contains(":") { continue } // other operators carry no literal image term
+                    if let prefix = scopePrefixes.first(where: { lower.hasPrefix($0) }) {
+                        body = String(token.dropFirst(prefix.count))
+                    } else if lower.contains(":") { continue } // structural operator (tag:/folder:/date:) — no literal image term
                 }
                 // A closed quote (opens and closes) is a whole-word match; an
                 // open one (still being typed) stays a substring.
