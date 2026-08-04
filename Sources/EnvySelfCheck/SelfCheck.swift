@@ -1,4 +1,6 @@
 import Foundation
+import CoreGraphics
+import CoreText
 @testable import EnvyCore
 
 @main
@@ -1881,6 +1883,39 @@ struct SelfCheck {
                       var without = cultish; without.attachedNote = nil
                       return without.key == cultish.key
                   }())
+        }
+
+        // OCR: render clear text to a bitmap and read it back with Vision, the
+        // same engine "Copy Text from Image" and scan search lean on.
+        do {
+            func renderedText(_ string: String) -> CGImage? {
+                let width = 700, height = 200
+                guard let ctx = CGContext(
+                    data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
+                    space: CGColorSpaceCreateDeviceRGB(),
+                    bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
+                ctx.setFillColor(CGColor(red: 1, green: 1, blue: 1, alpha: 1))
+                ctx.fill(CGRect(x: 0, y: 0, width: width, height: height))
+                let font = CTFontCreateWithName("Helvetica-Bold" as CFString, 80, nil)
+                let attr = NSAttributedString(string: string, attributes: [
+                    NSAttributedString.Key(kCTFontAttributeName as String): font,
+                ])
+                let line = CTLineCreateWithAttributedString(attr)
+                ctx.textPosition = CGPoint(x: 40, y: 70)
+                CTLineDraw(line, ctx)
+                return ctx.makeImage()
+            }
+            if let image = renderedText("ENVY SCAN") {
+                let text = ImageOCR.recognizeText(in: image).uppercased()
+                check("ocr: reads rendered text back", text.contains("ENVY") && text.contains("SCAN"))
+            } else {
+                check("ocr: could render a test image", false)
+            }
+            // A blank image yields empty text, never nil-crashes.
+            if let blank = renderedText("") {
+                check("ocr: blank image returns no text",
+                      ImageOCR.recognizeText(in: blank).trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
         }
 
         print("")

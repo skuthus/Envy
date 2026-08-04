@@ -457,6 +457,7 @@ final class AttachmentView: NSView {
     var onResize: ((CGFloat?) -> Void)?
     var onOpen: (() -> Void)?
     var onReveal: (() -> Void)?
+    var onCopyText: (() -> Void)?
     var onRename: ((String) -> Void)?
     /// Jump the editor's cursor into the marker's caption / width slot —
     /// inline editing in the note text itself, replacing the modal prompts
@@ -561,6 +562,13 @@ final class AttachmentView: NSView {
         let reveal = NSMenuItem(title: "Reveal in Finder", action: #selector(revealImage), keyEquivalent: "")
         reveal.target = self
         menu.addItem(reveal)
+        // On-device OCR; only worth offering when the image actually loaded.
+        if !isBroken {
+            menu.addItem(.separator())
+            let copyText = NSMenuItem(title: "Copy Text from Image", action: #selector(copyTextFromImage), keyEquivalent: "")
+            copyText.target = self
+            menu.addItem(copyText)
+        }
         return menu
     }
 
@@ -568,6 +576,7 @@ final class AttachmentView: NSView {
     @objc private func resizeToOriginal() { onResize?(nil) }
     @objc private func openImage() { onOpen?() }
     @objc private func revealImage() { onReveal?() }
+    @objc private func copyTextFromImage() { onCopyText?() }
 
     // Caption and width need no dialog at all — both are just text in the
     // marker (`![[name|400|caption]]`), so the menu item drops the cursor
@@ -2467,6 +2476,15 @@ struct MarkdownTextView: NSViewRepresentable {
                 }
                 iv.onOpen = { NSWorkspace.shared.open(store.attachmentURL(forName: name)) }
                 iv.onReveal = { NSWorkspace.shared.activateFileViewerSelecting([store.attachmentURL(forName: name)]) }
+                iv.onCopyText = {
+                    // OCR off the main thread; drop the recognized text on the
+                    // clipboard when it's ready (instant after the first time).
+                    OCRIndex.shared.recognizedText(for: store.attachmentURL(forName: name)) { text in
+                        let pb = NSPasteboard.general
+                        pb.clearContents()
+                        pb.setString(text, forType: .string)
+                    }
+                }
 
                 let glyphRange = layoutManager.glyphRange(forCharacterRange: image.spacerRange, actualCharacterRange: nil)
                 let lineRect = layoutManager.lineFragmentRect(forGlyphAt: glyphRange.location, effectiveRange: nil)
