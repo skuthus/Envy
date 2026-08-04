@@ -214,7 +214,7 @@ enum MarkdownStyler {
     /// trusted outright, since the height arrives from a layout pass that
     /// this one then feeds back into.
     static let minimumEmbedHeight: CGFloat = 44
-    static let maximumEmbedHeight: CGFloat = 520
+    static let maximumEmbedHeight: CGFloat = 1000
 
 
     /// Only "![[...]]" markers whose title exactly matches an existing
