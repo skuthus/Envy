@@ -306,6 +306,56 @@ extension HoverAwareTextView {
     }
 }
 
+/// A word to light up in an image: `wholeWord` (a closed-quote search) matches
+/// the whole word only; otherwise it's a substring, and only the matched span of
+/// characters lights up — "super" inside "supernote" — mirroring how body-text
+/// search highlighting behaves.
+struct ImageHighlightTerm: Equatable {
+    let text: String       // lowercased
+    let wholeWord: Bool
+}
+
+/// Draws translucent search-match rectangles over an image. Sits above the
+/// picture and passes every event through, so it only ever paints. Boxes are
+/// normalized (0…1, bottom-left origin, matching this unflipped view); they map
+/// onto the image's *displayed* rect, which — for a tall image clamped to the
+/// max embed height — is proportionally fit and top-left aligned inside the
+/// bounds, not the whole bounds (imageScaling .scaleProportionallyUpOrDown +
+/// .alignTopLeft). Recomputed at draw time so it tracks resize for free.
+private final class ImageHighlightOverlay: NSView {
+    var boxes: [CGRect] = [] { didSet { if boxes != oldValue { needsDisplay = true } } }
+    var color: NSColor = .systemYellow { didSet { if color != oldValue { needsDisplay = true } } }
+    /// The image's own size (for aspect); zero falls back to filling the bounds.
+    var imageSize: CGSize = .zero { didSet { if imageSize != oldValue { needsDisplay = true } } }
+
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }   // never intercept
+
+    /// Where the image actually paints inside our bounds — proportional fit,
+    /// hugging the top-left (matching the image view), so the highlight lands on
+    /// the letterboxed picture rather than the empty gap beside it.
+    private var contentRect: CGRect {
+        guard imageSize.width > 0, imageSize.height > 0, bounds.width > 0, bounds.height > 0 else { return bounds }
+        let scale = min(bounds.width / imageSize.width, bounds.height / imageSize.height)
+        let w = imageSize.width * scale, h = imageSize.height * scale
+        return CGRect(x: 0, y: bounds.height - h, width: w, height: h)   // top-left, y-up
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        guard !boxes.isEmpty else { return }
+        let content = contentRect
+        color.withAlphaComponent(0.4).setFill()
+        for box in boxes {
+            let rect = NSRect(
+                x: content.minX + box.minX * content.width,
+                y: content.minY + box.minY * content.height,
+                width: box.width * content.width,
+                height: box.height * content.height
+            ).insetBy(dx: -1, dy: -1)
+            NSBezierPath(roundedRect: rect, xRadius: 2, yRadius: 2).fill()
+        }
+    }
+}
+
 /// The inline block for an image attachment, floated over its reserved space by
 /// the coordinator: the picture on top, an optional caption beneath it, and a
 /// dashed "missing image" placeholder when the file can't be loaded. A right-
@@ -332,6 +382,22 @@ final class AttachmentView: NSView {
     private let captionLabel = NSTextField(labelWithString: "")
     private var isBroken = false
 
+    // MARK: Search-match highlighting (draws over matching words in the image)
+    /// The file behind this view, so highlighting can OCR it for word boxes.
+    private var attachmentURL: URL?
+    /// Search terms to highlight in the image, and the color to use.
+    private var highlightTerms: [ImageHighlightTerm] = []
+    private var highlightColor: NSColor = .systemYellow
+    /// OCR'd words + boxes for the current image, cached so retyping the search
+    /// filters without re-recognizing. Keyed by the URL it was recognized from.
+    private var recognizedWords: [ImageOCR.OCRWord] = []
+    private var recognizedURL: URL?
+    private var highlightTask: Task<Void, Never>?
+    /// Drawn above the picture (a plain draw() would paint under the imageView
+    /// subview and be hidden). Passes clicks through so it never eats a right-
+    /// click or a future Live Text drag.
+    private let highlightOverlay = ImageHighlightOverlay()
+
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         wantsLayer = true
@@ -340,6 +406,7 @@ final class AttachmentView: NSView {
         imageView.imageFrameStyle = .none
         imageView.animates = true   // play animated GIFs instead of showing frame one
         addSubview(imageView)
+        addSubview(highlightOverlay)   // above the image
         captionLabel.font = .systemFont(ofSize: 11)
         captionLabel.textColor = .secondaryLabelColor
         captionLabel.alignment = .center
@@ -348,6 +415,7 @@ final class AttachmentView: NSView {
         addSubview(captionLabel)
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+    deinit { highlightTask?.cancel() }
 
     var displayImage: NSImage? {
         get { imageView.image }
@@ -355,8 +423,56 @@ final class AttachmentView: NSView {
             imageView.image = newValue
             isBroken = (newValue == nil)
             imageView.isHidden = isBroken
+            highlightOverlay.imageSize = newValue?.size ?? .zero
             needsDisplay = true
         }
+    }
+
+    /// Points this view at its file and the active search terms; recomputes the
+    /// highlighted word boxes when either changes. Called on every restyle, so
+    /// it must stay cheap when nothing changed.
+    func configureHighlight(url: URL?, terms: [ImageHighlightTerm], color: NSColor) {
+        highlightColor = color
+        highlightOverlay.color = color
+        let changed = url != attachmentURL || terms != highlightTerms
+        attachmentURL = url
+        highlightTerms = terms
+        if changed { refreshHighlights() }
+    }
+
+    private func refreshHighlights() {
+        highlightTask?.cancel()
+        guard UserDefaults.standard.object(forKey: "ocrEnabled") as? Bool ?? true,
+              !highlightTerms.isEmpty, !isBroken, let url = attachmentURL else {
+            setHighlightBoxes([]); return
+        }
+        if recognizedURL == url {          // words already in hand — just re-filter
+            computeHighlightBoxes(); return
+        }
+        highlightTask = Task { [weak self] in
+            let words = await Task.detached { ImageOCR.recognizeWords(in: url) }.value
+            guard let self, self.attachmentURL == url else { return }
+            self.recognizedWords = words
+            self.recognizedURL = url
+            self.computeHighlightBoxes()
+        }
+    }
+
+    private func computeHighlightBoxes() {
+        // Whole-word boxes: Vision can't localize characters, so a matched word
+        // lights up entirely. The quote distinction lives in the *match* — a
+        // closed-quote term matches the whole word, an unquoted one a substring.
+        let boxes = recognizedWords.compactMap { word -> CGRect? in
+            let hit = highlightTerms.contains { term in
+                term.wholeWord ? word.text == term.text : word.text.contains(term.text)
+            }
+            return hit ? word.box : nil
+        }
+        setHighlightBoxes(boxes)
+    }
+
+    private func setHighlightBoxes(_ boxes: [CGRect]) {
+        highlightOverlay.boxes = boxes
     }
 
     var caption: String? {
@@ -376,6 +492,7 @@ final class AttachmentView: NSView {
         // Not flipped: y grows upward, so the picture sits on top and the
         // caption in the strip beneath it.
         imageView.frame = NSRect(x: 0, y: cap, width: bounds.width, height: max(bounds.height - cap, 0))
+        highlightOverlay.frame = imageView.frame
         captionLabel.frame = NSRect(x: 0, y: 0, width: bounds.width, height: cap)
     }
 
@@ -2280,6 +2397,11 @@ struct MarkdownTextView: NSViewRepresentable {
             let lastEnd = images.map { $0.spacerRange.location + $0.spacerRange.length }.max() ?? textLength
             layoutManager.ensureLayout(forCharacterRange: NSRange(location: 0, length: min(lastEnd, textLength)))
 
+            // The active search terms, highlighted over any matching words in
+            // each image (same color the body search highlight uses).
+            let highlightTerms = Self.imageSearchTerms(from: parent.searchQuery)
+            let highlightColor = parent.theme.resolvedHighlightColor
+
             while imageOverlayViews.count < images.count {
                 let iv = AttachmentView()
                 textView.addSubview(iv)
@@ -2355,6 +2477,7 @@ struct MarkdownTextView: NSViewRepresentable {
                 iv.onTranscribe = { [weak self] in
                     self?.transcribeImage(name: name, near: markerLocation, in: textView)
                 }
+                iv.configureHighlight(url: store.attachmentURL(forName: name), terms: highlightTerms, color: highlightColor)
 
                 let glyphRange = layoutManager.glyphRange(forCharacterRange: image.spacerRange, actualCharacterRange: nil)
                 let lineRect = layoutManager.lineFragmentRect(forGlyphAt: glyphRange.location, effectiveRange: nil)
@@ -2415,6 +2538,31 @@ struct MarkdownTextView: NSViewRepresentable {
             guard textView.shouldChangeText(in: target.markerRange, replacementString: replacement) else { return }
             textView.textStorage?.replaceCharacters(in: target.markerRange, with: replacement)
             textView.didChangeText()
+        }
+
+        /// The literal words of a query worth highlighting inside an image —
+        /// plain terms plus an `img:` argument, dropping operators and
+        /// exclusions. A closed-quote term (`"super"`) highlights whole words
+        /// only; anything else is a substring, mirroring body-text highlighting.
+        nonisolated static func imageSearchTerms(from query: String) -> [ImageHighlightTerm] {
+            var terms: [ImageHighlightTerm] = []
+            for token in NoteStore.tokenize(query) {
+                if token.hasPrefix("-") { continue }         // an exclusion, not a match to light
+                let quoted = token.hasPrefix("\"")
+                var body = token
+                if !quoted {
+                    let lower = token.lowercased()
+                    if lower.hasSuffix(":") { continue }     // bare operator (img:, tag:, …)
+                    if lower.hasPrefix("img:") { body = String(token.dropFirst("img:".count)) }
+                    else if lower.contains(":") { continue } // other operators carry no literal image term
+                }
+                // A closed quote (opens and closes) is a whole-word match; an
+                // open one (still being typed) stays a substring.
+                let wholeWord = quoted && token.count >= 2 && token.hasSuffix("\"")
+                let cleaned = NoteStore.unquote(body).lowercased()
+                if !cleaned.isEmpty { terms.append(ImageHighlightTerm(text: cleaned, wholeWord: wholeWord)) }
+            }
+            return terms
         }
 
         /// OCRs the image and drops the recognized text into the note as a

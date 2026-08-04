@@ -1955,6 +1955,13 @@ struct SelfCheck {
                 check("ocr: blank image returns no text",
                       ImageOCR.recognizeText(in: blank).trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
+
+            // Word boxes come back for a printed word (basis for highlighting).
+            if let image = renderedText("supernote") {
+                let words = ImageOCR.recognizeWords(in: image)
+                check("ocr: recognizes a word with a usable box",
+                      words.contains { $0.text.contains("super") && !$0.box.isNull && $0.box.width > 0 })
+            }
         }
 
         print("")

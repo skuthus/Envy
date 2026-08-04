@@ -41,4 +41,44 @@ public enum ImageOCR {
             .compactMap { $0.topCandidates(1).first?.string }
             .joined(separator: "\n")
     }
+
+    /// One recognized word and where it sits — its `box` normalized in Vision's
+    /// space (origin bottom-left, 0…1), so it maps onto the displayed image
+    /// regardless of scale. Word-level, not character-level: Vision's
+    /// `boundingBox(for:)` returns the whole-word box for any sub-range (verified
+    /// even on printed text), so a search match lights the whole word. Sendable,
+    /// so it crosses back from the recognition task cleanly (unlike a VNObservation).
+    public struct OCRWord: Sendable {
+        public let text: String   // lowercased
+        public let box: CGRect    // normalized, bottom-left origin
+    }
+
+    /// Recognizes every word in an image file with its bounding box — the basis
+    /// for highlighting search matches on the picture. Returns [] if the file
+    /// can't be read. Synchronous; call it off the main thread.
+    public static func recognizeWords(in url: URL) -> [OCRWord] {
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+              let image = CGImageSourceCreateImageAtIndex(source, 0, nil) else { return [] }
+        return recognizeWords(in: image)
+    }
+
+    public static func recognizeWords(in image: CGImage) -> [OCRWord] {
+        let request = VNRecognizeTextRequest()
+        request.recognitionLevel = .accurate
+        request.usesLanguageCorrection = true
+        let handler = VNImageRequestHandler(cgImage: image, options: [:])
+        guard (try? handler.perform([request])) != nil,
+              let observations = request.results else { return [] }
+        var words: [OCRWord] = []
+        for observation in observations {
+            guard let candidate = observation.topCandidates(1).first else { continue }
+            let string = candidate.string
+            string.enumerateSubstrings(in: string.startIndex..<string.endIndex, options: .byWords) { sub, range, _, _ in
+                guard let sub, !sub.isEmpty,
+                      let boxed = try? candidate.boundingBox(for: range) else { return }
+                words.append(OCRWord(text: sub.lowercased(), box: boxed.boundingBox))
+            }
+        }
+        return words
+    }
 }
