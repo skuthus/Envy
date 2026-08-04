@@ -1,5 +1,7 @@
 import SwiftUI
 import AppKit
+import PDFKit
+import UniformTypeIdentifiers
 import EnvyCore
 
 final class HoverAwareTextView: NSTextView {
@@ -268,6 +270,115 @@ final class HoverAwareTextView: NSTextView {
         textStorage?.replaceCharacters(in: selection, with: insertion)
         didChangeText()
         setSelectedRange(NSRange(location: selection.location + (insertion as NSString).length, length: 0))
+    }
+
+    // MARK: - Continuity Camera (Import from iPhone or iPad)
+
+    /// Image UTIs NSImage can read, plus PDF — a "Scan Documents" capture
+    /// arrives as a multi-page PDF rather than an image. Computed once.
+    private static let acceptedCaptureTypes: Set<String> = {
+        var types = Set(NSImage.imageTypes)
+        types.insert(UTType.pdf.identifier)
+        return types
+    }()
+
+    /// Declaring this view a valid requestor for an image (or PDF) return type
+    /// is what makes AppKit insert the "Import from iPhone or iPad → Take Photo
+    /// / Scan Documents" section into the Edit menu and this view's right-click
+    /// menu automatically — the same Services-menu machinery, nothing to build
+    /// by hand. Gated on an attachment store and an editable surface, so
+    /// read-only previews never advertise it.
+    override func validRequestor(forSendType sendType: NSPasteboard.PasteboardType?,
+                                 returnType: NSPasteboard.PasteboardType?) -> Any? {
+        if attachmentStore != nil, isEditable, sendType == nil,
+           let returnType, Self.acceptedCaptureTypes.contains(returnType.rawValue) {
+            return self
+        }
+        return super.validRequestor(forSendType: sendType, returnType: returnType)
+    }
+
+    /// Rasterizes each page of a scanned PDF to a PNG in the vault, returning
+    /// the saved filenames in page order. Rendered at 2× the page's point size
+    /// so text stays crisp on screen (and, later, legible to OCR); a white
+    /// backdrop stands in for paper behind any transparency. First cut by
+    /// design: rasterize rather than attach the PDF, so scans ride the same
+    /// image pipeline as every other embed.
+    private func rasterizedPageNames(fromPDF data: Data, store: NoteStore) -> [String] {
+        guard let doc = PDFDocument(data: data) else { return [] }
+        let scale: CGFloat = 2
+        var names: [String] = []
+        for index in 0..<doc.pageCount {
+            guard let page = doc.page(at: index) else { continue }
+            let bounds = page.bounds(for: .mediaBox)
+            let pw = Int(bounds.width * scale), ph = Int(bounds.height * scale)
+            guard pw > 0, ph > 0,
+                  let rep = NSBitmapImageRep(
+                    bitmapDataPlanes: nil, pixelsWide: pw, pixelsHigh: ph,
+                    bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+                    colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0),
+                  let ctx = NSGraphicsContext(bitmapImageRep: rep) else { continue }
+            NSGraphicsContext.saveGraphicsState()
+            NSGraphicsContext.current = ctx
+            let cg = ctx.cgContext
+            cg.setFillColor(NSColor.white.cgColor)
+            cg.fill(CGRect(x: 0, y: 0, width: pw, height: ph))
+            cg.scaleBy(x: scale, y: scale)
+            page.draw(with: .mediaBox, to: cg)   // handles the page's box + rotation
+            NSGraphicsContext.restoreGraphicsState()
+            guard let png = rep.representation(using: .png, properties: [:]) else { continue }
+            let base = doc.pageCount > 1 ? "Scan page \(index + 1)" : "Scan"
+            if let name = store.saveAttachment(data: png, base: base, ext: "png") {
+                names.append(name)
+            }
+        }
+        return names
+    }
+}
+
+// NSTextView already conforms to NSServicesMenuRequestor (for text); these
+// override its receiving side to also accept a Continuity Camera capture,
+// deferring to super for anything that isn't an image/PDF.
+extension HoverAwareTextView {
+    /// We only ever receive a capture, never hand a selection out to Continuity
+    /// Camera; the text services NSTextView already provides pass through.
+    override func writeSelection(to pboard: NSPasteboard,
+                                 types: [NSPasteboard.PasteboardType]) -> Bool {
+        super.writeSelection(to: pboard, types: types)
+    }
+
+    /// Receives a Continuity Camera capture. A photo (image data) becomes one
+    /// embed; a document scan (multi-page PDF) rasterizes to one PNG embed per
+    /// page, inserted in order. Everything routes through the same Attachments/
+    /// + `![[name]]` pipeline as paste and drop; a non-image board falls to the
+    /// text view's own handling.
+    override func readSelection(from pboard: NSPasteboard) -> Bool {
+        guard let store = attachmentStore, isEditable else {
+            return super.readSelection(from: pboard)
+        }
+
+        // Scan Documents → PDF: rasterize every page, no PDF attachment.
+        if let pdfData = pboard.data(forType: NSPasteboard.PasteboardType(UTType.pdf.identifier)) {
+            let names = rasterizedPageNames(fromPDF: pdfData, store: store)
+            guard !names.isEmpty else { return false }
+            for name in names { insertImageReference(name) }
+            return true
+        }
+
+        // Take Photo → image data: reuse the paste path.
+        if let name = imageNameFromData(on: pboard, store: store) {
+            insertImageReference(name)
+            return true
+        }
+
+        // A capture delivered only as a file URL on the board.
+        if let urls = pboard.readObjects(forClasses: [NSURL.self],
+                                         options: [.urlReadingFileURLsOnly: true]) as? [URL],
+           let file = urls.first(where: { MarkdownStyler.imageExtensions.contains($0.pathExtension.lowercased()) }),
+           let name = store.copyAttachment(from: file) {
+            insertImageReference(name)
+            return true
+        }
+        return super.readSelection(from: pboard)
     }
 }
 
