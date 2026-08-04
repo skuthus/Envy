@@ -320,6 +320,7 @@ final class AttachmentView: NSView {
     var onOpen: (() -> Void)?
     var onReveal: (() -> Void)?
     var onCopyText: (() -> Void)?
+    var onTranscribe: (() -> Void)?
     var onRename: ((String) -> Void)?
     /// Jump the editor's cursor into the marker's caption / width slot —
     /// inline editing in the note text itself, replacing the modal prompts
@@ -430,6 +431,9 @@ final class AttachmentView: NSView {
             let copyText = NSMenuItem(title: "Copy Text from Image", action: #selector(copyTextFromImage), keyEquivalent: "")
             copyText.target = self
             menu.addItem(copyText)
+            let transcribe = NSMenuItem(title: "Transcribe Text into Note", action: #selector(transcribeIntoNote), keyEquivalent: "")
+            transcribe.target = self
+            menu.addItem(transcribe)
         }
         return menu
     }
@@ -439,6 +443,7 @@ final class AttachmentView: NSView {
     @objc private func openImage() { onOpen?() }
     @objc private func revealImage() { onReveal?() }
     @objc private func copyTextFromImage() { onCopyText?() }
+    @objc private func transcribeIntoNote() { onTranscribe?() }
 
     // Caption and width need no dialog at all — both are just text in the
     // marker (`![[name|400|caption]]`), so the menu item drops the cursor
@@ -2347,6 +2352,9 @@ struct MarkdownTextView: NSViewRepresentable {
                         pb.setString(text, forType: .string)
                     }
                 }
+                iv.onTranscribe = { [weak self] in
+                    self?.transcribeImage(name: name, near: markerLocation, in: textView)
+                }
 
                 let glyphRange = layoutManager.glyphRange(forCharacterRange: image.spacerRange, actualCharacterRange: nil)
                 let lineRect = layoutManager.lineFragmentRect(forGlyphAt: glyphRange.location, effectiveRange: nil)
@@ -2407,6 +2415,41 @@ struct MarkdownTextView: NSViewRepresentable {
             guard textView.shouldChangeText(in: target.markerRange, replacementString: replacement) else { return }
             textView.textStorage?.replaceCharacters(in: target.markerRange, with: replacement)
             textView.didChangeText()
+        }
+
+        /// OCRs the image and drops the recognized text into the note as a
+        /// paragraph right beneath the picture — the "digitize this page" verb,
+        /// leaving the image in place above its transcription. Recognition runs
+        /// off the main thread; the insert lands when it's ready. A no-op if the
+        /// image holds no legible text.
+        @MainActor
+        func transcribeImage(name: String, near location: Int, in textView: NSTextView) {
+            guard let store = parent.store else { return }
+            OCRIndex.shared.recognizedText(for: store.attachmentURL(forName: name)) { [weak textView] text in
+                guard let textView else { return }
+                let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !trimmed.isEmpty else { return }
+                // Re-find the marker at insert time (the text may have shifted
+                // since the menu opened), then insert after its block.
+                let candidates = MarkdownStyler.imageEmbedRanges(in: textView.string).filter { $0.name == name }
+                guard let target = candidates.min(by: { abs($0.markerRange.location - location) < abs($1.markerRange.location - location) })
+                    ?? candidates.first else { return }
+
+                let ns = textView.string as NSString
+                var insertAt = NSMaxRange(target.markerRange)
+                // Step past the block's reserved trailing blank line so the text
+                // becomes its own paragraph below the image.
+                var skipped = 0
+                while insertAt < ns.length, skipped < 2, ns.character(at: insertAt) == 10 {
+                    insertAt += 1; skipped += 1
+                }
+                let needsBreakBefore = insertAt > 0 && ns.character(at: insertAt - 1) != 10
+                let insertion = (needsBreakBefore ? "\n\n" : "") + trimmed + "\n"
+                let range = NSRange(location: min(insertAt, ns.length), length: 0)
+                guard textView.shouldChangeText(in: range, replacementString: insertion) else { return }
+                textView.textStorage?.replaceCharacters(in: range, with: insertion)
+                textView.didChangeText()
+            }
         }
 
         /// Assembles the inner of an `![[…]]` image reference from its parts —
