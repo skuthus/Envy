@@ -24,7 +24,8 @@ struct ImportSettingsView: View {
     @State private var loadingFolders = false
     @State private var folderError: String?
 
-    // Camera / scanning / OCR — capturing the physical world into notes.
+    // Camera / scanning / OCR, capturing the physical world into notes.
+    @AppStorage("cameraEnabled") private var cameraEnabled = true
     @AppStorage("scanAutoCrop") private var scanAutoCrop = true
     @AppStorage("ocrEnabled") private var ocrEnabled = true
     @AppStorage("searchImageText") private var searchImageText = true
@@ -72,12 +73,14 @@ struct ImportSettingsView: View {
     var body: some View {
         Form {
             Section("Camera & Scanning") {
-                Text("Capture the physical world into notes: the camera pill beside the search field (and right-click → Import from iPhone in a note) takes a photo or scans a document straight in. Text in your images and scans is read on-device so you can search it.")
+                Toggle("Capture from an iPhone", isOn: $cameraEnabled)
+                Text("Adds a camera button beside the search field, and “Import from iPhone or iPad” to a note's right-click menu, for taking a photo or scanning a document straight into a note (Continuity Camera). Turn off to remove those entirely.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
 
                 Toggle("Crop scans to the page edge", isOn: $scanAutoCrop)
+                    .disabled(!cameraEnabled)
                 Text("When you Scan Documents from an iPhone, Envy trims the background around the page and straightens it. On-device. Turn off to keep the scanner's original framing.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -85,7 +88,7 @@ struct ImportSettingsView: View {
 
                 Toggle("Read text in images (OCR)", isOn: $ocrEnabled)
                     .onChange(of: ocrEnabled) { _, _ in OCRIndex.shared.applyEnabledSetting() }
-                Text("Envy reads the text inside your images and scans in the background so “img: whiteboard” finds them, and right-click → Copy Text from Image works. On-device, no network. Takes effect on the next launch.")
+                Text("Envy reads the text inside your images and scans in the background so “img: whiteboard” finds them, and right-click → Copy Text from Image works. On-device, no network. Independent of camera capture, so it still reads images you drag or paste in. Takes effect on the next launch.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)

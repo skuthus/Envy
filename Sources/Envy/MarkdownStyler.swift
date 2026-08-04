@@ -366,6 +366,13 @@ enum MarkdownStyler {
             let segments = inner.components(separatedBy: "|")
             let name = segments[0].trimmingCharacters(in: .whitespaces)
             guard imageExtensions.contains((name as NSString).pathExtension.lowercased()) else { continue }
+            // An attachment name is a single leaf inside Attachments/. A name
+            // carrying a path separator or a ".." component is untrusted note
+            // text trying to escape the folder, so it isn't treated as an image
+            // at all (it renders as plain text). This is the choke point every
+            // attachment read/OCR/open/rename flows through.
+            guard !name.contains("/"), !name.contains("\\"),
+                  !name.split(separator: "/", omittingEmptySubsequences: false).contains("..") else { continue }
 
             // After the name: an optional numeric size ("400" or "400x300"),
             // then any remaining text as a caption. So "photo.png|400|Beach" is

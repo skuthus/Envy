@@ -113,7 +113,7 @@ extension ContentView {
             if let color = folderColorMap[target.folder] { noteFolderColorCache[note.id] = color }
             return note
         }
-        return newNotesStartInInbox ? store.createInboxNote(titled: title) : store.create(title: title)
+        return (newNotesStartInInbox && inboxEnabled) ? store.createInboxNote(titled: title) : store.create(title: title)
     }
 
     /// Builds a note from a Continuity Camera capture (the camera pill beside
@@ -189,7 +189,7 @@ extension ContentView {
     /// reconcileSelection() moves the selection to whatever is first —
     /// so the note you just wrote is neither shown nor focused.
     func queryShowing(_ note: Note) -> String {
-        NoteStore.isInInboxFolder(note) && !showInboxInMainList ? "inbox:" : ""
+        inboxEnabled && NoteStore.isInInboxFolder(note) && !showInboxInMainList ? "inbox:" : ""
     }
 
     func createBlankNote() {

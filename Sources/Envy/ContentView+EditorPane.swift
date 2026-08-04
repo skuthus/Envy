@@ -10,7 +10,7 @@ extension ContentView {
     /// The selected note, when it's a fleeting one — drives the two review
     /// buttons in the title bar and nothing else.
     private var fleetingNote: Note? {
-        guard let selectedID, let note = store.note(withID: selectedID),
+        guard inboxEnabled, let selectedID, let note = store.note(withID: selectedID),
               store.isInboxNote(note) else { return nil }
         return note
     }

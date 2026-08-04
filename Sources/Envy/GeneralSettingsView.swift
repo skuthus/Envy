@@ -9,6 +9,7 @@ struct GeneralSettingsView: View {
     @AppStorage("noteDotTrailing") private var noteDotTrailing = true
     @AppStorage("folderListDisplay") private var folderListDisplayRaw = FolderListDisplay.dot.rawValue
     @AppStorage("showDateModified") private var showDateModified = true
+    @AppStorage("inboxEnabled") private var inboxEnabled = true
     @AppStorage("newNotesStartInInbox") private var newNotesStartInInbox = false
     @AppStorage("showInboxInMainList") private var showInboxInMainList = true
     @AppStorage("showDueSort") private var showDueSort = true
@@ -225,11 +226,17 @@ struct GeneralSettingsView: View {
                 }
                 .disabled(!showDateModified)
                 Toggle("Allow sorting by due date", isOn: $showDueSort)
+                Toggle("Enable Inbox (fleeting notes)", isOn: $inboxEnabled)
+                Text("The Inbox is a holding pen for captures you haven't filed. With it on, notes in an Inbox/ folder are fleeting: a count sits beside the search box, an amber ! marks them in the list, and \u{201C}inbox:\u{201D} finds them. Turn it off and there's no inbox at all: no count, no marker, no \u{201C}inbox:\u{201D} operator, and any notes in an Inbox/ folder are treated as ordinary notes.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
                 Toggle("New notes start in the Inbox", isOn: $newNotesStartInInbox)
+                    .disabled(!inboxEnabled)
                 Text("Everything you write begins as a fleeting note, and filing it into The Index becomes a deliberate act, including notes you create by following a [[link]] that doesn't exist yet. Notes made from a template are unaffected, since those arrive with structure you chose deliberately.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 Toggle("Show fleeting notes in the list", isOn: $showInboxInMainList)
+                    .disabled(!inboxEnabled)
                 Text("Notes waiting in Inbox/ appear alongside the rest, marked with a dot. Turn this off to keep them out of the way until you go looking with \u{201C}inbox:\u{201D}.")
                     .font(.caption)
                     .foregroundStyle(.secondary)

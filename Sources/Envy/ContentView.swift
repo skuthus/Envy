@@ -92,6 +92,8 @@ struct ContentView: View {
     @AppStorage("newNotesStartInInbox") var newNotesStartInInbox = false
     @AppStorage("showInboxInMainList") var showInboxInMainList = true
     @AppStorage("searchImageText") var searchImageText = true
+    @AppStorage("cameraEnabled") var cameraEnabled = true
+    @AppStorage("inboxEnabled") var inboxEnabled = true
     @AppStorage("theme") var theme = Theme()
     /// Non-empty while an adaptive theme is selected. The pair is the source
     /// of truth; `theme` above is the face currently in force, rewritten
@@ -317,15 +319,17 @@ struct ContentView: View {
         showInbox: Bool,
         inboxDirectory: URL,
         imageText: [String: String] = [:],
-        foldImageText: Bool = false
+        foldImageText: Bool = false,
+        inboxEnabled: Bool = true
     ) -> SearchComputation {
         // The Index root (folder:'s reference point) is the inbox's parent —
         // already threaded through, so no second directory parameter.
-        var filtered = NoteStore.filtered(notes, query: query, root: inboxDirectory.deletingLastPathComponent(), imageText: imageText, foldImageText: foldImageText)
+        var filtered = NoteStore.filtered(notes, query: query, root: inboxDirectory.deletingLastPathComponent(), imageText: imageText, foldImageText: foldImageText, inboxEnabled: inboxEnabled)
         // Hidden only when the query isn't already about the inbox — asking
         // for "inbox:" and being shown nothing because of a setting
-        // elsewhere would be its own bug.
-        if !showInbox, !query.lowercased().contains("inbox:") {
+        // elsewhere would be its own bug. With the inbox disabled entirely,
+        // Inbox/ notes are ordinary notes and are never hidden.
+        if inboxEnabled, !showInbox, !query.lowercased().contains("inbox:") {
             filtered = filtered.filter { !NoteStore.isInInboxFolder($0) }
         }
         let sorted = sortNotes(filtered, field: sortField, ascending: sortAscending)
@@ -346,13 +350,13 @@ struct ContentView: View {
         // via the directory URL snapshotted before this pass detached) —
         // two different predicates on purpose, same as the call sites they
         // replaced.
-        let fleetingCount = notes.reduce(into: 0) { total, note in
+        let fleetingCount = inboxEnabled ? notes.reduce(into: 0) { total, note in
             if NoteStore.isInInboxFolder(note) { total += 1 }
-        }
+        } : 0
         let standardizedInbox = inboxDirectory.standardizedFileURL
-        let inboxIDs = Set(notes.lazy
+        let inboxIDs = inboxEnabled ? Set(notes.lazy
             .filter { $0.url.deletingLastPathComponent().standardizedFileURL == standardizedInbox }
-            .map(\.id))
+            .map(\.id)) : []
 
         return SearchComputation(notes: pinned, suggestion: suggestion, hasExactTitleMatch: hasExact, fleetingCount: fleetingCount, inboxNoteIDs: inboxIDs)
     }
@@ -376,8 +380,9 @@ struct ContentView: View {
         let inboxDirectory = store.inboxDirectory
         let imageText = OCRIndex.shared.searchText
         let foldImageText = searchImageText
+        let inbox = inboxEnabled
         let result = await Task.detached(priority: .userInitiated) {
-            Self.computeSearch(notes: notesSnapshot, query: querySnapshot, pinnedIDs: pinnedSnapshot, sortField: field, sortAscending: ascending, showInbox: showInbox, inboxDirectory: inboxDirectory, imageText: imageText, foldImageText: foldImageText)
+            Self.computeSearch(notes: notesSnapshot, query: querySnapshot, pinnedIDs: pinnedSnapshot, sortField: field, sortAscending: ascending, showInbox: showInbox, inboxDirectory: inboxDirectory, imageText: imageText, foldImageText: foldImageText, inboxEnabled: inbox)
         }.value
         guard generation == searchComputeGeneration else { return }
         filteredNotesCache = result.notes
@@ -402,7 +407,7 @@ struct ContentView: View {
             notes: store.notes, query: query, pinnedIDs: pinnedNoteIDs,
             sortField: sortField, sortAscending: sortAscending,
             showInbox: showInboxInMainList, inboxDirectory: store.inboxDirectory,
-            imageText: OCRIndex.shared.searchText, foldImageText: searchImageText)
+            imageText: OCRIndex.shared.searchText, foldImageText: searchImageText, inboxEnabled: inboxEnabled)
         filteredNotesCache = result.notes
         suggestionNoteCache = result.suggestion
         queryHasExactTitleMatch = result.hasExactTitleMatch
@@ -886,6 +891,9 @@ private struct RebuildListOnChange: ViewModifier {
             .onChange(of: view.sortAscending) { _, _ in rebuild() }
             .onChange(of: view.pinnedNotePathsRaw) { _, _ in rebuild() }
             .onChange(of: view.showInboxInMainList) { _, _ in rebuild() }
+            // Turning the inbox off changes the badge, the ! markers, and whether
+            // inbox notes are hidden — all in the search caches.
+            .onChange(of: view.inboxEnabled) { _, _ in rebuild() }
     }
 
     private func rebuild() {

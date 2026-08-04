@@ -437,9 +437,9 @@ extension ContentView {
             // different from a tag: search with no hits — so there's nowhere
             // to go back *from*, and clearing the query is the ordinary way
             // out of any query.
-            if fleetingCount > 0 { fleetingBadge }
+            if inboxEnabled, fleetingCount > 0 { fleetingBadge }
             searchField
-            cameraBadge
+            if cameraEnabled { cameraBadge }
         }
         .padding(.horizontal, 10)
         .padding(.top, 10)

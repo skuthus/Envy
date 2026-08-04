@@ -273,7 +273,10 @@ final class HoverAwareTextView: NSTextView {
     /// read-only previews never advertise it.
     override func validRequestor(forSendType sendType: NSPasteboard.PasteboardType?,
                                  returnType: NSPasteboard.PasteboardType?) -> Any? {
-        if attachmentStore != nil, isEditable, sendType == nil,
+        // Camera capture can be hard-disabled (Settings → Import); when off, the
+        // view stops vouching so AppKit never adds "Import from iPhone or iPad".
+        if UserDefaults.standard.object(forKey: "cameraEnabled") as? Bool ?? true,
+           attachmentStore != nil, isEditable, sendType == nil,
            let returnType, CaptureImporter.acceptedTypes.contains(returnType.rawValue) {
             return self
         }

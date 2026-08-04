@@ -1132,6 +1132,19 @@ struct SelfCheck {
             check("-inbox: hides fleeting notes",
                   excluded.map(\.title) == ["Filed thought"])
 
+            // With the inbox disabled, inbox:/-inbox: are inert: no scoping (all
+            // notes returned), but the operator is still consumed so it doesn't
+            // leak in as a literal free term; trailing text still searches.
+            check("inbox: disabled → operator inert, all notes returned",
+                  Set(NoteStore.filtered(all, query: "inbox:", inboxEnabled: false).map(\.title))
+                      == ["Filed thought", "Fleeting one", "Fleeting two"])
+            check("inbox: disabled → -inbox: hides nothing",
+                  Set(NoteStore.filtered(all, query: "-inbox:", inboxEnabled: false).map(\.title))
+                      == ["Filed thought", "Fleeting one", "Fleeting two"])
+            check("inbox: disabled → trailing text still searches",
+                  Set(NoteStore.filtered(all, query: "inbox: bauhaus", inboxEnabled: false).map(\.title))
+                      == ["Filed thought", "Fleeting one"])
+
             // Membership is the folder, not a flag in the file — so moving a
             // note out in Finder files it exactly as Submit does.
             check("membership follows the folder, not the note's text",
@@ -1990,6 +2003,32 @@ struct SelfCheck {
                 check("ocr: recognizes a word with a usable box",
                       words.contains { $0.text.contains("super") && !$0.box.isNull && $0.box.width > 0 })
             }
+        }
+
+        do {
+            print("Path safety")
+            // sanitizedSubfolder rejects traversal, sanitizes components, keeps legit paths.
+            check("subfolder: a legit nested path passes through",
+                  NoteStore.sanitizedSubfolder("Work/Retro notes") == "Work/Retro notes")
+            check("subfolder: doubled slashes collapse",
+                  NoteStore.sanitizedSubfolder("Work//Sub") == "Work/Sub")
+            check("subfolder: a component's colon is rewritten",
+                  NoteStore.sanitizedSubfolder("Work:X/Sub") == "Work-X/Sub")
+            check("subfolder: a .. component is refused", NoteStore.sanitizedSubfolder("../../etc") == nil)
+            check("subfolder: a lone .. is refused", NoteStore.sanitizedSubfolder("..") == nil)
+            check("subfolder: a mid-path .. is refused", NoteStore.sanitizedSubfolder("Work/../../etc") == nil)
+            check("subfolder: an empty path is nil", NoteStore.sanitizedSubfolder("/ /") == nil)
+
+            // isContained: a resolved path must stay within the base.
+            let base = URL(fileURLWithPath: "/tmp/TheIndex/Attachments", isDirectory: true)
+            check("contained: a leaf inside the base is contained",
+                  NoteStore.isContained(base.appendingPathComponent("photo.png"), in: base))
+            check("contained: the base itself is contained",
+                  NoteStore.isContained(base, in: base))
+            check("contained: a ../ escape is not contained",
+                  !NoteStore.isContained(base.appendingPathComponent("../../secret.png"), in: base))
+            check("contained: a sibling folder is not contained",
+                  !NoteStore.isContained(URL(fileURLWithPath: "/tmp/TheIndex/Other/x"), in: base))
         }
 
         print("")

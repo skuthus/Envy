@@ -510,8 +510,10 @@ public final class NoteStore: ObservableObject {
         let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
         let base = trimmedTitle.isEmpty ? "Untitled" : trimmedTitle
         var directory = noteDirectory
-        if let subfolder, !subfolder.isEmpty {
-            directory = noteDirectory.appendingPathComponent(subfolder, isDirectory: true)
+        // Sanitize the subfolder path so a "../" component can't create/write
+        // outside the vault; an unusable path just falls back to the root.
+        if let subfolder, !subfolder.isEmpty, let safe = Self.sanitizedSubfolder(subfolder) {
+            directory = noteDirectory.appendingPathComponent(safe, isDirectory: true)
             try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         }
         let filename = Self.uniqueFilename(for: base, in: directory)
@@ -904,10 +906,16 @@ public final class NoteStore: ObservableObject {
     /// or nil if the move failed.
     @discardableResult
     public func moveNote(_ note: Note, toSubfolder subfolder: String?) -> Note? {
-        let trimmed = subfolder?.trimmingCharacters(in: CharacterSet(charactersIn: "/ ")) ?? ""
-        let targetDir = trimmed.isEmpty
-            ? noteDirectory
-            : noteDirectory.appendingPathComponent(trimmed, isDirectory: true)
+        // A nil/empty subfolder means "move to the root"; a named one is
+        // sanitized so a "../" can't move the note outside the vault (an
+        // unusable path refuses the move rather than escaping).
+        let targetDir: URL
+        if let subfolder, !subfolder.trimmingCharacters(in: CharacterSet(charactersIn: "/ ")).isEmpty {
+            guard let safe = Self.sanitizedSubfolder(subfolder) else { return nil }
+            targetDir = noteDirectory.appendingPathComponent(safe, isDirectory: true)
+        } else {
+            targetDir = noteDirectory
+        }
 
         // No-op if it's already in that folder.
         if note.url.deletingLastPathComponent().standardizedFileURL == targetDir.standardizedFileURL {
@@ -955,14 +963,13 @@ public final class NoteStore: ObservableObject {
     /// a different feature; the one allowed "collision" is a case-only
     /// rename of the folder itself.
     public func renameFolder(from oldPath: String, to newPathRaw: String) -> String? {
-        // Sanitize each component the way filenames are (":" → "-"); "/"
-        // stays meaningful as the separator.
-        let newPath = newPathRaw
-            .split(separator: "/")
-            .map { Self.sanitizedBase(for: String($0)).trimmingCharacters(in: .whitespaces) }
-            .filter { !$0.isEmpty }
-            .joined(separator: "/")
-        guard !newPath.isEmpty, newPath != oldPath else { return nil }
+        // Sanitize each component the way filenames are (":" → "-"), and reject
+        // any "." / ".." so a typed path can't traverse out of the vault; "/"
+        // stays meaningful as the separator. The old path is guarded the same
+        // way so neither side can point outside.
+        guard let newPath = Self.sanitizedSubfolder(newPathRaw),
+              Self.sanitizedSubfolder(oldPath) != nil,
+              newPath != oldPath else { return nil }
 
         let reserved = ["Templates", Self.inboxFolderName, Self.trashFolderName, Self.attachmentsFolderName, Self.dataFolderName]
         guard let newFirst = newPath.split(separator: "/").first,
@@ -974,6 +981,8 @@ public final class NoteStore: ObservableObject {
         let fm = FileManager.default
         let oldURL = noteDirectory.appendingPathComponent(oldPath, isDirectory: true)
         let newURL = noteDirectory.appendingPathComponent(newPath, isDirectory: true)
+        // Belt-and-suspenders: both endpoints must resolve inside the vault.
+        guard Self.isContained(oldURL, in: noteDirectory), Self.isContained(newURL, in: noteDirectory) else { return nil }
         var isDirectory: ObjCBool = false
         guard fm.fileExists(atPath: oldURL.path, isDirectory: &isDirectory), isDirectory.boolValue else { return nil }
         let caseOnly = newPath.lowercased() == oldPath.lowercased()
@@ -1034,7 +1043,43 @@ public final class NoteStore: ObservableObject {
     /// reference resolves the same from any note wherever it sits — mirroring
     /// how a wiki-link resolves by title across the whole Index.
     public func attachmentURL(forName name: String) -> URL {
-        attachmentsDirectory.appendingPathComponent(name)
+        // The name is untrusted note text (from `![[name]]`), so contain it to a
+        // single leaf inside `.attachments/`: strip any directory parts and
+        // refuse "."/"..", so a crafted embed like `![[../../secret.png]]` can
+        // never resolve outside the folder (which would otherwise let merely
+        // opening a note read, OCR, open, or even move an arbitrary file).
+        var leaf = (name as NSString).lastPathComponent
+        if leaf == "." || leaf == ".." || leaf.isEmpty { leaf = "\u{FFFD}" }
+        return attachmentsDirectory.appendingPathComponent(leaf)
+    }
+
+    /// Whether `url` resolves to `base` or somewhere beneath it — the guard
+    /// against a path escaping the vault via `..`. Standardizes first so `..`
+    /// segments are collapsed before the prefix check.
+    nonisolated static func isContained(_ url: URL, in base: URL) -> Bool {
+        let basePath = base.standardizedFileURL.path
+        let urlPath = url.standardizedFileURL.path
+        return urlPath == basePath || urlPath.hasPrefix(basePath + "/")
+    }
+
+    /// A subfolder path relative to the Index root, sanitized for safe use: each
+    /// component gets the same "/"→"-" and ":"→"-" rewrite filenames do, empty
+    /// components (doubled slashes) are dropped, and any "." or ".." component
+    /// is rejected outright so a typed or imported path can never traverse out
+    /// of the vault. nil when nothing usable remains.
+    nonisolated static func sanitizedSubfolder(_ path: String) -> String? {
+        // Sanitize each component inline (a colon becomes "-", as in filenames)
+        // rather than through sanitizedBase, whose "Untitled" fallback would turn
+        // an empty/whitespace component into a real folder. Empty components are
+        // dropped; a "." / ".." component refuses the whole path.
+        let components = path.split(separator: "/").compactMap { raw -> String? in
+            let component = String(raw)
+                .replacingOccurrences(of: ":", with: "-")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            return component.isEmpty ? nil : component
+        }
+        guard !components.isEmpty, !components.contains(where: { $0 == "." || $0 == ".." }) else { return nil }
+        return components.joined(separator: "/")
     }
 
     /// Copies an external file into `.attachments`, leaving the original where
@@ -1071,8 +1116,13 @@ public final class NoteStore: ObservableObject {
     @discardableResult
     public func renameAttachment(from oldName: String, to newName: String) -> String? {
         let dir = attachmentsDirectory
-        let source = dir.appendingPathComponent(oldName)
-        guard FileManager.default.fileExists(atPath: source.path) else { return nil }
+        // Contain the source: `oldName` is untrusted note text, and a rename
+        // moves the file, so a "../" source must never point outside the folder
+        // (that would relocate an arbitrary file into the vault).
+        let source = attachmentURL(forName: oldName)
+        guard Self.isContained(source, in: dir),
+              source.deletingLastPathComponent().standardizedFileURL == dir.standardizedFileURL,
+              FileManager.default.fileExists(atPath: source.path) else { return nil }
         markInternalWrite()
         let finalName = Self.availableAttachmentName(newName, in: dir)
         guard finalName != oldName else { return oldName }
@@ -1668,7 +1718,7 @@ public final class NoteStore: ObservableObject {
     /// `root` (The Index's own directory) is what folder: paths resolve
     /// against — nil (tests, callers without one) falls back to matching a
     /// note's immediate parent-folder name only.
-    nonisolated public static func filtered(_ notes: [Note], query: String, root: URL? = nil, imageText: [String: String] = [:], foldImageText: Bool = false) -> [Note] {
+    nonisolated public static func filtered(_ notes: [Note], query: String, root: URL? = nil, imageText: [String: String] = [:], foldImageText: Bool = false, inboxEnabled: Bool = true) -> [Note] {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return notes }
 
@@ -1676,13 +1726,13 @@ public final class NoteStore: ObservableObject {
         guard !groups.isEmpty else { return notes }
 
         if groups.count == 1 {
-            return matched(in: notes, forGroup: groups[0], root: root, imageText: imageText, foldImageText: foldImageText).sorted(by: rankedHigherFirst).map(\.0)
+            return matched(in: notes, forGroup: groups[0], root: root, imageText: imageText, foldImageText: foldImageText, inboxEnabled: inboxEnabled).sorted(by: rankedHigherFirst).map(\.0)
         }
 
         var bestScoreByID: [String: Int] = [:]
         var noteByID: [String: Note] = [:]
         for group in groups {
-            for (note, score) in matched(in: notes, forGroup: group, root: root, imageText: imageText, foldImageText: foldImageText) {
+            for (note, score) in matched(in: notes, forGroup: group, root: root, imageText: imageText, foldImageText: foldImageText, inboxEnabled: inboxEnabled) {
                 noteByID[note.id] = note
                 bestScoreByID[note.id] = max(bestScoreByID[note.id] ?? Int.min, score)
             }
@@ -1818,7 +1868,7 @@ public final class NoteStore: ObservableObject {
         return parentURL.lastPathComponent.lowercased()
     }
 
-    nonisolated private static func matched(in notes: [Note], forGroup group: String, root: URL? = nil, imageText: [String: String] = [:], foldImageText: Bool = false) -> [(Note, Int)] {
+    nonisolated private static func matched(in notes: [Note], forGroup group: String, root: URL? = nil, imageText: [String: String] = [:], foldImageText: Bool = false, inboxEnabled: Bool = true) -> [(Note, Int)] {
         let q = group.lowercased()
         let tokens = Self.tokenize(q)
 
@@ -1875,13 +1925,17 @@ public final class NoteStore: ObservableObject {
         // excluding more than one thing.
         for token in tokens {
             if token == "-inbox:" {
-                isInboxExcluded = true
+                // With the inbox disabled the operator is inert (the fleeting
+                // concept doesn't exist), but the token is still consumed so it
+                // never leaks in as a literal free term.
+                if inboxEnabled { isInboxExcluded = true }
             } else if token.hasPrefix("inbox:") {
                 // A bare "inbox:" scopes to fleeting notes; anything after
                 // the colon is ordinary search text within them, so it falls
                 // through to freeTerms below like any other operator's
-                // trailing words.
-                isInboxOnly = true
+                // trailing words. Disabled: no scoping, but trailing text still
+                // searches.
+                if inboxEnabled { isInboxOnly = true }
                 let rest = String(token.dropFirst("inbox:".count))
                 if !rest.isEmpty { freeTerms.append(rest) }
             } else if token == "-todo:" {
