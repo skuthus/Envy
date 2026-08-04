@@ -1,9 +1,5 @@
 import SwiftUI
 import AppKit
-import PDFKit
-import Vision
-import CoreImage
-import UniformTypeIdentifiers
 import EnvyCore
 
 final class HoverAwareTextView: NSTextView {
@@ -226,7 +222,7 @@ final class HoverAwareTextView: NSTextView {
            let file = urls.first(where: { MarkdownStyler.imageExtensions.contains($0.pathExtension.lowercased()) }) {
             stored = store.copyAttachment(from: file)
         } else {
-            stored = imageNameFromData(on: pb, store: store)
+            stored = CaptureImporter.imageName(from: pb, store: store)
         }
         guard let name = stored else { return false }
         // Land it where the cursor is, not wherever the caret last sat.
@@ -243,24 +239,9 @@ final class HoverAwareTextView: NSTextView {
         guard let store = attachmentStore, isEditable else { return false }
         let pb = NSPasteboard.general
         if let text = pb.string(forType: .string), !text.isEmpty { return false }
-        guard let name = imageNameFromData(on: pb, store: store) else { return false }
+        guard let name = CaptureImporter.imageName(from: pb, store: store) else { return false }
         insertImageReference(name)
         return true
-    }
-
-    /// Pulls PNG (or TIFF, re-encoded to PNG) image data off a pasteboard and
-    /// stores it under `base`, returning the saved filename. Paste and drop
-    /// keep the default "Pasted image"; a Continuity Camera photo passes its
-    /// own "Photo - <timestamp>" base.
-    private func imageNameFromData(on pb: NSPasteboard, store: NoteStore, base: String = "Pasted image") -> String? {
-        if let data = pb.data(forType: .png) {
-            return store.saveAttachment(data: data, base: base, ext: "png")
-        }
-        if let tiff = pb.data(forType: .tiff),
-           let png = NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]) {
-            return store.saveAttachment(data: png, base: base, ext: "png")
-        }
-        return nil
     }
 
     /// Inserts `![[name]]` on its own line with the blank line after that the
@@ -283,23 +264,6 @@ final class HoverAwareTextView: NSTextView {
 
     // MARK: - Continuity Camera (Import from iPhone or iPad)
 
-    /// The `YYMMDD-HHmmss` stamp that dates a capture's filename — sortable
-    /// (unlike MMDDYY) and filesystem-safe. POSIX locale so it never localizes.
-    private static func captureStamp(_ date: Date = Date()) -> String {
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.dateFormat = "yyMMdd-HHmmss"
-        return formatter.string(from: date)
-    }
-
-    /// Image UTIs NSImage can read, plus PDF — a "Scan Documents" capture
-    /// arrives as a multi-page PDF rather than an image. Computed once.
-    private static let acceptedCaptureTypes: Set<String> = {
-        var types = Set(NSImage.imageTypes)
-        types.insert(UTType.pdf.identifier)
-        return types
-    }()
-
     /// Declaring this view a valid requestor for an image (or PDF) return type
     /// is what makes AppKit insert the "Import from iPhone or iPad → Take Photo
     /// / Scan Documents" section into the Edit menu and this view's right-click
@@ -309,94 +273,10 @@ final class HoverAwareTextView: NSTextView {
     override func validRequestor(forSendType sendType: NSPasteboard.PasteboardType?,
                                  returnType: NSPasteboard.PasteboardType?) -> Any? {
         if attachmentStore != nil, isEditable, sendType == nil,
-           let returnType, Self.acceptedCaptureTypes.contains(returnType.rawValue) {
+           let returnType, CaptureImporter.acceptedTypes.contains(returnType.rawValue) {
             return self
         }
         return super.validRequestor(forSendType: sendType, returnType: returnType)
-    }
-
-    /// Rasterizes each page of a scanned PDF to a PNG in the vault, returning
-    /// the saved filenames in page order. Rendered at 2× the page's point size
-    /// so text stays crisp on screen (and, later, legible to OCR); a white
-    /// backdrop stands in for paper behind any transparency. First cut by
-    /// design: rasterize rather than attach the PDF, so scans ride the same
-    /// image pipeline as every other embed.
-    private func rasterizedPageNames(fromPDF data: Data, store: NoteStore, stamp: String) -> [String] {
-        guard let doc = PDFDocument(data: data) else { return [] }
-        let scale: CGFloat = 2
-        var names: [String] = []
-        for index in 0..<doc.pageCount {
-            guard let page = doc.page(at: index) else { continue }
-            let bounds = page.bounds(for: .mediaBox)
-            let pw = Int(bounds.width * scale), ph = Int(bounds.height * scale)
-            guard pw > 0, ph > 0,
-                  let rep = NSBitmapImageRep(
-                    bitmapDataPlanes: nil, pixelsWide: pw, pixelsHigh: ph,
-                    bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
-                    colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0),
-                  let ctx = NSGraphicsContext(bitmapImageRep: rep) else { continue }
-            NSGraphicsContext.saveGraphicsState()
-            NSGraphicsContext.current = ctx
-            let cg = ctx.cgContext
-            cg.setFillColor(NSColor.white.cgColor)
-            cg.fill(CGRect(x: 0, y: 0, width: pw, height: ph))
-            cg.scaleBy(x: scale, y: scale)
-            page.draw(with: .mediaBox, to: cg)   // handles the page's box + rotation
-            NSGraphicsContext.restoreGraphicsState()
-            guard var pageImage = rep.cgImage else { continue }
-            // Continuity's scanner perspective-corrects but often leaves a strip
-            // of background around the page; crop it to the detected document
-            // edge. A no-op (kept original) when nothing confident is found.
-            if let cropped = Self.documentCropped(pageImage) { pageImage = cropped }
-            guard let png = Self.pngData(from: pageImage) else { continue }
-            // "Scan - 260803-214234", the pages of one scan sharing a stamp and
-            // numbered "- p2", "- p3"; a single-page scan drops the page suffix.
-            let base = doc.pageCount > 1 ? "Scan - \(stamp) - p\(index + 1)" : "Scan - \(stamp)"
-            if let name = store.saveAttachment(data: png, base: base, ext: "png") {
-                names.append(name)
-            }
-        }
-        return names
-    }
-
-    /// Shared Core Image context for the crop pass — creating one per page is
-    /// wasteful (it spins up a GPU pipeline each time).
-    private static let ciContext = CIContext()
-
-    private static func pngData(from cgImage: CGImage) -> Data? {
-        NSBitmapImageRep(cgImage: cgImage).representation(using: .png, properties: [:])
-    }
-
-    /// Finds the page inside an already-flat scan and crops + deskews to its
-    /// four corners, dropping the background margin the scanner left behind.
-    /// Returns nil — caller keeps the original — when detection is unconfident
-    /// or the page doesn't fill a real share of the frame (a guard against a
-    /// spurious tiny quad over-cropping a good scan). On-device (Vision), no
-    /// network. Identity when the page already fills the frame, so it's safe to
-    /// run unconditionally.
-    private static func documentCropped(_ image: CGImage) -> CGImage? {
-        // Opt-out (Settings → Editor → "Crop scans to the page edge"); default on.
-        guard UserDefaults.standard.object(forKey: "scanAutoCrop") as? Bool ?? true else { return nil }
-        let request = VNDetectDocumentSegmentationRequest()
-        let handler = VNImageRequestHandler(cgImage: image, options: [:])
-        guard (try? handler.perform([request])) != nil,
-              let page = request.results?.first,
-              page.confidence > 0.5 else { return nil }
-        let box = page.boundingBox
-        guard box.width * box.height > 0.4 else { return nil }
-
-        // Vision's normalized corners share CIImage's bottom-left origin, so
-        // scaling by pixel size maps straight across with no flip.
-        let source = CIImage(cgImage: image)
-        let w = CGFloat(image.width), h = CGFloat(image.height)
-        func corner(_ point: CGPoint) -> CIVector { CIVector(x: point.x * w, y: point.y * h) }
-        let corrected = source.applyingFilter("CIPerspectiveCorrection", parameters: [
-            "inputTopLeft": corner(page.topLeft),
-            "inputTopRight": corner(page.topRight),
-            "inputBottomLeft": corner(page.bottomLeft),
-            "inputBottomRight": corner(page.bottomRight),
-        ])
-        return ciContext.createCGImage(corrected, from: corrected.extent)
     }
 }
 
@@ -411,41 +291,18 @@ extension HoverAwareTextView {
         super.writeSelection(to: pboard, types: types)
     }
 
-    /// Receives a Continuity Camera capture. A photo (image data) becomes one
-    /// embed; a document scan (multi-page PDF) rasterizes to one PNG embed per
-    /// page, inserted in order. Everything routes through the same Attachments/
-    /// + `![[name]]` pipeline as paste and drop; a non-image board falls to the
-    /// text view's own handling.
+    /// Receives a Continuity Camera capture: a photo becomes one embed, a scan
+    /// one per page, each inserted in order through the shared CaptureImporter →
+    /// `![[name]]` pipeline. A non-image board falls to the text view's own
+    /// handling.
     override func readSelection(from pboard: NSPasteboard) -> Bool {
         guard let store = attachmentStore, isEditable else {
             return super.readSelection(from: pboard)
         }
-        // One stamp per capture, so a multi-page scan's pages share it.
-        let stamp = Self.captureStamp()
-
-        // Scan Documents → PDF: rasterize every page, no PDF attachment.
-        if let pdfData = pboard.data(forType: NSPasteboard.PasteboardType(UTType.pdf.identifier)) {
-            let names = rasterizedPageNames(fromPDF: pdfData, store: store, stamp: stamp)
-            guard !names.isEmpty else { return false }
-            for name in names { insertImageReference(name) }
-            return true
-        }
-
-        // Take Photo → image data: reuse the paste path, named as a capture.
-        if let name = imageNameFromData(on: pboard, store: store, base: "Photo - \(stamp)") {
-            insertImageReference(name)
-            return true
-        }
-
-        // A capture delivered only as a file URL on the board.
-        if let urls = pboard.readObjects(forClasses: [NSURL.self],
-                                         options: [.urlReadingFileURLsOnly: true]) as? [URL],
-           let file = urls.first(where: { MarkdownStyler.imageExtensions.contains($0.pathExtension.lowercased()) }),
-           let name = store.copyAttachment(from: file) {
-            insertImageReference(name)
-            return true
-        }
-        return super.readSelection(from: pboard)
+        let names = CaptureImporter.saveImages(from: pboard, into: store)
+        guard !names.isEmpty else { return super.readSelection(from: pboard) }
+        for name in names { insertImageReference(name) }
+        return true
     }
 }
 

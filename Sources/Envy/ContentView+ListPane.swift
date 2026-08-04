@@ -439,9 +439,33 @@ extension ContentView {
             // out of any query.
             if fleetingCount > 0 { fleetingBadge }
             searchField
+            cameraBadge
         }
         .padding(.horizontal, 10)
         .padding(.top, 10)
+    }
+
+    /// A camera pill mirroring the fleeting badge, on the far side of the search
+    /// field: press it to Take Photo or Scan Documents from an iPhone straight
+    /// into a fresh note. The SwiftUI capsule is the look; a transparent AppKit
+    /// requestor floats on top to drive Continuity Camera and hand back the
+    /// captured images.
+    private var cameraBadge: some View {
+        ZStack {
+            Image(systemName: "camera")
+                .font(.system(size: 13 * interfaceFontScale, weight: .semibold))
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 6)
+                .frame(minWidth: searchControlDiameter, minHeight: searchControlDiameter)
+                .background(Capsule().fill(searchFieldBackground))
+                .glassEffect(.regular, in: Capsule())
+                .overlay(Capsule().strokeBorder(Color(nsColor: searchFieldBorderColor), lineWidth: 1.5))
+            ContinuityCaptureButton(store: { store }) { names in
+                createNoteFromCapture(imageNames: names)
+            }
+        }
+        .fixedSize()
+        .help("New note from an iPhone photo or scan")
     }
 
     /// How many notes are sitting in Inbox/ — counted over every note

@@ -116,6 +116,28 @@ extension ContentView {
         return newNotesStartInInbox ? store.createInboxNote(titled: title) : store.create(title: title)
     }
 
+    /// Builds a note from a Continuity Camera capture (the camera pill beside
+    /// search): titled "Note - MMDDYY - HHMMSS", body the captured pages embedded
+    /// in order. Lands at the Index root, not the Inbox — reaching for the camera
+    /// is itself the deliberate act that filing-to-Inbox otherwise forces. Then
+    /// it selects the note and queues OCR for the new images so they're searchable.
+    func createNoteFromCapture(imageNames: [String]) {
+        guard !imageNames.isEmpty else { return }
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "MMddyy - HHmmss"
+        let note = store.create(title: "Note - \(formatter.string(from: Date()))")
+        var withImages = note
+        // Each embed on its own line with the trailing blank line the block image
+        // renderer reserves its room on — the same shape insertImageReference uses.
+        withImages.content = imageNames.map { "![[\($0)]]\n\n" }.joined()
+        store.save(withImages)
+        query = queryShowing(note)
+        selectedID = note.id
+        if moveFocusToEditorOnEnter { focusedField = .editor }
+        for name in imageNames { OCRIndex.shared.index(imageNamed: name, store: store) }
+    }
+
     /// Splits "Folder/Title" into its parts when — and only when — the part
     /// before the last "/" case-insensitively matches an existing subfolder
     /// path (nested included: "Projects/Work/Note"). Deliberately never
