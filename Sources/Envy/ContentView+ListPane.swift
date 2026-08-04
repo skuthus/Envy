@@ -453,7 +453,11 @@ extension ContentView {
     private var cameraBadge: some View {
         ZStack {
             Image(systemName: "camera")
-                .font(.system(size: 13 * interfaceFontScale, weight: .semibold))
+                // Sized down from the digit's 13pt: the camera glyph is wider,
+                // so at 13 its width + padding pushed the pill past the circle
+                // diameter, making it larger than the fleeting badge. At 11 it
+                // fits inside searchControlDiameter, matching that pill exactly.
+                .font(.system(size: 11 * interfaceFontScale, weight: .semibold))
                 .foregroundStyle(.secondary)
                 .padding(.horizontal, 6)
                 .frame(minWidth: searchControlDiameter, minHeight: searchControlDiameter)
