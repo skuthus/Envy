@@ -27,6 +27,7 @@ struct GeneralSettingsView: View {
     @AppStorage("footerClockDateFormat") private var footerClockDateFormatRaw = ClockDateFormat.short.rawValue
     @AppStorage("showFooterClockOnlyWhenFullScreen") private var showFooterClockOnlyWhenFullScreen = false
     @AppStorage("plainTextMode") private var plainTextMode = false
+    @AppStorage("scanAutoCrop") private var scanAutoCrop = true
     // AI provenance is hidden until the feature is designed — the control is
     // gone from Settings, so this stays false and the editor's signature pill
     // and delete-protection never engage. Kept declared so restoring the
@@ -265,6 +266,11 @@ struct GeneralSettingsView: View {
                         Text(trigger.label).tag(trigger)
                     }
                 }
+                Toggle("Crop scans to the page edge", isOn: $scanAutoCrop)
+                Text("When you Scan Documents from an iPhone, Envy trims the background around the page and straightens it. On-device. Turn off to keep the scanner's original framing.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
                 Toggle("Plain-text mode (ignore markdown formatting)", isOn: $plainTextMode)
                 Toggle("Show interlinks in footer", isOn: $showBacklinks)
                 Toggle("Show note and folder counts in footer", isOn: $showFooterVaultCounts)
