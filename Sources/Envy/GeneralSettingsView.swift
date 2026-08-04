@@ -27,9 +27,6 @@ struct GeneralSettingsView: View {
     @AppStorage("footerClockDateFormat") private var footerClockDateFormatRaw = ClockDateFormat.short.rawValue
     @AppStorage("showFooterClockOnlyWhenFullScreen") private var showFooterClockOnlyWhenFullScreen = false
     @AppStorage("plainTextMode") private var plainTextMode = false
-    @AppStorage("scanAutoCrop") private var scanAutoCrop = true
-    @AppStorage("ocrEnabled") private var ocrEnabled = true
-    @AppStorage("searchImageText") private var searchImageText = true
     // AI provenance is hidden until the feature is designed — the control is
     // gone from Settings, so this stays false and the editor's signature pill
     // and delete-protection never engage. Kept declared so restoring the
@@ -268,23 +265,6 @@ struct GeneralSettingsView: View {
                         Text(trigger.label).tag(trigger)
                     }
                 }
-                Toggle("Crop scans to the page edge", isOn: $scanAutoCrop)
-                Text("When you Scan Documents from an iPhone, Envy trims the background around the page and straightens it. On-device. Turn off to keep the scanner's original framing.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                Toggle("Read text in images (OCR)", isOn: $ocrEnabled)
-                    .onChange(of: ocrEnabled) { _, _ in OCRIndex.shared.applyEnabledSetting() }
-                Text("Envy reads the text inside your images and scans in the background so “img: whiteboard” finds them, and right-click → Copy Text from Image works. On-device, no network. Takes effect on the next launch.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                Toggle("Include image text in every search", isOn: $searchImageText)
-                    .disabled(!ocrEnabled)
-                Text("With this on, a plain search like “whiteboard” also finds notes whose images contain the word, no “img:” needed. Off, image text is searchable only through the “img:” operator.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
                 Toggle("Plain-text mode (ignore markdown formatting)", isOn: $plainTextMode)
                 Toggle("Show interlinks in footer", isOn: $showBacklinks)
                 Toggle("Show note and folder counts in footer", isOn: $showFooterVaultCounts)

@@ -24,6 +24,11 @@ struct ImportSettingsView: View {
     @State private var loadingFolders = false
     @State private var folderError: String?
 
+    // Camera / scanning / OCR — capturing the physical world into notes.
+    @AppStorage("scanAutoCrop") private var scanAutoCrop = true
+    @AppStorage("ocrEnabled") private var ocrEnabled = true
+    @AppStorage("searchImageText") private var searchImageText = true
+
     // Kindle import — same layout DNA as the Apple Notes section above.
     @AppStorage("kindleImportEnabled") private var kindleEnabled = false
     @AppStorage("kindleTitleReference") private var kindleTitleReference = "page"
@@ -48,6 +53,33 @@ struct ImportSettingsView: View {
 
     var body: some View {
         Form {
+            Section("Camera & Scanning") {
+                Text("Capture the physical world into notes: the camera pill beside the search field (and right-click → Import from iPhone in a note) takes a photo or scans a document straight in. Text in your images and scans is read on-device so you can search it.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Toggle("Crop scans to the page edge", isOn: $scanAutoCrop)
+                Text("When you Scan Documents from an iPhone, Envy trims the background around the page and straightens it. On-device. Turn off to keep the scanner's original framing.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Toggle("Read text in images (OCR)", isOn: $ocrEnabled)
+                    .onChange(of: ocrEnabled) { _, _ in OCRIndex.shared.applyEnabledSetting() }
+                Text("Envy reads the text inside your images and scans in the background so “img: whiteboard” finds them, and right-click → Copy Text from Image works. On-device, no network. Takes effect on the next launch.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Toggle("Include image text in every search", isOn: $searchImageText)
+                    .disabled(!ocrEnabled)
+                Text("With this on, a plain search like “whiteboard” also finds notes whose images contain the word, no “img:” needed. Off, image text is searchable only through the “img:” operator.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
             Section("Apple Notes") {
                 Toggle("Enable Apple Notes import", isOn: $importEnabled)
 
