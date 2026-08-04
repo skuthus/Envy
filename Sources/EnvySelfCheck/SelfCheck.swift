@@ -1885,6 +1885,32 @@ struct SelfCheck {
                   }())
         }
 
+        do {
+            print("OCR search (img:)")
+            func note(_ title: String, content: String) -> Note {
+                Note(id: title, url: URL(fileURLWithPath: "/tmp/TheIndex/\(title).md"),
+                     content: content, modifiedDate: Date())
+            }
+            let scan = note("Meeting", content: "meeting\n\n![[scan.png]]\n")
+            let plain = note("Elsewhere", content: "a whiteboard is mentioned here, no image")
+            let notes = [scan, plain]
+            let ocr = ["scan.png": "whiteboard quarterly roadmap"]
+
+            func titles(_ query: String, _ text: [String: String] = ocr) -> Set<String> {
+                Set(NoteStore.filtered(notes, query: query, imageText: text).map(\.title))
+            }
+            check("img: term finds a note by its image's recognized text",
+                  titles("img: whiteboard") == ["Meeting"])
+            check("without the OCR map, img: term can't see into the image",
+                  titles("img: whiteboard", [:]) == [])
+            check("img: still matches the note body too",
+                  titles("img: meeting") == ["Meeting"])
+            check("a body-only 'whiteboard' isn't an image match",
+                  !titles("img: whiteboard").contains("Elsewhere"))
+            check("img: term with no hit anywhere finds nothing",
+                  titles("img: unicorn") == [])
+        }
+
         // OCR: render clear text to a bitmap and read it back with Vision, the
         // same engine "Copy Text from Image" and scan search lean on.
         do {

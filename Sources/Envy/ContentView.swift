@@ -314,11 +314,12 @@ struct ContentView: View {
         sortField: NoteSortField,
         sortAscending: Bool,
         showInbox: Bool,
-        inboxDirectory: URL
+        inboxDirectory: URL,
+        imageText: [String: String] = [:]
     ) -> SearchComputation {
         // The Index root (folder:'s reference point) is the inbox's parent —
         // already threaded through, so no second directory parameter.
-        var filtered = NoteStore.filtered(notes, query: query, root: inboxDirectory.deletingLastPathComponent())
+        var filtered = NoteStore.filtered(notes, query: query, root: inboxDirectory.deletingLastPathComponent(), imageText: imageText)
         // Hidden only when the query isn't already about the inbox — asking
         // for "inbox:" and being shown nothing because of a setting
         // elsewhere would be its own bug.
@@ -371,8 +372,9 @@ struct ContentView: View {
         // reachable from the detached task — and an index switch that moves
         // it also reloads store.notes, which re-runs this whole pass anyway.
         let inboxDirectory = store.inboxDirectory
+        let imageText = OCRIndex.shared.searchText
         let result = await Task.detached(priority: .userInitiated) {
-            Self.computeSearch(notes: notesSnapshot, query: querySnapshot, pinnedIDs: pinnedSnapshot, sortField: field, sortAscending: ascending, showInbox: showInbox, inboxDirectory: inboxDirectory)
+            Self.computeSearch(notes: notesSnapshot, query: querySnapshot, pinnedIDs: pinnedSnapshot, sortField: field, sortAscending: ascending, showInbox: showInbox, inboxDirectory: inboxDirectory, imageText: imageText)
         }.value
         guard generation == searchComputeGeneration else { return }
         filteredNotesCache = result.notes
@@ -396,7 +398,8 @@ struct ContentView: View {
         let result = Self.computeSearch(
             notes: store.notes, query: query, pinnedIDs: pinnedNoteIDs,
             sortField: sortField, sortAscending: sortAscending,
-            showInbox: showInboxInMainList, inboxDirectory: store.inboxDirectory)
+            showInbox: showInboxInMainList, inboxDirectory: store.inboxDirectory,
+            imageText: OCRIndex.shared.searchText)
         filteredNotesCache = result.notes
         suggestionNoteCache = result.suggestion
         queryHasExactTitleMatch = result.hasExactTitleMatch
@@ -742,6 +745,16 @@ struct ContentView: View {
             rebuildNoteFolderCaches()
         }
         .onAppear { recomputeFolderState() }
+        // Backfill OCR for image attachments in the background (cheap when the
+        // cache is warm), and redo it when the Index changes underfoot.
+        .onAppear { OCRIndex.shared.refresh(store: store) }
+        .onChange(of: store.inboxDirectory) { _, _ in OCRIndex.shared.refresh(store: store) }
+        // When a backfill lands, an already-typed `img:` query needs to re-run
+        // to fold the freshly recognized text in. Only pay for it when the
+        // query actually scopes to images.
+        .onReceive(OCRIndex.shared.$searchText) { _ in
+            if query.lowercased().contains("img:") { Task { await recomputeFilteredNotes() } }
+        }
         .onChange(of: store.notes) { _, _ in
             // Fires once a reload actually finishes (folder switch, note
             // added/removed/renamed elsewhere, etc.) — falls back to the

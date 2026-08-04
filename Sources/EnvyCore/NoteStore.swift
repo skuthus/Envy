@@ -1668,7 +1668,7 @@ public final class NoteStore: ObservableObject {
     /// `root` (The Index's own directory) is what folder: paths resolve
     /// against — nil (tests, callers without one) falls back to matching a
     /// note's immediate parent-folder name only.
-    nonisolated public static func filtered(_ notes: [Note], query: String, root: URL? = nil) -> [Note] {
+    nonisolated public static func filtered(_ notes: [Note], query: String, root: URL? = nil, imageText: [String: String] = [:]) -> [Note] {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return notes }
 
@@ -1676,13 +1676,13 @@ public final class NoteStore: ObservableObject {
         guard !groups.isEmpty else { return notes }
 
         if groups.count == 1 {
-            return matched(in: notes, forGroup: groups[0], root: root).sorted(by: rankedHigherFirst).map(\.0)
+            return matched(in: notes, forGroup: groups[0], root: root, imageText: imageText).sorted(by: rankedHigherFirst).map(\.0)
         }
 
         var bestScoreByID: [String: Int] = [:]
         var noteByID: [String: Note] = [:]
         for group in groups {
-            for (note, score) in matched(in: notes, forGroup: group, root: root) {
+            for (note, score) in matched(in: notes, forGroup: group, root: root, imageText: imageText) {
                 noteByID[note.id] = note
                 bestScoreByID[note.id] = max(bestScoreByID[note.id] ?? Int.min, score)
             }
@@ -1818,7 +1818,7 @@ public final class NoteStore: ObservableObject {
         return parentURL.lastPathComponent.lowercased()
     }
 
-    nonisolated private static func matched(in notes: [Note], forGroup group: String, root: URL? = nil) -> [(Note, Int)] {
+    nonisolated private static func matched(in notes: [Note], forGroup group: String, root: URL? = nil, imageText: [String: String] = [:]) -> [(Note, Int)] {
         let q = group.lowercased()
         let tokens = Self.tokenize(q)
 
@@ -2203,8 +2203,19 @@ public final class NoteStore: ObservableObject {
             // scoreByTermPresence already treats an empty terms list as an
             // automatic 0-score match (a pure operator query like "todo:"
             // with nothing else to search for).
+            // Scoped OCR: `img: whiteboard` searches the recognized text of the
+            // note's own images too, not just its body — the whole point of
+            // indexing scans. Only built when img: is active (so only image
+            // notes, already filtered above, pay it) and there's text to match.
+            var ocrBlob = ""
+            if isImageOnly, !imageText.isEmpty, !freeTerms.isEmpty {
+                for link in note.wikiLinks
+                where Note.imageAttachmentExtensions.contains((link as NSString).pathExtension.lowercased()) {
+                    if let recognized = imageText[link] { ocrBlob += recognized + " " }
+                }
+            }
             if hasOperator || freeTerms.count > 1 {
-                return Self.scoreByTermPresence(note: note, terms: freeTerms).map { (note, $0) }
+                return Self.scoreByTermPresence(note: note, terms: freeTerms, extra: ocrBlob).map { (note, $0) }
             }
             guard let term = freeTerms.first else { return (note, 0) }
 
@@ -2233,14 +2244,18 @@ public final class NoteStore: ObservableObject {
     /// from both title and content entirely. An empty terms list always
     /// "matches" with a score of 0 — used when a tag:/date: filter has no
     /// free text alongside it.
-    nonisolated private static func scoreByTermPresence(note: Note, terms: [String]) -> Int? {
+    nonisolated private static func scoreByTermPresence(note: Note, terms: [String], extra: String = "") -> Int? {
         guard !terms.isEmpty else { return 0 }
         let titleLower = note.lowercasedTitle
         let contentLower = note.lowercasedContent
         var titleMatches = 0
         for term in terms {
             let inTitle = fastContains(titleLower, term)
-            guard inTitle || fastContains(contentLower, term) else { return nil }
+            // `extra` is the note's recognized image text under a scoped img:
+            // query — a term found only there still counts as a match (like
+            // content), just never boosts the title-based ranking.
+            guard inTitle || fastContains(contentLower, term)
+                || (!extra.isEmpty && fastContains(extra, term)) else { return nil }
             if inTitle { titleMatches += 1 }
         }
         return titleMatches

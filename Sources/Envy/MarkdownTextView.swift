@@ -274,6 +274,11 @@ final class HoverAwareTextView: NSTextView {
         textStorage?.replaceCharacters(in: selection, with: insertion)
         didChangeText()
         setSelectedRange(NSRange(location: selection.location + (insertion as NSString).length, length: 0))
+        // A freshly embedded image gets OCR'd in the background so it's
+        // searchable without waiting for the next full backfill.
+        if let store = attachmentStore {
+            OCRIndex.shared.index(imageNamed: name, store: store)
+        }
     }
 
     // MARK: - Continuity Camera (Import from iPhone or iPad)
