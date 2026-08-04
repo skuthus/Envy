@@ -393,20 +393,21 @@ final class AttachmentView: NSView {
     /// filters without re-recognizing. Keyed by the URL it was recognized from.
     private var recognizedWords: [ImageOCR.OCRWord] = []
     private var recognizedURL: URL?
-    private var highlightTask: Task<Void, Never>?
     /// Drawn above the picture (a plain draw() would paint under the imageView
     /// subview and be hidden). Passes clicks through so it never eats a right-
     /// click or a Live Text drag.
     private let highlightOverlay = ImageHighlightOverlay()
 
     // MARK: Live Text (drag-select the text on a scan)
-    /// One analyzer for every attachment view — stateless and meant to be reused.
-    private static let analyzer = ImageAnalyzer()
     /// VisionKit's Live Text layer. Sized to the image's *displayed* rect (not
     /// the whole view) so its normalized text geometry lands on the picture even
     /// when a tall page is letterboxed — the same content rect #1's highlights use.
     private let liveTextOverlay = ImageAnalysisOverlayView()
     private var liveTextTask: Task<Void, Never>?
+    /// Analysis is lazy — kicked off on first hover, not on display — so images
+    /// you never point at cost nothing. Reset when the image changes.
+    private var liveTextRequested = false
+    private var hoverTracking: NSTrackingArea?
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -429,7 +430,7 @@ final class AttachmentView: NSView {
         addSubview(captionLabel)
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
-    deinit { highlightTask?.cancel(); liveTextTask?.cancel() }
+    deinit { liveTextTask?.cancel() }
 
     var displayImage: NSImage? {
         get { imageView.image }
@@ -438,9 +439,27 @@ final class AttachmentView: NSView {
             isBroken = (newValue == nil)
             imageView.isHidden = isBroken
             highlightOverlay.imageSize = newValue?.size ?? .zero
-            analyzeForLiveText()
+            // New image → drop any prior Live Text; re-armed on next hover.
+            liveTextTask?.cancel()
+            liveTextOverlay.analysis = nil
+            liveTextRequested = false
             needsDisplay = true
         }
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let hoverTracking { removeTrackingArea(hoverTracking) }
+        let area = NSTrackingArea(rect: bounds,
+                                  options: [.mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect],
+                                  owner: self, userInfo: nil)
+        addTrackingArea(area)
+        hoverTracking = area
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        super.mouseEntered(with: event)
+        ensureLiveText()   // prime Live Text the moment the pointer arrives
     }
 
     /// The picture's actual drawn rect inside this view — proportional fit,
@@ -454,19 +473,17 @@ final class AttachmentView: NSView {
         return NSRect(x: frame.minX, y: frame.maxY - h, width: w, height: h)   // top-left, y-up
     }
 
-    /// Runs Live Text analysis for the current image on a background task and
-    /// hands the result to the overlay. Gated on the OCR setting and a real
-    /// image; cleanly superseded when the image swaps before analysis finishes.
-    private func analyzeForLiveText() {
-        liveTextTask?.cancel()
-        liveTextOverlay.analysis = nil
-        guard UserDefaults.standard.object(forKey: "ocrEnabled") as? Bool ?? true,
-              !isBroken, let image = imageView.image,
-              let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return }
+    /// Requests Live Text analysis once, on first hover, from the shared cache —
+    /// so pointing at a scan primes selection, while scans you never touch stay
+    /// unanalyzed. Gated on the OCR setting and a real image.
+    private func ensureLiveText() {
+        guard !liveTextRequested,
+              UserDefaults.standard.object(forKey: "ocrEnabled") as? Bool ?? true,
+              !isBroken, let url = attachmentURL else { return }
+        liveTextRequested = true
         liveTextTask = Task { [weak self] in
-            let configuration = ImageAnalyzer.Configuration([.text])
-            guard let analysis = try? await Self.analyzer.analyze(cgImage, orientation: .up, configuration: configuration),
-                  let self, self.imageView.image === image else { return }
+            let analysis = await OCRIndex.shared.liveTextAnalysis(for: url)
+            guard let self, self.attachmentURL == url, let analysis else { return }
             self.liveTextOverlay.analysis = analysis
         }
     }
@@ -484,7 +501,6 @@ final class AttachmentView: NSView {
     }
 
     private func refreshHighlights() {
-        highlightTask?.cancel()
         guard UserDefaults.standard.object(forKey: "ocrEnabled") as? Bool ?? true,
               !highlightTerms.isEmpty, !isBroken, let url = attachmentURL else {
             setHighlightBoxes([]); return
@@ -492,8 +508,8 @@ final class AttachmentView: NSView {
         if recognizedURL == url {          // words already in hand — just re-filter
             computeHighlightBoxes(); return
         }
-        highlightTask = Task { [weak self] in
-            let words = await Task.detached { ImageOCR.recognizeWords(in: url) }.value
+        // Shared, cached recognition — a note switch back is instant.
+        OCRIndex.shared.recognizeWords(for: url) { [weak self] words in
             guard let self, self.attachmentURL == url else { return }
             self.recognizedWords = words
             self.recognizedURL = url

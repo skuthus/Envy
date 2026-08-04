@@ -1,5 +1,6 @@
 import Foundation
 import AppKit
+import VisionKit
 import EnvyCore
 
 /// Coordinates on-device OCR of image attachments: recognition runs on a
@@ -19,9 +20,52 @@ final class OCRIndex: ObservableObject {
     @Published private(set) var searchText: [String: String] = [:]
 
     private var refreshing = false
+    /// The Attachments folder's modification date at the last backfill, per
+    /// index. The dir's mtime changes only when a file is added or removed (our
+    /// images are content-named and never rewritten), so an unchanged mtime means
+    /// a rescan+rehash would find nothing new — skip it. Keeps repeated onAppear
+    /// backfills from re-hashing every attachment.
+    private var lastBackfillMTime: [String: Date] = [:]
 
     /// Settings → Editor → "Read text in images (OCR)". Default on.
     private var isEnabled: Bool { UserDefaults.standard.object(forKey: "ocrEnabled") as? Bool ?? true }
+
+    // MARK: - Shared per-image caches (word boxes + Live Text)
+
+    /// One analyzer for every attachment view — stateless and meant to be reused.
+    private static let analyzer = ImageAnalyzer()
+    /// url.path → recognized words (for search-match highlighting), and
+    /// url.path → Live Text analysis, both shared across attachment views so a
+    /// note switch (or a second view of the same image) never re-recognizes.
+    /// Bounded, oldest-evicted, since analyses aren't tiny.
+    private var wordCache = KeyedCache<[ImageOCR.OCRWord]>(cap: 48)
+    private var analysisCache = KeyedCache<ImageAnalysis>(cap: 24)
+
+    /// Recognized word boxes for an image, off the main thread and shared: the
+    /// first request recognizes, the rest (other views, note switches) are
+    /// instant. Backs the `img:` highlight.
+    func recognizeWords(for url: URL, completion: @escaping @MainActor ([ImageOCR.OCRWord]) -> Void) {
+        if let cached = wordCache.value(url.path) { completion(cached); return }
+        queue.async { [weak self] in
+            let words = ImageOCR.recognizeWords(in: url)
+            Task { @MainActor in
+                self?.wordCache.set(url.path, words)
+                completion(words)
+            }
+        }
+    }
+
+    /// VisionKit Live Text analysis for an image, shared and cached so it runs at
+    /// most once per image per session. Lazy by caller (only when hovered), so an
+    /// image you never touch costs nothing. nil if analysis fails.
+    func liveTextAnalysis(for url: URL) async -> ImageAnalysis? {
+        if let cached = analysisCache.value(url.path) { return cached }
+        let configuration = ImageAnalyzer.Configuration([.text])
+        guard let analysis = try? await Self.analyzer.analyze(imageAt: url, orientation: .up, configuration: configuration)
+        else { return nil }
+        analysisCache.set(url.path, analysis)
+        return analysis
+    }
 
     /// Background backfill: OCR every image attachment not already cached, then
     /// publish the name→text map search reads. A warm cache costs only a hash
@@ -31,6 +75,11 @@ final class OCRIndex: ObservableObject {
     func refresh(store: NoteStore) {
         guard isEnabled else { searchText = [:]; return }
         guard !refreshing else { return }
+        // Skip a rescan when the Attachments folder hasn't changed since the last
+        // backfill for this index (and we already have results to show).
+        let attachmentsDir = store.attachmentsDirectory
+        let mtime = (try? attachmentsDir.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
+        if let mtime, lastBackfillMTime[attachmentsDir.path] == mtime, !searchText.isEmpty { return }
         refreshing = true
         let urls = store.imageAttachments()
         queue.async { [weak self] in
@@ -52,6 +101,7 @@ final class OCRIndex: ObservableObject {
             if changed { OCRCache.save(cache) }
             Task { @MainActor in
                 self?.searchText = names
+                if let mtime { self?.lastBackfillMTime[attachmentsDir.path] = mtime }
                 self?.refreshing = false
             }
         }
@@ -100,6 +150,28 @@ final class OCRIndex: ObservableObject {
                 text = ImageOCR.recognizeText(in: url) ?? ""
             }
             Task { @MainActor in completion(text) }
+        }
+    }
+}
+
+/// A tiny bounded cache: insertion-ordered, evicting the oldest past `cap`.
+/// Main-actor confined (it only ever runs on OCRIndex), so no locking.
+@MainActor
+private struct KeyedCache<Value> {
+    let cap: Int
+    private var storage: [String: Value] = [:]
+    private var order: [String] = []
+
+    init(cap: Int) { self.cap = cap }
+
+    func value(_ key: String) -> Value? { storage[key] }
+
+    mutating func set(_ key: String, _ value: Value) {
+        if storage[key] == nil { order.append(key) }
+        storage[key] = value
+        while order.count > cap {
+            let oldest = order.removeFirst()
+            storage[oldest] = nil
         }
     }
 }
