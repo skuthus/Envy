@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import VisionKit
 import EnvyCore
 
 final class HoverAwareTextView: NSTextView {
@@ -395,8 +396,17 @@ final class AttachmentView: NSView {
     private var highlightTask: Task<Void, Never>?
     /// Drawn above the picture (a plain draw() would paint under the imageView
     /// subview and be hidden). Passes clicks through so it never eats a right-
-    /// click or a future Live Text drag.
+    /// click or a Live Text drag.
     private let highlightOverlay = ImageHighlightOverlay()
+
+    // MARK: Live Text (drag-select the text on a scan)
+    /// One analyzer for every attachment view — stateless and meant to be reused.
+    private static let analyzer = ImageAnalyzer()
+    /// VisionKit's Live Text layer. Sized to the image's *displayed* rect (not
+    /// the whole view) so its normalized text geometry lands on the picture even
+    /// when a tall page is letterboxed — the same content rect #1's highlights use.
+    private let liveTextOverlay = ImageAnalysisOverlayView()
+    private var liveTextTask: Task<Void, Never>?
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -407,6 +417,10 @@ final class AttachmentView: NSView {
         imageView.animates = true   // play animated GIFs instead of showing frame one
         addSubview(imageView)
         addSubview(highlightOverlay)   // above the image
+        liveTextOverlay.preferredInteractionTypes = .textSelection
+        liveTextOverlay.setSupplementaryInterfaceHidden(true, animated: false)  // no Live Text badge
+        liveTextOverlay.delegate = self   // merges our context menu into Live Text's
+        addSubview(liveTextOverlay)     // topmost, so it catches selection drags
         captionLabel.font = .systemFont(ofSize: 11)
         captionLabel.textColor = .secondaryLabelColor
         captionLabel.alignment = .center
@@ -415,7 +429,7 @@ final class AttachmentView: NSView {
         addSubview(captionLabel)
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
-    deinit { highlightTask?.cancel() }
+    deinit { highlightTask?.cancel(); liveTextTask?.cancel() }
 
     var displayImage: NSImage? {
         get { imageView.image }
@@ -424,7 +438,36 @@ final class AttachmentView: NSView {
             isBroken = (newValue == nil)
             imageView.isHidden = isBroken
             highlightOverlay.imageSize = newValue?.size ?? .zero
+            analyzeForLiveText()
             needsDisplay = true
+        }
+    }
+
+    /// The picture's actual drawn rect inside this view — proportional fit,
+    /// hugging the top-left (matching the image view) — so overlays land on the
+    /// image rather than the letterbox gap beside a clamped tall page.
+    private func displayedImageRect() -> NSRect {
+        let frame = imageView.frame
+        guard let size = imageView.image?.size, size.width > 0, size.height > 0 else { return frame }
+        let scale = min(frame.width / size.width, frame.height / size.height)
+        let w = size.width * scale, h = size.height * scale
+        return NSRect(x: frame.minX, y: frame.maxY - h, width: w, height: h)   // top-left, y-up
+    }
+
+    /// Runs Live Text analysis for the current image on a background task and
+    /// hands the result to the overlay. Gated on the OCR setting and a real
+    /// image; cleanly superseded when the image swaps before analysis finishes.
+    private func analyzeForLiveText() {
+        liveTextTask?.cancel()
+        liveTextOverlay.analysis = nil
+        guard UserDefaults.standard.object(forKey: "ocrEnabled") as? Bool ?? true,
+              !isBroken, let image = imageView.image,
+              let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return }
+        liveTextTask = Task { [weak self] in
+            let configuration = ImageAnalyzer.Configuration([.text])
+            guard let analysis = try? await Self.analyzer.analyze(cgImage, orientation: .up, configuration: configuration),
+                  let self, self.imageView.image === image else { return }
+            self.liveTextOverlay.analysis = analysis
         }
     }
 
@@ -493,6 +536,7 @@ final class AttachmentView: NSView {
         // caption in the strip beneath it.
         imageView.frame = NSRect(x: 0, y: cap, width: bounds.width, height: max(bounds.height - cap, 0))
         highlightOverlay.frame = imageView.frame
+        liveTextOverlay.frame = displayedImageRect()   // hug the picture, not the letterbox
         captionLabel.frame = NSRect(x: 0, y: 0, width: bounds.width, height: cap)
     }
 
@@ -615,6 +659,28 @@ final class AttachmentView: NSView {
         renamePopover?.close()
         renamePopover = nil
         if !base.isEmpty { onRename?(base) }
+    }
+}
+
+// ImageAnalysisOverlayView is final, so its right-click menu can't be overridden
+// by subclassing. Its delegate can amend the menu, though: prepend the
+// attachment's own items (resize / caption / rename / transcribe / copy-text) so
+// they survive alongside Live Text's Copy / Look Up.
+extension AttachmentView: ImageAnalysisOverlayViewDelegate {
+    func overlayView(_ overlayView: ImageAnalysisOverlayView, updatedMenuFor menu: NSMenu,
+                     for event: NSEvent, at point: CGPoint) -> NSMenu {
+        guard let ours = self.menu(for: event) else { return menu }
+        // A menu item can't live in two menus — move ours over, in order, ahead
+        // of Live Text's, then a separator between the two groups.
+        let ourItems = ours.items
+        for (index, item) in ourItems.enumerated() {
+            ours.removeItem(item)
+            menu.insertItem(item, at: index)
+        }
+        if !ourItems.isEmpty, menu.numberOfItems > ourItems.count {
+            menu.insertItem(.separator(), at: ourItems.count)
+        }
+        return menu
     }
 }
 
