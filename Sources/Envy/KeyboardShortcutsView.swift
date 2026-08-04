@@ -34,10 +34,10 @@ struct KeyboardShortcutsView: View {
     private var groups: [Group] {
         [
             Group(title: "Global", entries: [
-                Entry(action: .summonApp, description: "Show or hide Envy — works from any app"),
-                Entry(action: .showPinnedNote, description: "Show or hide your pinned note — works from any app"),
-                Entry(action: .unpinFromMenuBar, description: "Unpin the note pinned to the menu bar — works from any app"),
-                Entry(action: .keepOnTop, description: "Keep Envy floating above every other app's windows — works from any app"),
+                Entry(action: .summonApp, description: "Show or hide Envy, works from any app"),
+                Entry(action: .showPinnedNote, description: "Show or hide your pinned note, works from any app"),
+                Entry(action: .unpinFromMenuBar, description: "Unpin the note pinned to the menu bar, works from any app"),
+                Entry(action: .keepOnTop, description: "Keep Envy floating above every other app's windows, works from any app"),
             ]),
             Group(title: "Notes", entries: [
                 Entry(action: .deleteNote, description: "Delete the selected note"),
@@ -46,7 +46,7 @@ struct KeyboardShortcutsView: View {
                 Entry(keys: "⌘-click a [[link]]", description: "Open the linked note (creates it if it doesn't exist)"),
             ]),
             Group(title: "Search & Navigation", entries: [
-                Entry(action: .jumpToOmniBar, description: "Jump to the OmniBar from anywhere — type a name and hit ↩ to create a note"),
+                Entry(action: .jumpToOmniBar, description: "Jump to the OmniBar from anywhere: type a name and hit ↩ to create a note"),
                 Entry(keys: "↑ / ↓", description: "Move the highlighted note while searching"),
                 Entry(keys: "⇧↑ / ⇧↓", description: "Extend the selection to the next/previous note, same as Finder"),
                 Entry(keys: "↩", description: "Open the highlighted note, or create one from your search text"),

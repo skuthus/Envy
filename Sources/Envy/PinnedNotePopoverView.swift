@@ -182,7 +182,7 @@ struct PinnedNotePopoverView: View {
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(isPinnedOpen ? Color.accentColor : .primary)
-                .help(isPinnedOpen ? "Keeping this window open — click to let it close when you click elsewhere" : "Keep this window open and on top, even when you click elsewhere")
+                .help(isPinnedOpen ? "Keeping this window open. Click to let it close when you click elsewhere" : "Keep this window open and on top, even when you click elsewhere")
                 Button {
                     onOpenInApp()
                 } label: {

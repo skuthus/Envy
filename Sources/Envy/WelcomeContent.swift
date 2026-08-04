@@ -22,11 +22,11 @@ enum WelcomeContent {
     - Press **↩** to open the highlighted note. If nothing matches, pressing **↩** creates a new note with that title instead.
     - Use **↑** and **↓** to move the highlighted note without leaving the search box.
     - **⌥↓** and **⌥↑** move keyboard focus between the search box, the note list, and the editor.
-    - If your search matches the start of an existing title — or, typing `tag:`, the start of a tag you've already used — the rest shows up in grey. Press **→** to complete it.
+    - If your search matches the start of an existing title (or, typing `tag:`, the start of a tag you've already used), the rest shows up in grey. Press **→** to complete it.
     - **⌘N** creates a blank note directly.
-    - **⌘⌫** deletes the selected note. It goes to a `Trash` folder inside your Index (visible in Finder, and it syncs with your notes), not gone for good — Settings → General → Trash controls how often that gets swept into the real macOS Trash.
+    - **⌘⌫** deletes the selected note. It goes to a `Trash` folder inside your Index (visible in Finder, and it syncs with your notes), not gone for good. Settings → General → Trash controls how often that gets swept into the real macOS Trash.
     - **⌘⇧⌫** restores the note(s) you just deleted, right back where they were.
-    - Search `trash:` to browse everything currently trashed, anywhere in The Index. Clicking or arrowing through results just previews them, read-only — Restore, Reveal in Finder, and Delete are always a right-click (or a button right there in the preview) away, never a side effect of looking.
+    - Search `trash:` to browse everything currently trashed, anywhere in The Index. Clicking or arrowing through results just previews them, read-only. Restore, Reveal in Finder, and Delete are always a right-click (or a button right there in the preview) away, never a side effect of looking.
     - Cmd-click notes in the list to select several at once. Shift-click to select every note between your last click and the new one.
 
     There's no separate "new note" dialog. The search box handles both jobs.
@@ -70,7 +70,7 @@ enum WelcomeContent {
     - `[text](url)` links to a web address. Cmd-click opens it in your browser.
     - A bare URL like https://example.com becomes clickable on its own.
     - `[text](#heading)` jumps to a heading in this note, like this link to [Structure](#structure). Click it, no modifier needed. The heading part matches the heading's own text, lowercased with spaces turned into hyphens.
-    - `![[Note Title]]`, on its own line followed by a blank line, embeds that note's live content right here instead of just linking to it — edit the source note anywhere and every place it's embedded shows the update immediately. The link itself stays visible above the embed, exactly as typed — edit or delete it directly to change or remove the embed. Click into the embed to edit that note directly, and edits save straight back to it.
+    - `![[Note Title]]`, on its own line followed by a blank line, embeds that note's live content right here instead of just linking to it. Edit the source note anywhere and every place it's embedded shows the update immediately. The link itself stays visible above the embed, exactly as typed. Edit or delete it directly to change or remove the embed. Click into the embed to edit that note directly, and edits save straight back to it.
 
     ### 🔖 Footnotes
 
@@ -83,63 +83,63 @@ enum WelcomeContent {
 
     ### ➡️ Arrows
 
-    - Type `->`, `<-`, or `=>` and the last character lands as an arrow instead — →, ←, ⇒. Skipped inside code, where the same characters usually mean something else.
+    - Type `->`, `<-`, or `=>` and the last character lands as an arrow instead: →, ←, ⇒. Skipped inside code, where the same characters usually mean something else.
 
     ### 🖼️ Images
 
-    - **Drag an image onto a note**, or paste one (a screenshot, a copied picture) — it appears inline. The original file is left untouched; Envy keeps its own copy in an `Attachments` folder inside your Index (visible, so it syncs with your notes), and the note just holds a plain `![[picture.png]]` reference, so everything stays portable.
-    - **Insert one you already have** — press `⇧⌘I` (or right-click → Insert Image) to open a grid of thumbnails of every image in your vault. Filter by name, click one, and it drops in at your cursor — handy when the file is a screenshot with a name you'd never remember.
+    - **Drag an image onto a note**, or paste one (a screenshot, a copied picture). It appears inline. The original file is left untouched; Envy keeps its own copy in an `Attachments` folder inside your Index (visible, so it syncs with your notes), and the note just holds a plain `![[picture.png]]` reference, so everything stays portable.
+    - **Insert one you already have**: press `⇧⌘I` (or right-click → Insert Image) to open a grid of thumbnails of every image in your vault. Filter by name, click one, and it drops in at your cursor. Handy when the file is a screenshot with a name you'd never remember.
     - **Right-click an image** to resize it (Small/Medium/Large, or a custom width), add a **caption**, rename it, open it in Preview, or reveal the file in Finder. At rest the reference reads as just the filename; click into it to see and edit the full `![[picture.png|400|A caption]]`. A caption sits under the image and is plain text in the note, so it's searchable like anything else. If a referenced file goes missing, you'll see a clear placeholder instead of a blank.
     - PNG, JPEG, GIF (animated), HEIC, WebP, TIFF, and BMP all work.
-    - Find them later with `img:` — every note holding a picture. `embed:` does the same for notes that embed another note. Both take trailing words (`img: diagram`) and negate (`-img:`).
+    - Find them later with `img:`, every note holding a picture. `embed:` does the same for notes that embed another note. Both take trailing words (`img: diagram`) and negate (`-img:`).
 
     ## 🔗 Linking Notes
 
     `[[Note Title]]` links work throughout Envy, not just in the list above. Here's one to a small companion note: [[Example Linked Note]]
 
-    Hold **⌘** and click a link to follow it. If the note doesn't exist yet, clicking creates it and takes you straight there. That makes it easy to sketch out related notes before you've written any of them — and until a linked note exists, its link renders **dimmed**, so you can see at a glance which promises are still unkept. Search `ghost:` to find every note carrying one.
+    Hold **⌘** and click a link to follow it. If the note doesn't exist yet, clicking creates it and takes you straight there. That makes it easy to sketch out related notes before you've written any of them. And until a linked note exists, its link renders **dimmed**, so you can see at a glance which promises are still unkept. Search `ghost:` to find every note carrying one.
 
-    Hold **⌥** (Option) and click a link instead to peek at it without leaving where you are — a small floating preview opens, and you can click straight into it to edit right there. Works on backlinks too. Settings → General can turn this off or change the trigger.
+    Hold **⌥** (Option) and click a link instead to peek at it without leaving where you are. A small floating preview opens, and you can click straight into it to edit right there. Works on backlinks too. Settings → General can turn this off or change the trigger.
 
-    **Pin a peek to keep it.** Click the pin in a peek's corner and it becomes its own floating note — open as many as you like, drag them anywhere, resize from any edge (the size sticks for the next one). They tuck away when you switch to another app and return with you; click the filled pin to close one. You can also skip the peek entirely: right-click any note in the list and choose **Pop Out**.
+    **Pin a peek to keep it.** Click the pin in a peek's corner and it becomes its own floating note: open as many as you like, drag them anywhere, resize from any edge (the size sticks for the next one). They tuck away when you switch to another app and return with you; click the filled pin to close one. You can also skip the peek entirely: right-click any note in the list and choose **Pop Out**.
 
-    The footer's **Interlinks** panel shows everything connected to the note you're reading, side by side: the notes it links out to, the notes that link back to it, and *Suggested* links — other notes you've mentioned by name but haven't linked yet, each a click away from wiring up.
+    The footer's **Interlinks** panel shows everything connected to the note you're reading, side by side: the notes it links out to, the notes that link back to it, and *Suggested* links: other notes you've mentioned by name but haven't linked yet, each a click away from wiring up.
 
-    **Renaming a note updates its links everywhere.** Rename a note (click its title, or right-click it in the list) and every `[[link]]` and `![[embed]]` pointing to it across your notes is rewritten to the new name, so nothing breaks — and if you gave a link your own wording with `|`, that wording is left alone.
+    **Renaming a note updates its links everywhere.** Rename a note (click its title, or right-click it in the list) and every `[[link]]` and `![[embed]]` pointing to it across your notes is rewritten to the new name, so nothing breaks. And if you gave a link your own wording with `|`, that wording is left alone.
 
     **Search your links, too.** `link:Note Title` finds every note that points at another; `interlink:Note Title` goes both directions, showing everything connected to that note (the Interlinks footer as a list, and it combines: `interlink:Project todo:` finds open tasks across everything touching Project); `orphan:` surfaces notes with no links in or out. Wrap words in `"quotes"` for an exact phrase.
 
-    **Split a note in two.** When a note has quietly grown to hold two ideas, select the part that wants to stand alone and press **⌥⌘N**. It becomes a note of its own, with a `[[link]]` left in its place — the title taken from the selection's first line. One idea per note, applied after the fact.
+    **Split a note in two.** When a note has quietly grown to hold two ideas, select the part that wants to stand alone and press **⌥⌘N**. It becomes a note of its own, with a `[[link]]` left in its place, the title taken from the selection's first line. One idea per note, applied after the fact.
 
     ## 📆 Due Dates
 
     Write `@04-16-26` (or `@2026-04-16`) anywhere in a note, like this: Finish the quarterly report @04-16-26
 
-    Envy picks it up automatically — no separate field to fill in. It shows as a colored pill wherever the note appears (the editor, the title bar, the note list), colored by urgency: not-yet-due, due-soon, and overdue each get their own color from your theme.
+    Envy picks it up automatically, no separate field to fill in. It shows as a colored pill wherever the note appears (the editor, the title bar, the note list), colored by urgency: not-yet-due, due-soon, and overdue each get their own color from your theme.
 
-    A day name works too, like `@monday` — it always means the *next* Monday, even if today already is one. Every day of the week works the same way. Write `@today`, `@tomorrow`, or `@yesterday` for those specifically.
+    A day name works too, like `@monday`: it always means the *next* Monday, even if today already is one. Every day of the week works the same way. Write `@today`, `@tomorrow`, or `@yesterday` for those specifically.
 
     Search `due:today`, `due:tomorrow`, `due:yesterday`, `due:week`, `due:nextweek`, `due:month`, `due:overdue` (or `due:past`), or `due:future` for the matching bucket, an exact date the same way `date:` accepts one, or a bare `due:` for "has a due date at all, whenever it is."
 
     Sort the note list by due date from the column headers, same as Name or Date. Settings → General can turn the due-date sort option and the title bar pill off independently, if you'd rather not see either.
 
-    Done with it? Click the due date itself to cross it out — it stops counting as a due date the moment it's crossed out, so the pill disappears and `due:` searches stop matching it. Click it again to bring it back. Checking off a task-list box with a due date in its text does the same thing automatically, no click needed: `- [x] Ship the report @04-16-26` is retired the instant it's checked, and comes back the moment you uncheck it.
+    Done with it? Click the due date itself to cross it out: it stops counting as a due date the moment it's crossed out, so the pill disappears and `due:` searches stop matching it. Click it again to bring it back. Checking off a task-list box with a due date in its text does the same thing automatically, no click needed: `- [x] Ship the report @04-16-26` is retired the instant it's checked, and comes back the moment you uncheck it.
 
-    A note can have more than one due date — a running checklist, say, with a different `@date` on each item. The pill (in the note list and the title bar) always shows the *soonest* one, with a small "+1", "+2", and so on next to it if there are others, so you're never left thinking there's only one.
+    A note can have more than one due date: a running checklist, say, with a different `@date` on each item. The pill (in the note list and the title bar) always shows the *soonest* one, with a small "+1", "+2", and so on next to it if there are others, so you're never left thinking there's only one.
 
     ## 🏷️ Tags
 
     Write `#work` anywhere in a note's text and Envy picks it up as a tag automatically, no separate tagging step needed. Tags render bold with a tinted background so they stand out from the rest of the text, like this: #work
 
-    Start typing a `#tag` you've used before and the rest appears as grey ghost text — your most-used matching tag first, same as `[[link]]` completion. Press **⇥** or **→** to accept it.
+    Start typing a `#tag` you've used before and the rest appears as grey ghost text: your most-used matching tag first, same as `[[link]]` completion. Press **⇥** or **→** to accept it.
 
-    Forgotten what tags you have? Type a bare `tag:` in the search box (just the operator, nothing after) and the list becomes your whole tag catalog, most-used first with a note count each. Click one, or arrow to it and press Return, to see its notes. Right-click a tag there to color it, or choose **Rename Tag…** to rename it everywhere at once (every note carrying it is rewritten). A bare `folder:` does the same for your folders — and right-clicking a folder there offers **Rename Folder…**, which carries every note inside along and keeps all the colors (the thing a Finder rename loses). Include a `/` in the new name to file it under another folder.
+    Forgotten what tags you have? Type a bare `tag:` in the search box (just the operator, nothing after) and the list becomes your whole tag catalog, most-used first with a note count each. Click one, or arrow to it and press Return, to see its notes. Right-click a tag there to color it, or choose **Rename Tag…** to rename it everywhere at once (every note carrying it is rewritten). A bare `folder:` does the same for your folders. And right-clicking a folder there offers **Rename Folder…**, which carries every note inside along and keeps all the colors (the thing a Finder rename loses). Include a `/` in the new name to file it under another folder.
 
-    Search `tag:work` to see every note tagged that way — it's not case-sensitive, and partial names work too: `tag:techn` matches `#technology`. Wrap the name in quotes to demand an exact match: `tag:"tag"` matches only `#tag`, never `#tags` (this is the form clicking a tag anywhere produces, so what you click is exactly what you get). A bare `tag:` finds every note carrying any tag; a bare `-tag:` finds the completely untagged (pair it with `orphan:` and `stale:` for a full hygiene sweep). And `title:word` restricts a search to titles only — the note *named* for a thing, not every note that mentions it.
+    Search `tag:work` to see every note tagged that way. It's not case-sensitive, and partial names work too: `tag:techn` matches `#technology`. Wrap the name in quotes to demand an exact match: `tag:"tag"` matches only `#tag`, never `#tags` (this is the form clicking a tag anywhere produces, so what you click is exactly what you get). A bare `tag:` finds every note carrying any tag; a bare `-tag:` finds the completely untagged (pair it with `orphan:` and `stale:` for a full hygiene sweep). And `title:word` restricts a search to titles only: the note *named* for a thing, not every note that mentions it.
 
     Combine it with regular search words, like `tag:work meeting`, to narrow further to tagged notes that also mention "meeting".
 
-    Turn on Settings → General → "Show tags in title bar" and a note's tags show as chips beside its title. **Right-click a chip to give the tag a color** — every note carrying that tag then shows it in that color. The color belongs to the tag, not the note: it's a preference, so your `#tag` on disk is untouched and stays portable.
+    Turn on Settings → General → "Show tags in title bar" and a note's tags show as chips beside its title. **Right-click a chip to give the tag a color**: every note carrying that tag then shows it in that color. The color belongs to the tag, not the note: it's a preference, so your `#tag` on disk is untouched and stays portable.
 
     ## 💡 Fleeting Notes
 
@@ -147,35 +147,35 @@ enum WelcomeContent {
 
     Type `inbox:` followed by whatever you're thinking and press Return. The note is captured, the box resets to a bare `inbox:` ready for the next thought, and you never leave where you were.
 
-    - Fleeting notes live in an `Inbox` folder inside The Index. That's the whole mechanism — an ordinary `.md` file that happens to sit there. Drag one out in Finder and it's filed, exactly as if you'd pressed Submit.
+    - Fleeting notes live in an `Inbox` folder inside The Index. That's the whole mechanism: an ordinary `.md` file that happens to sit there. Drag one out in Finder and it's filed, exactly as if you'd pressed Submit.
     - They carry a bold amber `!` on the left in the note list, and the count beside the search box says how many are waiting. Click it to review; click it again to come back.
-    - Opening one shows **Submit Note** (files it into The Index — or use the button's menu to file it straight into a folder, colors and all) and **Delete Note** in its title bar. Both move you to the next one waiting, so working through a backlog is a run of decisions rather than a series of round trips.
-    - Titling is usually the real work — a capture arrives called "fix the thing", and deciding what it's actually about is most of what reviewing means. Click the title to rename it before you file it.
+    - Opening one shows **Submit Note** (files it into The Index, or use the button's menu to file it straight into a folder, colors and all) and **Delete Note** in its title bar. Both move you to the next one waiting, so working through a backlog is a run of decisions rather than a series of round trips.
+    - Titling is usually the real work: a capture arrives called "fix the thing", and deciding what it's actually about is most of what reviewing means. Click the title to rename it before you file it.
     - Settings → General → "New notes start in the Inbox" sends everything you write there first, so nothing joins your permanent collection without you deciding it should.
 
     `inbox: bauhaus` searches within your fleeting notes; `-inbox:` hides them from an ordinary search.
 
     ## 📥 Importing from Apple Notes
 
-    Envy runs on your Mac, so it can't be the thing you reach for in a queue or on a walk. Apple Notes can — it's on your phone, your watch, your lock screen. Use it as the net, and bring the catch home.
+    Envy runs on your Mac, so it can't be the thing you reach for in a queue or on a walk. Apple Notes can: it's on your phone, your watch, your lock screen. Use it as the net, and bring the catch home.
 
     Turn it on in Settings → Import, pick which Apple Notes folder is your outbox, and press **Import Now** (or ⌥⌘I from anywhere in Envy). Everything in that folder arrives as Markdown, and each original is moved to a folder of your choosing in Apple Notes so it never arrives twice.
 
     Three things worth being plain about:
 
-    - **It only imports.** Notes come in; nothing is ever sent back, and nothing is kept in sync. Envy doesn't change a single word of any note in Apple Notes — the only thing it does over there is move an already-imported note into your archive folder.
-    - **It's off until you turn it on.** Until you flip that switch, Envy never touches Apple Notes at all — it won't read your folders and macOS won't ask you for permission.
+    - **It only imports.** Notes come in; nothing is ever sent back, and nothing is kept in sync. Envy doesn't change a single word of any note in Apple Notes: the only thing it does over there is move an already-imported note into your archive folder.
+    - **It's off until you turn it on.** Until you flip that switch, Envy never touches Apple Notes at all: it won't read your folders and macOS won't ask you for permission.
     - **It only runs when you ask.** There's no syncing in the background and nothing on a timer. It happens when you press the button or the shortcut, and never otherwise.
 
     Choose where imports land with "Import to": the **Inbox**, so they queue up as fleeting notes to review and file, or **The Index** directly, if they're already keepers.
 
-    Two limits, so nothing surprises you: images and attachments don't come across (you'll see an `[image omitted]` marker), and Apple Notes checklists arrive as ordinary bullet lists — Apple doesn't hand over the checkbox ticks, so there's nothing to import.
+    Two limits, so nothing surprises you: images and attachments don't come across (you'll see an `[image omitted]` marker), and Apple Notes checklists arrive as ordinary bullet lists: Apple doesn't hand over the checkbox ticks, so there's nothing to import.
 
     ## 📚 Importing Kindle Highlights
 
-    Reading on a Kindle? Turn on **Settings → Import → Enable Kindle import**, plug the Kindle in, and press **Import from Kindle** (also in the File menu). Every highlight arrives in your Inbox as its own fleeting note — titled by the quote's first words and page (`the map is not the territory, p42`), the full passage as a blockquote, the book as a `[[link]]`. A note you typed on the Kindle attaches beneath the passage it belongs to.
+    Reading on a Kindle? Turn on **Settings → Import → Enable Kindle import**, plug the Kindle in, and press **Import from Kindle** (also in the File menu). Every highlight arrives in your Inbox as its own fleeting note: titled by the quote's first words and page (`the map is not the territory, p42`), the full passage as a blockquote, the book as a `[[link]]`. A note you typed on the Kindle attaches beneath the passage it belongs to.
 
-    Envy remembers what it has imported, so plugging in after every reading session only adds what's new — even if you've since filed, retitled, or deleted the earlier ones. That memory lives in an `Envy Data` folder inside your Index, so it travels with your vault: import on one Mac, and a second Mac syncing the same vault won't re-import the same highlights. Adjusted highlights are collapsed to their final form, and bookmarks are skipped. (No Kindle on hand? "Choose Clippings File…" imports a copied `My Clippings.txt` from anywhere.)
+    Envy remembers what it has imported, so plugging in after every reading session only adds what's new, even if you've since filed, retitled, or deleted the earlier ones. That memory lives in an `Envy Data` folder inside your Index, so it travels with your vault: import on one Mac, and a second Mac syncing the same vault won't re-import the same highlights. Adjusted highlights are collapsed to their final form, and bookmarks are skipped. (No Kindle on hand? "Choose Clippings File…" imports a copied `My Clippings.txt` from anywhere.)
 
     Older Kindles that mount as a USB drive work directly. Newer Kindles use MTP and never appear in Finder: mount one with [Moorage](https://github.com/skuthus/Moorage), the official way to bring a newer Kindle in, and Envy finds it automatically under `~/Moorage`.
 
@@ -192,15 +192,15 @@ enum WelcomeContent {
 
     ## 📁 Folders & Colors
 
-    Envy keeps everything in one folder — The Index — so you never *have* to file anything. But if you think in piles, subfolders are a second, color-coded way to organize, sitting alongside tags rather than replacing them.
+    Envy keeps everything in one folder (The Index), so you never *have* to file anything. But if you think in piles, subfolders are a second, color-coded way to organize, sitting alongside tags rather than replacing them.
 
     Turn on Settings → General → "Show items in subfolders" and Envy also lists notes nested in your folders, all in the one flat list. Everything below only appears once this is on.
 
-    - **Every folder has a color** from the moment it exists, and every note inside it shows a marker — a dot in that color, or the folder's **name** as a chip, your choice under "Show a note's folder as" — so you can see which pile a note is in at a glance. **Hover a dot** and it names its folder; **click it** to see just that folder's notes (it runs a `folder:` search, so clear the search box to come back); **right-click it** (or the name chip) to pick the color you actually want, same as a tag. The open note also names its folder in a colored chip in the title bar — click that for the same folder search (Settings → General → "Show folder in title bar" hides it). It sits after the title by default (flip "Show the folder marker after the title" to move it left). (Inbox notes are marked with an amber `!` on the left instead; that's the one special folder.)
-    - **File a note** by right-clicking it → **Move to →**: the Index root, any subfolder (shown with its color), or **New Folder…** to make one on the spot. Works on a multi-selection too — **Move N Notes to** files them all at once. It's a real file move — the title doesn't change, so `[[links]]` still resolve.
-    - **Search by folder**: `folder:name` finds notes filed there (partial names work, and it autocompletes as you type). Quote it for exactness: `folder:"Work"` means that folder and anything nested inside it — never a lookalike such as `Workshop` — and it's the form clicking a folder dot or browser row produces. A bare `folder:` means anything in a subfolder; `-folder:` alone means the unfiled notes at the root. Combines with everything: `folder:work todo:` is the open tasks in that pile.
-    - **Create straight into a folder**: type `Work/Retro notes` in the search box and press Return — the note "Retro notes" is born inside `Work/`. The slash only acts as a path when the part before it is a real folder, so a stray `/` in a title never invents one.
-    - The color is a preference, never written into a note. The category — which folder a note is in — lives on disk and is fully portable; only the tint is Envy's.
+    - **Every folder has a color** from the moment it exists, and every note inside it shows a marker (a dot in that color, or the folder's **name** as a chip, your choice under "Show a note's folder as"), so you can see which pile a note is in at a glance. **Hover a dot** and it names its folder; **click it** to see just that folder's notes (it runs a `folder:` search, so clear the search box to come back); **right-click it** (or the name chip) to pick the color you actually want, same as a tag. The open note also names its folder in a colored chip in the title bar: click that for the same folder search (Settings → General → "Show folder in title bar" hides it). It sits after the title by default (flip "Show the folder marker after the title" to move it left). (Inbox notes are marked with an amber `!` on the left instead; that's the one special folder.)
+    - **File a note** by right-clicking it → **Move to →**: the Index root, any subfolder (shown with its color), or **New Folder…** to make one on the spot. Works on a multi-selection too: **Move N Notes to** files them all at once. It's a real file move: the title doesn't change, so `[[links]]` still resolve.
+    - **Search by folder**: `folder:name` finds notes filed there (partial names work, and it autocompletes as you type). Quote it for exactness: `folder:"Work"` means that folder and anything nested inside it (never a lookalike such as `Workshop`), and it's the form clicking a folder dot or browser row produces. A bare `folder:` means anything in a subfolder; `-folder:` alone means the unfiled notes at the root. Combines with everything: `folder:work todo:` is the open tasks in that pile.
+    - **Create straight into a folder**: type `Work/Retro notes` in the search box and press Return: the note "Retro notes" is born inside `Work/`. The slash only acts as a path when the part before it is a real folder, so a stray `/` in a title never invents one.
+    - The color is a preference, never written into a note. The category (which folder a note is in) lives on disk and is fully portable; only the tint is Envy's.
 
     **Folders or tags?** Both. A note lives in one folder (a single "which pile") but can carry many tags (cross-cutting "what's it about"). They're different axes, and a note can use both at once.
 
@@ -210,7 +210,7 @@ enum WelcomeContent {
 
     An exact date works too, in whichever format you'd naturally type it: `date:2026-04-15`, `date:4-15-26`, and `date:04-15-2026` all mean the same day.
 
-    `stale:` is the flip side — notes you *haven't* touched. Bare `stale:` means the last six months; `stale:week`, `stale:month`, `stale:year`, or `stale:90` (days) narrow it, and `-stale:` excludes. Pair it with `orphan:` — `orphan: stale:` surfaces notes that are both disconnected and forgotten.
+    `stale:` is the flip side: notes you *haven't* touched. Bare `stale:` means the last six months; `stale:week`, `stale:month`, `stale:year`, or `stale:90` (days) narrow it, and `-stale:` excludes. Pair it with `orphan:`. `orphan: stale:` surfaces notes that are both disconnected and forgotten.
 
     ## 🗂️ The Index
 
@@ -220,14 +220,14 @@ enum WelcomeContent {
 
     ## 🎨 Customizing the Look
 
-    - Settings → Theme has a gallery of ready-made looks — Envious (Envy's own), Tokyo Night, Dracula, Monokai, both Solarized themes, and Velocity Light/Dark (modeled on the original Notational Velocity) — plus any themes you've saved yourself. Click one to apply it instantly.
+    - Settings → Theme has a gallery of ready-made looks: Envious (Envy's own), Tokyo Night, Dracula, Monokai, both Solarized themes, and Velocity Light/Dark (modeled on the original Notational Velocity), plus any themes you've saved yourself. Click one to apply it instantly.
     - Envious comes in a light and a dark face and switches between them with your Mac, so it stays right whichever appearance you're in. Every other theme is a fixed set of colors and stays exactly as you picked it. Editing any color turns Envious into your own theme and stops it switching, since the edit is yours to keep.
-    - Every color swatch is always editable. Change one and it becomes a custom variation of whatever theme you started from — save it as a new named theme, duplicate it, rename it, or reset any single swatch back to its default.
+    - Every color swatch is always editable. Change one and it becomes a custom variation of whatever theme you started from: save it as a new named theme, duplicate it, rename it, or reset any single swatch back to its default.
     - Colors are grouped by where they show up: Editor (text, background, links, code, tags, and more), List (file list background/text, the note editor's own title bar), and Highlight (search matches, focus border, text selection).
     - Export a theme to a file to share it, or import one someone else made.
     - A blur strength control adjusts how translucent the window background is.
     - A note list density picker controls how much space each note takes up in the list.
-    - An Interface Text Size slider scales the note list, search bar, and the rest of the app's chrome — separately from the editor's own text, which has its own font size and the **⌘+** / **⌘-** zoom.
+    - An Interface Text Size slider scales the note list, search bar, and the rest of the app's chrome, separately from the editor's own text, which has its own font size and the **⌘+** / **⌘-** zoom.
     - A mode setting matches System, Light, or Dark, independent of your custom colors.
     - Moving focus to the search box, note list, or editor (by clicking, or with ⌥↓/⌥↑) highlights it with a border. A "Fade out focus highlight" toggle controls whether that border stays as long as it's focused or fades away after a moment, and its color and thickness are both customizable too.
 
@@ -237,11 +237,11 @@ enum WelcomeContent {
     - **⌘+** and **⌘-** zoom the note text larger or smaller. **⌘0** resets it.
     - **⌘↩** centers the window on screen.
     - **⌥⌘↩** shows or hides Envy from anywhere on your Mac, even when another app is focused.
-    - A menu bar icon does the same thing on click — unless a note is pinned to the menu bar (right-click a note in the list and choose "Pin to Menu Bar"), in which case clicking opens that note instead. Right-click the icon for New Note, "Unpin Note," **"Keep Envy on Top"** (the whole window floats above every other app until you toggle it off — handy for transcribing or referencing while you work elsewhere; **⌥⌘T** flips it from anywhere), Settings, and Quit.
+    - A menu bar icon does the same thing on click, unless a note is pinned to the menu bar (right-click a note in the list and choose "Pin to Menu Bar"), in which case clicking opens that note instead. Right-click the icon for New Note, "Unpin Note," **"Keep Envy on Top"** (the whole window floats above every other app until you toggle it off, handy for transcribing or referencing while you work elsewhere; **⌥⌘T** flips it from anywhere), Settings, and Quit.
     - Settings → General has a toggle to automatically hide Envy the moment you click into a different app or an empty part of the screen.
     - Settings → General has a toggle for whether pressing Return in the search box also moves your cursor into the editor, in case you'd rather stay in the search box instead.
     - Settings → General can also show a small clock in the editor's footer, with an optional date in a few different formats, and an option to only show it while in full screen.
-    - The footer also shows your vault's totals — how many notes and folders you have — just right of the word and character counts. Settings → General → "Show note and folder counts in footer" turns it off.
+    - The footer also shows your vault's totals (how many notes and folders you have), just right of the word and character counts. Settings → General → "Show note and folder counts in footer" turns it off.
     - Every shortcut above (plus the global summon key) can be changed in Settings → Shortcuts. Click a shortcut, then press a new combination to save it right away. A Reset button sits next to each one, plus a "Reset All to Defaults" for starting over.
     - Edit a note in another app while it's open in Envy, and the change appears here automatically. The part that changed briefly flashes so you don't miss it, in the same color as your theme's search highlight.
 

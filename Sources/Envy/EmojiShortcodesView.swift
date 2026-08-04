@@ -21,7 +21,7 @@ struct EmojiShortcodesView: View {
             Text("Emoji Shortcodes")
                 .font(.title2.bold())
 
-            Text("Type a shortcode and finish it with the closing colon — it's replaced with the emoji immediately.")
+            Text("Type a shortcode and finish it with the closing colon, and it's replaced with the emoji immediately.")
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)

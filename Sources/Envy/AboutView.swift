@@ -9,7 +9,7 @@ struct AboutView: View {
     // drift out of sync with Info.plist the way the "Version 1.0.0" literal
     // here used to.
     private var versionText: String {
-        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "—"
+        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "-"
         return "Version \(version)"
     }
 

@@ -146,7 +146,7 @@ struct GeneralSettingsView: View {
                     }
                 }
                 if let menuBarPinnedNoteTitle {
-                    Text("Clicking the menu bar icon opens \"\(menuBarPinnedNoteTitle)\" — right-click the icon for \"Unpin Note,\" or press \(ShortcutPreferences.binding(for: .unpinFromMenuBar, raw: customShortcutsRaw).displayString) from anywhere.")
+                    Text("Clicking the menu bar icon opens \"\(menuBarPinnedNoteTitle)\". Right-click the icon for \"Unpin Note,\" or press \(ShortcutPreferences.binding(for: .unpinFromMenuBar, raw: customShortcutsRaw).displayString) from anywhere.")
                         .foregroundStyle(.secondary)
                 } else {
                     Text("Clicking the menu bar icon shows or hides Envy. Right-click a note and choose \"Pin to Menu Bar\" to have it open that note instead.")
@@ -226,7 +226,7 @@ struct GeneralSettingsView: View {
                 .disabled(!showDateModified)
                 Toggle("Allow sorting by due date", isOn: $showDueSort)
                 Toggle("New notes start in the Inbox", isOn: $newNotesStartInInbox)
-                Text("Everything you write begins as a fleeting note, and filing it into The Index becomes a deliberate act \u{2014} including notes you create by following a [[link]] that doesn't exist yet. Notes made from a template are unaffected, since those arrive with structure you chose deliberately.")
+                Text("Everything you write begins as a fleeting note, and filing it into The Index becomes a deliberate act, including notes you create by following a [[link]] that doesn't exist yet. Notes made from a template are unaffected, since those arrive with structure you chose deliberately.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 Toggle("Show fleeting notes in the list", isOn: $showInboxInMainList)
@@ -255,7 +255,7 @@ struct GeneralSettingsView: View {
                     .fixedSize(horizontal: false, vertical: true)
                 Toggle("Show due date pill in title bar", isOn: $showDuePill)
                 Toggle("Show links as domain pills", isOn: $linkDomainPills)
-                Text("A bare URL renders as a compact pill of just its domain. Purely visual and entirely offline — the note still holds the full URL, and it shows in full the moment your cursor enters it.")
+                Text("A bare URL renders as a compact pill of just its domain. Purely visual and entirely offline: the note still holds the full URL, and it shows in full the moment your cursor enters it.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)

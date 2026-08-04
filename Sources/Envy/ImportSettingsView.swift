@@ -163,7 +163,7 @@ struct ImportSettingsView: View {
                     statusView
                 }
             } footer: {
-                Text("Images and attachments don't transfer over — they arrive as an “[image omitted]” marker, and Apple Notes checklists come in as plain bullet lists. Everything else (text, formatting, lists, links) comes across as Markdown.")
+                Text("Images and attachments don't transfer over: they arrive as an “[image omitted]” marker, and Apple Notes checklists come in as plain bullet lists. Everything else (text, formatting, lists, links) comes across as Markdown.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -184,10 +184,10 @@ struct ImportSettingsView: View {
                     .fixedSize(horizontal: false, vertical: true)
 
                 Picker("Title locator", selection: $kindleTitleReference) {
-                    Text("Page — first words, p92").tag("page")
-                    Text("Location — first words, loc. 210").tag("location")
-                    Text("Both — first words, p92 · loc. 210").tag("both")
-                    Text("None — first words only").tag("none")
+                    Text("Page: first words, p92").tag("page")
+                    Text("Location: first words, loc. 210").tag("location")
+                    Text("Both: first words, p92 · loc. 210").tag("both")
+                    Text("None: first words only").tag("none")
                 }
                 Text("A book without page numbers falls back to its location, so a title's never left bare unless you choose None.")
                     .font(.caption)
@@ -211,7 +211,7 @@ struct ImportSettingsView: View {
                             .foregroundStyle(.green)
                             .font(.caption)
                     } else {
-                        Text("No Kindle detected — plug it in and refresh, or choose the file by hand.")
+                        Text("No Kindle detected: plug it in and refresh, or choose the file by hand.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
@@ -240,7 +240,7 @@ struct ImportSettingsView: View {
                 Button("Forget Import History…", role: .destructive) { confirmingForget = true }
                     .disabled(kindleImporterBusy)
                     .confirmationDialog(
-                        "Forget which highlights have been imported? The next import will re-offer every highlight — useful for redoing them with a different title format. Notes already in your vault aren't touched.",
+                        "Forget which highlights have been imported? The next import will re-offer every highlight, useful for redoing them with a different title format. Notes already in your vault aren't touched.",
                         isPresented: $confirmingForget, titleVisibility: .visible
                     ) {
                         Button("Forget Import History", role: .destructive) {
@@ -347,7 +347,7 @@ struct ImportSettingsView: View {
     }
 
     private func finishedMessage(imported: Int, skipped: Int) -> String {
-        if imported == 0 && skipped == 0 { return "Nothing to import — that folder is empty." }
+        if imported == 0 && skipped == 0 { return "Nothing to import: that folder is empty." }
         var msg = "Imported \(imported) note\(imported == 1 ? "" : "s")."
         if skipped > 0 { msg += " \(skipped) couldn't be written." }
         return msg

@@ -528,8 +528,8 @@ extension ContentView {
     private var badgeHelp: String {
         if isInboxQuery { return "Back to all notes" }
         return fleetingCount == 1
-            ? "1 fleeting note waiting — click to review"
-            : "\(fleetingCount) fleeting notes waiting — click to review"
+            ? "1 fleeting note waiting, click to review"
+            : "\(fleetingCount) fleeting notes waiting, click to review"
     }
 
     /// A fixed step lighter than the header's own opaque background,
@@ -621,7 +621,7 @@ extension ContentView {
                     .padding(.horizontal, 12)
                     .padding(.vertical, 8)
             } else {
-                Text("No templates yet — type a name to create one.")
+                Text("No templates yet. Type a name to create one.")
                     .font(.system(size: 11 * interfaceFontScale))
                     .foregroundStyle(.secondary)
                     .padding(.horizontal, 12)
