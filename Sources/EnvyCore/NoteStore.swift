@@ -1668,7 +1668,7 @@ public final class NoteStore: ObservableObject {
     /// `root` (The Index's own directory) is what folder: paths resolve
     /// against — nil (tests, callers without one) falls back to matching a
     /// note's immediate parent-folder name only.
-    nonisolated public static func filtered(_ notes: [Note], query: String, root: URL? = nil, imageText: [String: String] = [:]) -> [Note] {
+    nonisolated public static func filtered(_ notes: [Note], query: String, root: URL? = nil, imageText: [String: String] = [:], foldImageText: Bool = false) -> [Note] {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return notes }
 
@@ -1676,13 +1676,13 @@ public final class NoteStore: ObservableObject {
         guard !groups.isEmpty else { return notes }
 
         if groups.count == 1 {
-            return matched(in: notes, forGroup: groups[0], root: root, imageText: imageText).sorted(by: rankedHigherFirst).map(\.0)
+            return matched(in: notes, forGroup: groups[0], root: root, imageText: imageText, foldImageText: foldImageText).sorted(by: rankedHigherFirst).map(\.0)
         }
 
         var bestScoreByID: [String: Int] = [:]
         var noteByID: [String: Note] = [:]
         for group in groups {
-            for (note, score) in matched(in: notes, forGroup: group, root: root, imageText: imageText) {
+            for (note, score) in matched(in: notes, forGroup: group, root: root, imageText: imageText, foldImageText: foldImageText) {
                 noteByID[note.id] = note
                 bestScoreByID[note.id] = max(bestScoreByID[note.id] ?? Int.min, score)
             }
@@ -1818,7 +1818,7 @@ public final class NoteStore: ObservableObject {
         return parentURL.lastPathComponent.lowercased()
     }
 
-    nonisolated private static func matched(in notes: [Note], forGroup group: String, root: URL? = nil, imageText: [String: String] = [:]) -> [(Note, Int)] {
+    nonisolated private static func matched(in notes: [Note], forGroup group: String, root: URL? = nil, imageText: [String: String] = [:], foldImageText: Bool = false) -> [(Note, Int)] {
         let q = group.lowercased()
         let tokens = Self.tokenize(q)
 
@@ -2203,12 +2203,13 @@ public final class NoteStore: ObservableObject {
             // scoreByTermPresence already treats an empty terms list as an
             // automatic 0-score match (a pure operator query like "todo:"
             // with nothing else to search for).
-            // Scoped OCR: `img: whiteboard` searches the recognized text of the
-            // note's own images too, not just its body — the whole point of
-            // indexing scans. Only built when img: is active (so only image
-            // notes, already filtered above, pay it) and there's text to match.
+            // A note's recognized image text, folded into the terms search: under
+            // a scoped `img:` always, and under `foldImageText` (Settings) for
+            // ordinary searches too, so "whiteboard" finds a scanned whiteboard
+            // with no operator typed. Only image notes pay it, and only when
+            // there's text to match — a plain body search stays free.
             var ocrBlob = ""
-            if isImageOnly, !imageText.isEmpty, !freeTerms.isEmpty {
+            if !freeTerms.isEmpty, !imageText.isEmpty, isImageOnly || foldImageText, note.hasImageEmbed {
                 for link in note.wikiLinks
                 where Note.imageAttachmentExtensions.contains((link as NSString).pathExtension.lowercased()) {
                     if let recognized = imageText[link] { ocrBlob += recognized + " " }
@@ -2220,7 +2221,8 @@ public final class NoteStore: ObservableObject {
             guard let term = freeTerms.first else { return (note, 0) }
 
             // A single free term, no operators — the original scored
-            // exact/prefix/contains ranking.
+            // exact/prefix/contains ranking, with image text as a last, lowest
+            // rung (below body) when folding is on.
             let titleLower = note.lowercasedTitle
             let contentLower = note.lowercasedContent
             let score: Int
@@ -2231,6 +2233,8 @@ public final class NoteStore: ObservableObject {
             } else if Self.fastContains(titleLower, term) {
                 score = 2
             } else if Self.fastContains(contentLower, term) {
+                score = 1
+            } else if !ocrBlob.isEmpty, Self.fastContains(ocrBlob, term) {
                 score = 1
             } else {
                 return nil

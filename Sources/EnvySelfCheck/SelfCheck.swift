@@ -1909,6 +1909,19 @@ struct SelfCheck {
                   !titles("img: whiteboard").contains("Elsewhere"))
             check("img: term with no hit anywhere finds nothing",
                   titles("img: unicorn") == [])
+
+            // Folding image text into ordinary (operator-less) search.
+            func titlesFolded(_ query: String, fold: Bool) -> Set<String> {
+                Set(NoteStore.filtered(notes, query: query, imageText: ocr, foldImageText: fold).map(\.title))
+            }
+            check("folding off: a plain term doesn't reach image text",
+                  !titlesFolded("whiteboard", fold: false).contains("Meeting"))
+            check("folding on: a plain term finds a note by its image text",
+                  titlesFolded("whiteboard", fold: true).contains("Meeting"))
+            check("folding on: a plain body term still matches",
+                  titlesFolded("whiteboard", fold: true).contains("Elsewhere"))
+            check("folding on: two plain terms both reach image text",
+                  titlesFolded("whiteboard roadmap", fold: true) == ["Meeting"])
         }
 
         // OCR: render clear text to a bitmap and read it back with Vision, the

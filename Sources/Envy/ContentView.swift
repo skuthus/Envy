@@ -91,6 +91,7 @@ struct ContentView: View {
     @AppStorage("layoutMode") var layoutModeRaw = LayoutMode.vertical.rawValue
     @AppStorage("newNotesStartInInbox") var newNotesStartInInbox = false
     @AppStorage("showInboxInMainList") var showInboxInMainList = true
+    @AppStorage("searchImageText") var searchImageText = true
     @AppStorage("theme") var theme = Theme()
     /// Non-empty while an adaptive theme is selected. The pair is the source
     /// of truth; `theme` above is the face currently in force, rewritten
@@ -315,11 +316,12 @@ struct ContentView: View {
         sortAscending: Bool,
         showInbox: Bool,
         inboxDirectory: URL,
-        imageText: [String: String] = [:]
+        imageText: [String: String] = [:],
+        foldImageText: Bool = false
     ) -> SearchComputation {
         // The Index root (folder:'s reference point) is the inbox's parent —
         // already threaded through, so no second directory parameter.
-        var filtered = NoteStore.filtered(notes, query: query, root: inboxDirectory.deletingLastPathComponent(), imageText: imageText)
+        var filtered = NoteStore.filtered(notes, query: query, root: inboxDirectory.deletingLastPathComponent(), imageText: imageText, foldImageText: foldImageText)
         // Hidden only when the query isn't already about the inbox — asking
         // for "inbox:" and being shown nothing because of a setting
         // elsewhere would be its own bug.
@@ -373,8 +375,9 @@ struct ContentView: View {
         // it also reloads store.notes, which re-runs this whole pass anyway.
         let inboxDirectory = store.inboxDirectory
         let imageText = OCRIndex.shared.searchText
+        let foldImageText = searchImageText
         let result = await Task.detached(priority: .userInitiated) {
-            Self.computeSearch(notes: notesSnapshot, query: querySnapshot, pinnedIDs: pinnedSnapshot, sortField: field, sortAscending: ascending, showInbox: showInbox, inboxDirectory: inboxDirectory, imageText: imageText)
+            Self.computeSearch(notes: notesSnapshot, query: querySnapshot, pinnedIDs: pinnedSnapshot, sortField: field, sortAscending: ascending, showInbox: showInbox, inboxDirectory: inboxDirectory, imageText: imageText, foldImageText: foldImageText)
         }.value
         guard generation == searchComputeGeneration else { return }
         filteredNotesCache = result.notes
@@ -399,7 +402,7 @@ struct ContentView: View {
             notes: store.notes, query: query, pinnedIDs: pinnedNoteIDs,
             sortField: sortField, sortAscending: sortAscending,
             showInbox: showInboxInMainList, inboxDirectory: store.inboxDirectory,
-            imageText: OCRIndex.shared.searchText)
+            imageText: OCRIndex.shared.searchText, foldImageText: searchImageText)
         filteredNotesCache = result.notes
         suggestionNoteCache = result.suggestion
         queryHasExactTitleMatch = result.hasExactTitleMatch
@@ -753,7 +756,10 @@ struct ContentView: View {
         // to fold the freshly recognized text in. Only pay for it when the
         // query actually scopes to images.
         .onReceive(OCRIndex.shared.$searchText) { _ in
-            if query.lowercased().contains("img:") { Task { await recomputeFilteredNotes() } }
+            // Fresh recognized text can change results for a scoped img: query,
+            // or any query once general image-text search is on.
+            guard !query.isEmpty, searchImageText || query.lowercased().contains("img:") else { return }
+            Task { await recomputeFilteredNotes() }
         }
         .onChange(of: store.notes) { _, _ in
             // Fires once a reload actually finishes (folder switch, note
