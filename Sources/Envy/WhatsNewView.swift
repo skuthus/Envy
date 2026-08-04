@@ -28,12 +28,12 @@ struct WhatsNewView: View {
             }
 
             VStack(spacing: 10) {
-                Image(systemName: "books.vertical.fill")
+                Image(systemName: "doc.text.viewfinder")
                     .font(.system(size: 44))
                     .foregroundStyle(EnvyBrand.mark)
-                Text("Bring Your Reading Home")
+                Text("Scan & Search the Physical World")
                     .font(.title3.bold())
-                Text("Envy now imports your Kindle highlights. Turn it on in Settings → Import, plug in your Kindle, and every highlight lands in your Inbox as a fleeting note: the quote as a blockquote, titled by its first words and page, with the book as a [[link]]. Notes you typed on the Kindle attach beneath their passage.\n\nIt remembers what it imported — stored in your vault, so it travels between Macs — and only ever adds what's new. Titles and attribution are yours to shape in Settings. (Older USB-mounting Kindles for now; newer models later.)")
+                Text("Snap a photo or scan a document straight into a note. A new camera button sits beside the search bar (and right-click inside any note offers Import from iPhone): take a photo or scan pages, and they arrive as a fresh note, cropped to the page and named by date.\n\nEnvy reads the text in your images on-device, so search finds your scans. Type a word and a photographed receipt or whiteboard surfaces, with the matching words lit up right on the image. Drag to select text off any scan, right-click to copy it, or drop the whole transcription into the note.\n\nTurn it on in Settings → Import → Camera & Scanning. On-device, no network, ever.")
                     .font(.body)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)

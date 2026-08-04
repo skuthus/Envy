@@ -177,7 +177,18 @@ enum WelcomeContent {
 
     Envy remembers what it has imported, so plugging in after every reading session only adds what's new — even if you've since filed, retitled, or deleted the earlier ones. That memory lives in an `Envy Data` folder inside your Index, so it travels with your vault: import on one Mac, and a second Mac syncing the same vault won't re-import the same highlights. Adjusted highlights are collapsed to their final form, and bookmarks are skipped. (No Kindle on hand? "Choose Clippings File…" imports a copied `My Clippings.txt` from anywhere.)
 
-    Older Kindles that mount as a USB drive work directly. Newer Kindles use MTP and never appear in Finder — mount one with **Moorage** and Envy finds it automatically under `~/Moorage`.
+    Older Kindles that mount as a USB drive work directly. Newer Kindles use MTP and never appear in Finder: mount one with [Moorage](https://github.com/skuthus/Moorage), the official way to bring a newer Kindle in, and Envy finds it automatically under `~/Moorage`.
+
+    ## 📷 Scan & Search the Physical World
+
+    Envy can pull the paper world in. Press the **camera button** beside the search bar (or right-click inside a note and choose "Import from iPhone or iPad") to take a photo or scan a document with your iPhone. A photo lands as a fresh note; a scan comes in cropped to the page and straightened, one image per page, titled by the date.
+
+    Turn it on in **Settings → Import → Camera & Scanning**, where two more switches wait:
+
+    - **Read text in images (OCR).** Envy reads the words inside your photos and scans in the background, on-device, no network. Then search finds them: `img: whiteboard` searches only your images, and with "Include image text in every search" on, a plain search like `receipt` finds them too. Matching words light up right on the picture.
+    - **Live Text, right on the image.** Drag across the text on any scan to select it and press ⌘C to copy, or right-click for **Copy Text from Image** (the whole thing to the clipboard) or **Transcribe Text into Note** (drop it in as plain text below the picture).
+
+    Handwriting is a coin flip; printed pages, whiteboards, and receipts come back clean. No account, and nothing ever leaves your Mac.
 
     ## 📁 Folders & Colors
 

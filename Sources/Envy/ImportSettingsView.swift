@@ -51,6 +51,24 @@ struct ImportSettingsView: View {
         return all
     }
 
+    /// The MTP-Kindle warning with "Moorage" as a visibly-distinct link: the
+    /// caution text stays yellow, but the link is blue and underlined so it
+    /// reads as clickable rather than blending into the warning.
+    private var kindleMTPWarning: AttributedString {
+        func yellow(_ string: String) -> AttributedString {
+            var run = AttributedString(string)
+            run.foregroundColor = .yellow
+            return run
+        }
+        var link = AttributedString("Moorage")
+        link.foregroundColor = .blue
+        link.underlineStyle = .single
+        link.link = URL(string: "https://github.com/skuthus/Moorage")
+        return yellow("Older Kindles that mount as a USB drive work directly. Newer Kindles use MTP and don't appear in Finder: mount one with ")
+            + link
+            + yellow(", the official way to bring a newer Kindle in, and Envy imports from it automatically (it looks under ~/Moorage).")
+    }
+
     var body: some View {
         Form {
             Section("Camera & Scanning") {
@@ -153,11 +171,14 @@ struct ImportSettingsView: View {
 
             Section("Kindle") {
                 Toggle("Enable Kindle import", isOn: $kindleEnabled)
-                Label("Older Kindles that mount as a USB drive work directly. Newer Kindles use MTP and don't appear in Finder — mount one with Moorage and Envy imports from it automatically (it looks under ~/Moorage).", systemImage: "exclamationmark.triangle.fill")
-                    .font(.caption)
-                    .foregroundStyle(.yellow)
-                    .fixedSize(horizontal: false, vertical: true)
-                Text("Plug in your Kindle and pull its highlights and typed notes into the Inbox as fleeting notes — one per highlight, titled by the quote's first words, with the book as a [[link]]. Envy remembers what it has already imported, so re-importing only ever adds what's new.")
+                Label {
+                    Text(kindleMTPWarning)
+                } icon: {
+                    Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.yellow)
+                }
+                .font(.caption)
+                .fixedSize(horizontal: false, vertical: true)
+                Text("Plug in your Kindle and pull its highlights and typed notes into the Inbox as fleeting notes, one per highlight, titled by the quote's first words, with the book as a [[link]]. Envy remembers what it has already imported, so re-importing only ever adds what's new.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
