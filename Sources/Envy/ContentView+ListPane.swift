@@ -1110,8 +1110,20 @@ extension ContentView {
                 result = Text("\(result)\(Text(query[index..<end]))")
                 index = end
             } else {
+                // Scan one token, but treat a quoted run as part of the same
+                // token so an operator's multi-word argument (folder:"test
+                // folder") stays glued to the operator and dims as a whole,
+                // rather than the space inside the quotes splitting off a
+                // second, undimmed word. An unbalanced opening quote (still
+                // typing the argument) runs to the end, which is what we want.
                 var end = index
-                while end < query.endIndex, query[end] != " " { end = query.index(after: end) }
+                var inQuote = false
+                while end < query.endIndex {
+                    let ch = query[end]
+                    if ch == "\"" { inQuote.toggle() }
+                    else if ch == " ", !inQuote { break }
+                    end = query.index(after: end)
+                }
                 let word = query[index..<end]
                 let isOperator = Self.isSearchOperatorWord(word.lowercased(), browsePrefixes: ["template:", "trash:", "inbox:"])
                 result = Text("\(result)\(Text(word).foregroundColor(isOperator ? Color.primary.opacity(0.8) : .primary))")
