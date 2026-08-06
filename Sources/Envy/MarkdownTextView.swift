@@ -1549,12 +1549,25 @@ struct MarkdownTextView: NSViewRepresentable {
             }
             if Self.managedCloserCharacters.contains(replacementString),
                affectedCharRange.location < nsText.length,
-               nsText.substring(with: NSRange(location: affectedCharRange.location, length: 1)) == replacementString {
+               nsText.substring(with: NSRange(location: affectedCharRange.location, length: 1)) == replacementString,
+               // Exception: the 2nd "*" of a bold opener, where a "*" already
+               // sits just before the caret (the "*|*" auto-pairing left after
+               // the first star). Typing through it would strand "**|" with no
+               // closer; instead fall through to autoClose, which upgrades the
+               // single mirror to a full "**|**" bold pair.
+               !(replacementString == "*" && affectedCharRange.location > 0 &&
+                 nsText.substring(with: NSRange(location: affectedCharRange.location - 1, length: 1)) == "*") {
                 pendingAutoCloseTrigger = nil
                 textView.setSelectedRange(NSRange(location: affectedCharRange.location + 1, length: 0))
                 return false
             }
-            pendingAutoCloseTrigger = (replacementString, affectedCharRange.location)
+            // Only a genuine user keystroke arms auto-close. The programmatic
+            // inserts inside autoCloseIfNeeded (mirrors, pair upgrades) run
+            // while isHandlingTextChange is set and route back through here;
+            // arming off those would let one keystroke cascade (a lone "*"
+            // spiralling into "**|**" and beyond). Auto-close fires once per
+            // real keypress, never off the editor's own edits.
+            pendingAutoCloseTrigger = isHandlingTextChange ? nil : (replacementString, affectedCharRange.location)
             return true
         }
 
@@ -1690,15 +1703,22 @@ struct MarkdownTextView: NSViewRepresentable {
                 insert("`", at: cursor)
 
             case "*":
-                // Suppress at the start of a line (this "*" is more likely a
-                // bullet-list marker than the start of *italic*).
-                let lineStart = nsText.lineRange(for: NSRange(location: location, length: 0)).location
-                let prefix = nsText.substring(with: NSRange(location: lineStart, length: location - lineStart))
-                guard !prefix.allSatisfy({ $0 == " " || $0 == "\t" }) else { return }
-                // Suppress on the 3rd asterisk in a row — completing
-                // ***bold italic***, not opening a new pair.
+                // Suppress on the 3rd asterisk in a row — a "***" is either
+                // ***bold italic*** or a thematic break, not a new pair to open.
                 guard !(char(at: location - 1) == "*" && char(at: location - 2) == "*") else { return }
-                insert("*", at: cursor)
+                // A second "*" right after the first ("**") turns the italic
+                // pair into a bold one: upgrade "*|*" to a full "**|**" (the
+                // same way "[[" becomes "[[|]]" and "~~" becomes "~~|~~"), so
+                // one keypress adds one visible star on each side rather than
+                // stranding "**|" or dropping a stray third star. A "*" that
+                // *closes* emphasis after a word was already handled by the
+                // closer-after-word check above, so this only fires for
+                // genuine openers.
+                if char(at: location - 1) == "*" {
+                    closeSecondOpener(with: "*")
+                } else {
+                    insert("*", at: cursor)
+                }
 
             case "[":
                 if char(at: location - 1) == "[" {
