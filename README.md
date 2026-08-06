@@ -1,5 +1,7 @@
 # Envy
 
+![Envy: one search box, notes stored as plain Markdown files](https://envynote.app/assets/screenshots/raw-main.png)
+
 A flat-file, frictionless note-taking application for macOS. One search box, instant results, and notes stored as plain `.md` files you can grep, sync, or edit with anything else you like.
 
 Built by [Skyler Schoos](https://github.com/skuthus).
