@@ -28,12 +28,12 @@ struct WhatsNewView: View {
             }
 
             VStack(spacing: 10) {
-                Image(systemName: "doc.text.viewfinder")
+                Image(systemName: "switch.2")
                     .font(.system(size: 44))
                     .foregroundStyle(EnvyBrand.mark)
-                Text("Scan & Search the Physical World")
+                Text("Turn Off What You Don't Use")
                     .font(.title3.bold())
-                Text("Snap a photo or scan a document straight into a note. A new camera button sits beside the search bar (and right-click inside any note offers Import from iPhone): take a photo or scan pages, and they arrive as a fresh note, cropped to the page and named by date.\n\nEnvy reads the text in your images on-device, so search finds your scans. Type a word and a photographed receipt or whiteboard surfaces, with the matching words lit up right on the image. Drag to select text off any scan, right-click to copy it, or drop the whole transcription into the note.\n\nTurn it on in Settings → Import → Camera & Scanning. On-device, no network, ever.")
+                Text("Not everyone wants an Inbox, and not everyone wants the camera. Now you can switch either one off completely.\n\nTurn the Inbox off and it disappears: no badge beside the search bar, no fleeting notes, no inbox: operator. Turn Continuity Camera off and its button goes away, while text recognition stays available if you still want searchable text from images you add another way.\n\nThe Inbox switch lives in Settings → General, the camera in Settings → Import. Envy should be only the parts you actually use.")
                     .font(.body)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)

@@ -155,6 +155,8 @@ enum WelcomeContent {
 
     `inbox: bauhaus` searches within your fleeting notes; `-inbox:` hides them from an ordinary search.
 
+    Don't want an Inbox at all? Settings → General → "Enable Inbox" turns the whole thing off: the count beside the search box disappears, notes are no longer set apart as fleeting, and the `inbox:` operator goes quiet.
+
     ## 📥 Importing from Apple Notes
 
     Envy runs on your Mac, so it can't be the thing you reach for in a queue or on a walk. Apple Notes can: it's on your phone, your watch, your lock screen. Use it as the net, and bring the catch home.
@@ -189,6 +191,8 @@ enum WelcomeContent {
     - **Live Text, right on the image.** Drag across the text on any scan to select it and press ⌘C to copy, or right-click for **Copy Text from Image** (the whole thing to the clipboard) or **Transcribe Text into Note** (drop it in as plain text below the picture).
 
     Handwriting is a coin flip; printed pages, whiteboards, and receipts come back clean. No account, and nothing ever leaves your Mac.
+
+    Only want the reading, not the camera? Turn Continuity Camera off on its own and leave text recognition on, so images you add by drag or paste still become searchable, without the camera button beside the search bar.
 
     ## 📁 Folders & Colors
 

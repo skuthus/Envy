@@ -2,6 +2,26 @@
 
 Also published at [envynote.app/changelog.html](https://envynote.app/changelog.html).
 
+## 1.10.0 — August 7, 2026
+
+Make Envy only the parts you use: the Inbox and Continuity Camera can each be switched off completely.
+
+- **Turn off the Inbox.** Settings → General → "Enable Inbox" hides it entirely: no count beside the search box, no notes set apart as fleeting, and the `inbox:` operator goes quiet. If you never wanted a capture queue, now there isn't one.
+- **Turn off Continuity Camera.** Settings → Import hides the camera button and its right-click item, while text recognition stays independently available, so images you drag or paste in are still searchable if you want that.
+- **Scanned documents span the full width.** A tall, full-page scan can now stretch to the editor's edge instead of being capped short, so a photographed page reads properly inline.
+- **Fixed:** a quoted search-operator argument like `folder:"test folder"` now styles as one unit instead of half-greyed; and typing `*` reliably pairs it (`*` gives `*|*`, a second `*` makes it bold `**|**`) with no stray asterisks.
+- **Security:** hardened how attachment and subfolder paths are handled, so a crafted note or name can never reach outside your Index.
+
+## 1.9.0 — August 4, 2026
+
+Scan and search the physical world: photograph or scan straight into a note, and Envy reads the text so you can find it later.
+
+- **Capture from your iPhone.** A camera button beside the search bar (and right-click → "Import from iPhone or iPad" inside any note) takes a photo or scans a document with your phone. A photo becomes a fresh note; a scan comes in cropped to the page and straightened, one image per page, titled by the date.
+- **Search the text inside your images.** With OCR on (Settings → Import → Camera & Scanning), Envy reads your photos and scans on-device and search finds them: `img: whiteboard` searches only your images, and a plain search reaches image text too. Matching words light up right on the picture.
+- **Live Text and transcription.** Drag across the text on any scan to select and copy it, or right-click for "Copy Text from Image" and "Transcribe Text into Note".
+- **Newer Kindles, via Moorage.** Kindle import now also reads from an MTP Kindle mounted with [Moorage](https://github.com/skuthus/Moorage) (under `~/Moorage`), so newer models work too, not just older USB-mounting ones.
+- Everything runs on-device: no account, no network, nothing leaves your Mac. Printed pages, whiteboards, and receipts read cleanly; handwriting is a coin flip.
+
 ## 1.8.9 — August 2, 2026
 
 Bring your reading home: Envy now imports Kindle highlights.
