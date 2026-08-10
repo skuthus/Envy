@@ -2031,6 +2031,24 @@ struct SelfCheck {
                   !NoteStore.isContained(URL(fileURLWithPath: "/tmp/TheIndex/Other/x"), in: base))
         }
 
+        // Submit from Inbox: a fleeting note files into the Index root.
+        do {
+            let store = await makeTempStore()
+            let inbox = store.createInboxNote(titled: "Fleeting Thought")
+            check("inbox: createInboxNote lands in Inbox/", store.isInboxNote(inbox))
+            let filed = store.submitFromInbox(inbox)
+            check("inbox: submit returns the moved note", filed != nil)
+            check("inbox: submit moves it out of Inbox/", filed.map { !store.isInboxNote($0) } ?? false)
+            check("inbox: filed file exists on disk", filed.map { FileManager.default.fileExists(atPath: $0.url.path) } ?? false)
+            // Collision: a fleeting note whose title matches a note already at
+            // the root must still file (renamed), not silently refuse — it has
+            // no incoming links to protect, unlike an ordinary move.
+            _ = store.create(title: "Journal")
+            let dupInbox = store.createInboxNote(titled: "Journal")
+            let dupFiled = store.submitFromInbox(dupInbox)
+            check("inbox: submit files even when the title collides at root", dupFiled != nil && dupFiled.map { !store.isInboxNote($0) } ?? false)
+        }
+
         print("")
         if failures.isEmpty {
             print("All checks passed.")

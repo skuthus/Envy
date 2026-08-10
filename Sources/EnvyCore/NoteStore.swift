@@ -905,7 +905,7 @@ public final class NoteStore: ObservableObject {
     /// keep resolving to what they meant. Returns the note at its new location,
     /// or nil if the move failed.
     @discardableResult
-    public func moveNote(_ note: Note, toSubfolder subfolder: String?) -> Note? {
+    public func moveNote(_ note: Note, toSubfolder subfolder: String?, filingFromInbox: Bool = false) -> Note? {
         // A nil/empty subfolder means "move to the root"; a named one is
         // sanitized so a "../" can't move the note outside the vault (an
         // unusable path refuses the move rather than escaping).
@@ -933,7 +933,13 @@ public final class NoteStore: ObservableObject {
         // legally carry ":" or "/" that filenames rewrite to "-", and that
         // deterministic difference is not a collision (it used to be misread
         // as one, which made colon-titled notes refuse to move at all).
-        guard destination.deletingPathExtension().lastPathComponent == Self.sanitizedBase(for: note.title) else { return nil }
+        //
+        // A note filed from the Inbox is exempt: it has no incoming links yet,
+        // so there's nothing to protect — it takes the "Foo (2)" name and files
+        // rather than refusing, which is what submit did before it delegated here.
+        if !filingFromInbox {
+            guard destination.deletingPathExtension().lastPathComponent == Self.sanitizedBase(for: note.title) else { return nil }
+        }
         guard (try? FileManager.default.moveItem(at: note.url, to: destination)) != nil else { return nil }
         let moved = Note(id: destination.path, url: destination, content: note.content, modifiedDate: note.modifiedDate)
         if let index = notes.firstIndex(where: { $0.id == note.id }) {
@@ -943,7 +949,10 @@ public final class NoteStore: ObservableObject {
         // Sanitization can still change the title (Contact: → Contact-).
         // That's deterministic, not ambiguous — so rewrite the vault's
         // references the same way rename(_:to:) does, and links keep working.
-        if moved.title != note.title {
+        // Skipped when filing from the Inbox: the note has no incoming links,
+        // and a collision rename to "Foo (2)" must not rewrite a same-named
+        // note's existing [[Foo]] links to point at the newcomer.
+        if !filingFromInbox, moved.title != note.title {
             updateWikiLinkReferences(from: note.title, to: moved.title)
         }
         return moved
@@ -1216,7 +1225,7 @@ public final class NoteStore: ObservableObject {
         // moveNote already carries everything submit used to duplicate
         // (collision refusal, the rename map, sanitization link rewrites).
         guard isInboxNote(note) else { return nil }
-        return moveNote(note, toSubfolder: subfolder)
+        return moveNote(note, toSubfolder: subfolder, filingFromInbox: true)
     }
 
     /// Renames a loose `.md` file in place. Used by the template and inbox
