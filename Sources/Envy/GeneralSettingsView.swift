@@ -10,6 +10,7 @@ struct GeneralSettingsView: View {
     @AppStorage("folderListDisplay") private var folderListDisplayRaw = FolderListDisplay.dot.rawValue
     @AppStorage("showDateModified") private var showDateModified = true
     @AppStorage("inboxEnabled") private var inboxEnabled = true
+    @AppStorage("keepPinnedNotesVisible") private var keepPinnedNotesVisible = false
     @AppStorage("newNotesStartInInbox") private var newNotesStartInInbox = false
     @AppStorage("showInboxInMainList") private var showInboxInMainList = true
     @AppStorage("showDueSort") private var showDueSort = true
@@ -226,6 +227,10 @@ struct GeneralSettingsView: View {
                 }
                 .disabled(!showDateModified)
                 Toggle("Allow sorting by due date", isOn: $showDueSort)
+                Toggle("Keep pinned notes visible while scrolling", isOn: $keepPinnedNotesVisible)
+                Text("Parks your pinned notes (up to three) just below the search bar so they stay reachable no matter how far you scroll. Off, they sort to the top of the list as before and scroll away with it.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
                 Toggle("Enable Inbox (fleeting notes)", isOn: $inboxEnabled)
                 Text("The Inbox is a holding pen for captures you haven't filed. With it on, notes in an Inbox/ folder are fleeting: a count sits beside the search box, an amber ! marks them in the list, and \u{201C}inbox:\u{201D} finds them. Turn it off and there's no inbox at all: no count, no marker, no \u{201C}inbox:\u{201D} operator, and any notes in an Inbox/ folder are treated as ordinary notes.")
                     .font(.caption)

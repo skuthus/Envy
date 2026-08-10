@@ -626,6 +626,7 @@ extension ContentView {
         Button(isPinned(note) ? "Unpin Note" : "Pin Note") {
             togglePin(note)
         }
+        .disabled(!isPinned(note) && pinLimitReached)
         Button(isMenuBarPinned(note) ? "Unpin from Menu Bar" : "Pin to Menu Bar") {
             toggleMenuBarPin(note)
         }

@@ -93,6 +93,11 @@ extension ContentView {
             // header, which stays looking like the rest of the window chrome.
             .background(Color(nsColor: .windowBackgroundColor))
             Divider()
+            // Pinned notes parked below the search/sort chrome so they stay
+            // reachable no matter how far the list is scrolled (opt-in, up to
+            // three). They're the leading rows of filteredNotes already, so
+            // the scroll list below just drops them to avoid showing them twice.
+            stickyPinnedSection
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(spacing: 0) {
@@ -105,8 +110,17 @@ extension ContentView {
                         } else if isFolderBrowseQuery {
                             matchingFolderRows
                         } else {
+                            // The pins lifted into the sticky strip above are
+                            // skipped here so they don't show twice. Skipping in
+                            // place (a 3-element Set lookup per row) keeps the
+                            // ForEach over the original, stable filteredNotes —
+                            // no per-render array copy, which is what a
+                            // dropFirst/filter would cost on a large vault.
+                            let stickyIDs = stickyPinnedIDs
                             ForEach(filteredNotes) { note in
-                                noteRow(for: note)
+                                if !stickyIDs.contains(note.id) {
+                                    noteRow(for: note)
+                                }
                             }
                         }
                     }
@@ -263,6 +277,45 @@ extension ContentView {
     }
 
     @ViewBuilder
+    /// The pinned notes shown in the sticky region under the search bar when
+    /// the setting is on. They're the leading rows of filteredNotes (pinned
+    /// always sort to the top), capped at three so the region can never grow
+    /// to swallow the list. Empty in every browse mode and when the setting is
+    /// off, which collapses the region away. Reading only the leading run
+    /// keeps this O(pins), not a walk of the whole (possibly huge) list.
+    var stickyPinnedNotes: [Note] {
+        guard keepPinnedNotesVisible,
+              !isTemplateQuery, !isTrashQuery, !isTagBrowseQuery, !isFolderBrowseQuery
+        else { return [] }
+        return Array(filteredNotes.prefix(while: { isPinned($0) }).prefix(3))
+    }
+
+    /// The ids of the pins shown in the sticky strip, so the scroll list can
+    /// skip them without copying the array. At most three, so building and
+    /// probing this Set is trivial.
+    var stickyPinnedIDs: Set<String> {
+        Set(stickyPinnedNotes.map(\.id))
+    }
+
+    /// The always-visible pinned block: the same rows the scroll list uses,
+    /// lifted into the fixed chrome with a quiet "Pinned" label and a divider
+    /// so it reads as its own zone rather than three rows that happen to stick.
+    @ViewBuilder
+    private var stickyPinnedSection: some View {
+        let pins = stickyPinnedNotes
+        if !pins.isEmpty {
+            VStack(spacing: 0) {
+                ForEach(pins) { note in
+                    noteRow(for: note)
+                }
+            }
+            .padding(.horizontal, 4)
+            .padding(.vertical, 3)
+            .background(Color(nsColor: .windowBackgroundColor))
+            Divider()
+        }
+    }
+
     private func noteRow(for note: Note) -> some View {
         NoteRow(note: note, showPreview: showNotePreview, showDateModified: showDateModified, dateDisplayStyle: dateDisplayStyle, sortField: sortField, theme: theme, textColor: theme.fileListTextColor?.color, bold: boldFileListText, isPinned: isPinned(note), isFleeting: inboxNoteIDsCache.contains(note.id), folderColor: noteFolderColorCache[note.id], dotTrailing: noteDotTrailing, folderName: noteSubfolderCache[note.id], onFolderSearch: { searchByFolder($0) }, isFirstRow: note.id == filteredNotes.first?.id, folderDisplay: FolderListDisplay(rawValue: folderListDisplayRaw) ?? .dot)
             .padding(.vertical, listDensity.rowVerticalPadding)

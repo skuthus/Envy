@@ -94,6 +94,7 @@ struct ContentView: View {
     @AppStorage("searchImageText") var searchImageText = true
     @AppStorage("cameraEnabled") var cameraEnabled = true
     @AppStorage("inboxEnabled") var inboxEnabled = true
+    @AppStorage("keepPinnedNotesVisible") var keepPinnedNotesVisible = false
     @AppStorage("theme") var theme = Theme()
     /// Non-empty while an adaptive theme is selected. The pair is the source
     /// of truth; `theme` above is the face currently in force, rewritten

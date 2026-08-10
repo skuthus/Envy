@@ -156,11 +156,23 @@ extension ContentView {
         pinnedNoteIDs.contains(note.id)
     }
 
+    /// The number of pins allowed when the sticky pinned strip is on — its
+    /// capacity, so pins and the strip stay one-to-one. Unlimited otherwise,
+    /// which is the long-standing scroll-to-top behavior.
+    static let stickyPinLimit = 3
+
+    var pinLimitReached: Bool {
+        keepPinnedNotesVisible && pinnedNoteIDs.count >= Self.stickyPinLimit
+    }
+
     func togglePin(_ note: Note) {
         var ids = pinnedNoteIDs
         if ids.contains(note.id) {
             ids.remove(note.id)
         } else {
+            // A fourth pin, with the sticky strip on, would just fall back to
+            // the old scroll-away behavior and muddy the model — refuse it.
+            guard !pinLimitReached else { return }
             ids.insert(note.id)
         }
         pinnedNotePathsRaw = ids.joined(separator: "\n")
