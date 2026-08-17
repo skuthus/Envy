@@ -6,7 +6,9 @@
 #   Scripts/push-to-prod.sh --site-only          website changes only, no new build
 #   Scripts/push-to-prod.sh --rollback           un-offer the current release
 #   ...plus --dry-run on any of the above, which stops short of every
-#   irreversible step and tells you what it would have done instead.
+#   irreversible step and tells you what it would have done instead, and
+#   --yes, which skips the confirmations (saying "push to prod" is the
+#   approval). Failed checks still abort the run either way.
 #
 # The long-form reasoning behind each phase lives in Scripts/RELEASE.md. This
 # file is the executable version of that document; if the two ever disagree,
@@ -36,6 +38,7 @@ SITE_URL="https://envynote.app"
 VERSION=""
 MODE="release"
 DRY_RUN=0
+ASSUME_YES=0
 
 # ── plumbing ────────────────────────────────────────────────────────────────
 
@@ -53,6 +56,14 @@ gate() {
   local prompt="$1" want="$2" answer
   if [ "$DRY_RUN" = 1 ]; then
     warn "dry run: would stop here and ask you to type '$want'"
+    return 0
+  fi
+  # --yes exists because saying "push to prod" is itself the approval, so being
+  # asked again adds nothing. It skips the confirmations only; every automatic
+  # check still aborts the run on failure, which is the part actually doing the
+  # protecting.
+  if [ "$ASSUME_YES" = 1 ]; then
+    info "auto-confirmed (--yes): $(echo "$prompt" | head -1)"
     return 0
   fi
   printf "\n\033[1m%s\033[0m\n" "$prompt"
@@ -83,6 +94,7 @@ while [ $# -gt 0 ]; do
     --site-only) MODE="site"; shift ;;
     --rollback)  MODE="rollback"; shift ;;
     --dry-run)   DRY_RUN=1; shift ;;
+    --yes|-y)    ASSUME_YES=1; shift ;;
     -h|--help)   usage ;;
     *)           die "Unknown argument: $1 (try --help)" ;;
   esac
@@ -322,8 +334,16 @@ reaches nobody who already has it."
   # EnvySelfCheck only depends on EnvyCore. The whole Envy executable target —
   # the editor, the styler, search — is outside its reach, so this is a partial
   # check and gets described as one rather than being allowed to imply coverage.
-  live swift build -c release
-  live swift run -c release EnvySelfCheck
+  # --product Envy, not a blanket build: EnvySelfCheck does @testable import
+  # EnvyCore, and a release build does not enable testing, so building the whole
+  # package in release fails with ModuleNotTestable before it reaches anything
+  # useful. build-app.sh scopes its build the same way for the same reason.
+  #
+  # SelfCheck then runs in debug, where -enable-testing is on by default. It is
+  # a correctness check, so the build configuration it runs under does not
+  # matter; the release binary above is what actually ships.
+  live swift build -c release --product Envy
+  live swift run EnvySelfCheck
   ok "EnvySelfCheck passed (covers EnvyCore only, not the app target)"
   live "$ROOT_DIR/Scripts/build-test-app.sh"
 

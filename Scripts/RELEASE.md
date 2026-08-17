@@ -11,16 +11,26 @@ Ask which track it is only if it is genuinely ambiguous. A changed file under
 `Sources/` means Track B; changes confined to `~/Documents/Claude/EnvyWebsite`
 mean Track A.
 
-## The two gates
+## Approval
 
-These are not optional, and neither is skippable by inferring approval from the
-original "push to prod".
+**"Push to prod" is the approval.** Run start to finish and report the result;
+do not stop to confirm steps that are fine. Skyler set this on 2026-08-17 after
+being asked to confirm at the EnvyTest gate: "I have already tested all
+features. you dont need to pause here. assume when I say push to prod that im
+good to go."
 
-1. **Uncommitted work halts the run.** Show the diff, stop, wait. Never
+Two things that still stop the run, because neither is about haste:
+
+1. **Uncommitted work halts it.** Show the diff, stop, wait. Never
    `git checkout`, `git stash`, or overwrite anything without showing it first.
-2. **Confirm immediately before the irreversible step.** Print exactly what will
-   go live, then wait for an explicit yes. Deploying the appcast starts pushing
-   an update to every installed copy of Envy. There is no undo.
+   This guards against shipping a half-finished edit nobody meant to include.
+2. **Any failed check halts it.** A preflight failure, a Gatekeeper rejection, a
+   length mismatch between the appcast and what the server sends. Skipping the
+   confirmations means not asking about things that are fine. It does not mean
+   pushing through things that are broken.
+
+When running the script by hand, `--yes` skips the interactive gates; without
+it they still prompt, which is useful when you are driving it yourself.
 
 Never add a `Co-Authored-By:` trailer or any generated-with footer to a commit.
 
