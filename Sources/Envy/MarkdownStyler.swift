@@ -1505,34 +1505,74 @@ enum MarkdownStyler {
     }
 
     private static func highlightMatches(of query: String, in text: String, textStorage: NSTextStorage, color: NSColor, backdrop: NSColor) {
+        let perceivedColor = compositedColor(color, over: backdrop)
+        enumerateSearchMatches(of: query, in: text) { range, adjustsForeground in
+            textStorage.addAttribute(.backgroundColor, value: color, range: range)
+            guard adjustsForeground else { return }
+            // Reads whatever foreground color the rest of styling
+            // already settled on (this runs last, right before
+            // endEditing) so it can tell whether the highlight would
+            // make that specific span unreadable — a search match
+            // landing on bold text, a link, a tag, or plain body text
+            // each already has its own color by this point.
+            textStorage.enumerateAttribute(.foregroundColor, in: range, options: []) { existing, subrange, _ in
+                let current = (existing as? NSColor) ?? .labelColor
+                let adjusted = legibleForeground(current, over: perceivedColor)
+                if adjusted != current {
+                    textStorage.addAttribute(.foregroundColor, value: adjusted, range: subrange)
+                }
+            }
+        }
+    }
+
+    /// The earliest range in `text` that `query` lights up, or nil when the
+    /// query paints nothing here — no match at all, or a query made only of
+    /// operators that name nothing literal (`due:`, `orphan:`, an exclusion).
+    /// Drives the editor's scroll-to-match: it shares its matching rules with
+    /// the highlighting itself, so where the view jumps can't drift from what
+    /// actually lit up.
+    static func firstSearchMatch(of query: String, in text: String) -> NSRange? {
+        var earliest: NSRange?
+        enumerateSearchMatches(of: query, in: text, firstPerTokenOnly: true) { range, _ in
+            guard let current = earliest else { earliest = range; return }
+            if range.location < current.location { earliest = range }
+        }
+        return earliest
+    }
+
+    /// Every range the search query paints in `text`, in whatever order the
+    /// query's tokens happen to produce them — token order, not document
+    /// order. `adjustsForeground` is false only for the tag-operator branch,
+    /// which backgrounds a substring of a `#tag` that already carries its own
+    /// deliberate color.
+    ///
+    /// `firstPerTokenOnly` stops each token at its own first hit. That's all
+    /// firstSearchMatch needs (it takes the minimum location across tokens
+    /// regardless) and keeps a whole-document scan per query change cheap.
+    private static func enumerateSearchMatches(
+        of query: String,
+        in text: String,
+        firstPerTokenOnly: Bool = false,
+        body: (_ range: NSRange, _ adjustsForeground: Bool) -> Void
+    ) {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
         let nsText = text as NSString
         guard nsText.length > 0 else { return }
         let fullRange = NSRange(location: 0, length: nsText.length)
-        let perceivedColor = compositedColor(color, over: backdrop)
 
-        func highlightMatches(ofPattern pattern: String) {
+        func emitMatches(ofPattern pattern: String) {
             guard let regex = cachedHighlightRegex(pattern) else { return }
+            if firstPerTokenOnly {
+                if let match = regex.firstMatch(in: text, range: fullRange) { body(match.range, true) }
+                return
+            }
             for match in regex.matches(in: text, range: fullRange) {
-                textStorage.addAttribute(.backgroundColor, value: color, range: match.range)
-                // Reads whatever foreground color the rest of styling
-                // already settled on (this runs last, right before
-                // endEditing) so it can tell whether the highlight would
-                // make that specific span unreadable — a search match
-                // landing on bold text, a link, a tag, or plain body text
-                // each already has its own color by this point.
-                textStorage.enumerateAttribute(.foregroundColor, in: match.range, options: []) { existing, subrange, _ in
-                    let current = (existing as? NSColor) ?? .labelColor
-                    let adjusted = legibleForeground(current, over: perceivedColor)
-                    if adjusted != current {
-                        textStorage.addAttribute(.foregroundColor, value: adjusted, range: subrange)
-                    }
-                }
+                body(match.range, true)
             }
         }
-        func highlightLiteral(_ literal: String) {
-            highlightMatches(ofPattern: NSRegularExpression.escapedPattern(for: literal))
+        func emitLiteral(_ literal: String) {
+            emitMatches(ofPattern: NSRegularExpression.escapedPattern(for: literal))
         }
 
         // Tokenized the same way NoteStore.filtered(query:) parses a query —
@@ -1563,9 +1603,9 @@ enum MarkdownStyler {
                     if !phrase.isEmpty {
                         if token.count >= 2, token.hasSuffix("\"") {
                             let escaped = NSRegularExpression.escapedPattern(for: phrase)
-                            highlightMatches(ofPattern: "(?<![\\p{L}\\p{N}_])" + escaped + "(?![\\p{L}\\p{N}_])")
+                            emitMatches(ofPattern: "(?<![\\p{L}\\p{N}_])" + escaped + "(?![\\p{L}\\p{N}_])")
                         } else {
-                            highlightLiteral(phrase)
+                            emitLiteral(phrase)
                         }
                     }
                 }
@@ -1586,14 +1626,15 @@ enum MarkdownStyler {
                     guard let subRange = tagText.range(of: tagName, options: .caseInsensitive) else { continue }
                     let nsSubRange = NSRange(subRange, in: tagText)
                     let absoluteRange = NSRange(location: tagMatch.range.location + nsSubRange.location, length: nsSubRange.length)
-                    textStorage.addAttribute(.backgroundColor, value: color, range: absoluteRange)
+                    body(absoluteRange, false)
+                    if firstPerTokenOnly { break }
                 }
             } else if lowered.hasPrefix("date:") || lowered.hasPrefix("due:") {
                 // Nothing literal in the note text corresponds to a date/due
                 // filter — there's nothing to highlight.
                 continue
             } else {
-                highlightLiteral(String(token))
+                emitLiteral(String(token))
             }
         }
     }

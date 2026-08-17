@@ -1079,6 +1079,14 @@ struct MarkdownTextView: NSViewRepresentable {
             DispatchQueue.main.async { [weak textView] in
                 textView?.scrollRangeToVisible(initialSelectedRange)
             }
+        } else {
+            // The updateNSView path covers every later query change and note
+            // switch; this is the one case it can't see — a text view created
+            // while a search is already active. Skipped entirely when the
+            // caller asked for a specific cursor position, since that request
+            // is the more specific intent (and no caller that makes it passes
+            // a search query anyway).
+            context.coordinator.jumpToFirstSearchMatch(query: searchQuery, in: textView)
         }
         context.coordinator.lastSearchQuery = searchQuery
         context.coordinator.lastFontZoom = fontZoom
@@ -1122,6 +1130,7 @@ struct MarkdownTextView: NSViewRepresentable {
         // textView.string` check, since that comparison is exactly what the
         // note atop this function warns against reintroducing.
         var justReplacedText = false
+        var didSwitchNote = false
         if context.coordinator.lastExternalReloadToken != externalReloadToken {
             context.coordinator.lastExternalReloadToken = externalReloadToken
             // A note *switch* (same reused text view now showing a different
@@ -1132,6 +1141,7 @@ struct MarkdownTextView: NSViewRepresentable {
             // scroll to top, undo history dropped (so ⌘Z can't reach into the
             // previous note), and the per-note overlay height caches cleared.
             let isSwitch = context.coordinator.lastNoteID != currentNoteID
+            didSwitchNote = isSwitch
             context.coordinator.lastNoteID = currentNoteID
             let cursor = textView.selectedRange()
             textView.string = text
@@ -1148,6 +1158,7 @@ struct MarkdownTextView: NSViewRepresentable {
             justReplacedText = true
         }
 
+        let searchQueryChanged = context.coordinator.lastSearchQuery != searchQuery
         if justReplacedText || context.coordinator.lastTheme != theme
             || context.coordinator.lastSearchQuery != searchQuery
             || context.coordinator.lastFontZoom != fontZoom
@@ -1178,6 +1189,20 @@ struct MarkdownTextView: NSViewRepresentable {
             context.coordinator.lastFontZoom = fontZoom
             context.coordinator.lastPlainTextMode = plainTextMode
             context.coordinator.lastProtectAISignature = protectAISignature
+        }
+
+        // Search used to highlight every match in the open note and then leave
+        // the note exactly where it was — a match hundreds of lines down lit
+        // up entirely offscreen, and arrowing through results landed on each
+        // note's top (the scroll-to-zero on a switch above) no matter where
+        // its match actually was. Bring the first match into view on the two
+        // moments the match set can change under the user: the query changing,
+        // and switching notes while a search is active. Deliberately not on
+        // plain typing in the editor — the query is unchanged there, so this
+        // doesn't fire and the caret keeps the scroll position it earns
+        // normally.
+        if searchQueryChanged || didSwitchNote {
+            context.coordinator.jumpToFirstSearchMatch(query: searchQuery, in: textView)
         }
 
         if context.coordinator.lastHighlightTrigger != highlightTrigger {
@@ -1267,6 +1292,11 @@ struct MarkdownTextView: NSViewRepresentable {
         /// ever changes it, since preview/embed views each show one fixed note.
         var lastNoteID: String?
         private var highlightFadeTask: Task<Void, Never>?
+        /// Makes the newest scroll-to-match request win when several land in
+        /// the same runloop turn — a note switch and a query change can both
+        /// fire against one updateNSView pass, and typing in the search field
+        /// produces a run of them in quick succession.
+        private var searchJumpToken = 0
 
         private var cachedText: String = ""
         private var cachedWikiLinkRanges: [NSRange] = []
@@ -2921,6 +2951,94 @@ struct MarkdownTextView: NSViewRepresentable {
                 guard !Task.isCancelled, let self else { return }
                 self.restyle(textView)
             }
+        }
+
+        /// Scrolls the open note to the first thing the search query
+        /// highlights in it. Scroll only: the caret is left exactly where it
+        /// was, so focus stays in the search field and a later click into the
+        /// editor can't have its first keystroke land on a selected match.
+        ///
+        /// Deferred a runloop turn, for the same reason makeNSView defers its
+        /// own initial scroll: the restyle that just ran changes line metrics
+        /// (collapsed markers, embed and image heights), so asking the layout
+        /// manager where the match sits before that settles gives an answer
+        /// that's already stale by the time it's used.
+        @MainActor
+        func jumpToFirstSearchMatch(query: String, in textView: NSTextView) {
+            // Bumped before the empty-query bail too, so clearing the search
+            // field cancels a jump that's still queued rather than letting it
+            // land after the highlighting it was chasing is gone.
+            searchJumpToken &+= 1
+            let token = searchJumpToken
+            guard !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+            guard let range = MarkdownStyler.firstSearchMatch(of: query, in: textView.string) else { return }
+            DispatchQueue.main.async { [weak self, weak textView] in
+                guard let self, self.searchJumpToken == token, let textView else { return }
+                // The text can have changed in the meantime (an external
+                // reload, or the user typing), which would make the range
+                // computed above point past the end.
+                guard range.location + range.length <= (textView.string as NSString).length else { return }
+                Self.scroll(range: range, intoViewCenteredIn: textView)
+            }
+        }
+
+        /// Puts `range` about a third of the way down the visible area instead
+        /// of the bare minimum scroll scrollRangeToVisible performs — a match
+        /// just below the fold otherwise lands flush against the bottom edge
+        /// with no context under it, which reads as an abrupt lurch rather
+        /// than "here's your result". Falls back to scrollRangeToVisible if
+        /// the view isn't in a scroll view (nothing to center within).
+        @MainActor
+        static func scroll(range: NSRange, intoViewCenteredIn textView: NSTextView) {
+            guard let layoutManager = textView.layoutManager,
+                  let container = textView.textContainer,
+                  let scrollView = textView.enclosingScrollView else {
+                textView.scrollRangeToVisible(range)
+                return
+            }
+            // Forced only through the match, not the whole container — same
+            // reasoning (and same bounded form) as the overlay positioning
+            // above: layout generates front-to-back, so everything past the
+            // match is layout no measurement here ever reads. The unbounded
+            // ensureLayout(for:) this used to call was measured at 6ms on a
+            // 20k-character note, 61ms at 200k and 314ms at 1M — per
+            // debounced keystroke, on the main thread. That was the whole of
+            // the typing lag this function introduced.
+            let textLength = (textView.string as NSString).length
+            let matchEnd = min(range.location + range.length, textLength)
+            layoutManager.ensureLayout(forCharacterRange: NSRange(location: 0, length: matchEnd))
+            let glyphRange = layoutManager.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
+            let matchRect = layoutManager.boundingRect(forGlyphRange: glyphRange, in: container)
+            let clipView = scrollView.contentView
+            let visibleHeight = clipView.bounds.height
+            guard visibleHeight > 0 else {
+                textView.scrollRangeToVisible(range)
+                return
+            }
+            let inset = textView.textContainerInset.height
+            let ideal = matchRect.midY + inset - visibleHeight / 3
+            // With layout stopped at the match, the text view's height is an
+            // *estimate* for the part not laid out yet, and it reads low —
+            // measured ~4% under on a 1M-character note. That estimate feeds
+            // the end-of-document clamp, so the floor below re-asserts the
+            // one invariant that actually matters: the match stays on screen
+            // even if the clamp came out too small.
+            //
+            // Belt and braces, not a fix for an observed failure — measured
+            // across notes from 3k to 1M characters with the match at the
+            // start, middle, last 1% and very end, the floor never binds. It
+            // can't easily: the estimate is only wrong for the part layout
+            // hasn't reached, and the clamp only binds for a match near the
+            // end, which is precisely when layout has run nearly to the end
+            // and the estimate is exact. Kept because those two conditions
+            // are only *usually* exclusive — trailing embeds and images carry
+            // reserved heights this hasn't been measured against — and the
+            // cost is two comparisons.
+            let endOfDocument = max(0, textView.bounds.height - visibleHeight)
+            let matchStaysVisible = matchRect.maxY + inset - visibleHeight
+            let targetY = max(0, max(min(ideal, endOfDocument), matchStaysVisible))
+            clipView.scroll(to: NSPoint(x: clipView.bounds.origin.x, y: targetY))
+            scrollView.reflectScrolledClipView(clipView)
         }
 
         /// Right-clicking a link pill offers a per-domain emoji — the same
