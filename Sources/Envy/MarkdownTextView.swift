@@ -3016,6 +3016,24 @@ struct MarkdownTextView: NSViewRepresentable {
                 return
             }
             let inset = textView.textContainerInset.height
+
+            // Already on screen? Then there is nothing to bring into view, and
+            // moving anyway is how a short note got dragged above the editor's
+            // top edge: centering a match two thirds down a note that fits
+            // asks for a scroll position the note is not tall enough to have.
+            // A note shorter than the window always lands here, so it can no
+            // longer move at all.
+            //
+            // Costs nothing — clipView.bounds is the current scroll position
+            // and matchRect is already in hand. Nothing here forces layout,
+            // which rules out measuring the document's real height: both
+            // usedRect(for:) and ensureLayout(for:) lay out the whole
+            // container, the unbounded work this function exists to avoid.
+            let visible = clipView.bounds
+            let matchTop = matchRect.minY + inset
+            let matchBottom = matchRect.maxY + inset
+            guard matchTop < visible.minY || matchBottom > visible.maxY else { return }
+
             let ideal = matchRect.midY + inset - visibleHeight / 3
             // With layout stopped at the match, the text view's height is an
             // *estimate* for the part not laid out yet, and it reads low —
@@ -3036,7 +3054,12 @@ struct MarkdownTextView: NSViewRepresentable {
             // cost is two comparisons.
             let endOfDocument = max(0, textView.bounds.height - visibleHeight)
             let matchStaysVisible = matchRect.maxY + inset - visibleHeight
-            let targetY = max(0, max(min(ideal, endOfDocument), matchStaysVisible))
+            // The end-of-document clamp is applied last, so it wins. It used to
+            // be applied to `ideal` alone, which let the floor beat it and put
+            // targetY past the end of the text — blank space below, note above
+            // the top edge. The floor still raises a too-small centering, it
+            // just can no longer scroll somewhere the document does not reach.
+            let targetY = min(max(0, max(ideal, matchStaysVisible)), endOfDocument)
             clipView.scroll(to: NSPoint(x: clipView.bounds.origin.x, y: targetY))
             scrollView.reflectScrolledClipView(clipView)
         }
