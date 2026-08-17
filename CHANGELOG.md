@@ -2,6 +2,14 @@
 
 Also published at [envynote.app/changelog.html](https://envynote.app/changelog.html).
 
+## 1.11.0 — August 17, 2026
+
+Keep your place: pinned notes can stay put while the list scrolls, and searching now takes you to the match instead of only lighting it up.
+
+- **Pinned notes can stay visible while you scroll.** Settings → General → Note List → "Keep pinned notes visible while scrolling" parks your pinned notes in a strip just under the search bar, so they stay reachable however far down the list you go. With the strip on you can pin up to three notes; leave it off and pinning works exactly as before, unlimited and scrolling away with everything else.
+- **Search jumps to the match.** Typing in the search box used to highlight every match in the open note without moving it, so a match below the fold lit up entirely offscreen. The editor now scrolls the first match into view, about a third of the way down so there's context beneath it rather than pinning it to the bottom edge. Your cursor is left where it was.
+- **Fixed:** submitting a fleeting note from the Inbox did nothing when its title matched a note you already had, instead of filing it as "Foo (2)". A regression from 1.10.0's path hardening.
+
 ## 1.10.0 — August 7, 2026
 
 Make Envy only the parts you use: the Inbox and Continuity Camera can each be switched off completely.
