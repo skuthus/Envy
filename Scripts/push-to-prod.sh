@@ -339,6 +339,15 @@ This is the only real coverage the app target gets, so it is worth the minute." 
       || die "appcast.xml has no entry for $VERSION.
 generate_appcast did not run. Users would never be offered this release."
     ok "appcast contains $VERSION"
+
+    # A missing interval means the release would go to everyone at once. Not
+    # fatal — it still works — but it silently removes the window that makes
+    # --rollback useful, so it is worth saying out loud rather than assuming.
+    if grep -q "sparkle:phasedRolloutInterval" "$UPDATES_DIR/appcast.xml"; then
+      ok "phased rollout active ($(grep -m1 -o 'phasedRolloutInterval>[0-9]*' "$UPDATES_DIR/appcast.xml" | cut -d'>' -f2)s per group)"
+    else
+      warn "no phased rollout interval — this release goes to every auto-updating user at once"
+    fi
   fi
 
   smoke_test_dmg

@@ -150,6 +150,12 @@ bundle directories while they sync, which makes `codesign` fail with "resource
 fork, Finder information, or similar detritus not allowed". Do not move the work
 back into the project folder to make a path look tidier.
 
+The appcast step runs with `--phased-rollout-interval 43200`, so a release
+reaches everyone over roughly 3 days instead of all at once. Manual "Check for
+Updates…" always bypasses phasing, and `SUEnableAutomaticChecks` is false, so
+this only applies to users who opted into background checks. For a security fix,
+add `--critical-update-version` in `make-dmg.sh` to skip phasing.
+
 Verify before moving on:
 
 ```bash

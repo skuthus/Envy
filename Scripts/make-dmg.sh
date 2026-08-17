@@ -64,8 +64,29 @@ if [ -x "$GENERATE_APPCAST" ] && [ -d "$(dirname "$UPDATES_DIR")/.." ]; then
   # directory is served from the site's root, producing enclosure URLs like
   # https://envynote.app/Envy-1.0.1.dmg — wrong, since these dmgs actually
   # live under assets/updates/.
-  "$GENERATE_APPCAST" --download-url-prefix "https://envynote.app/assets/updates/" "$UPDATES_DIR"
+  # Phased rollout: Sparkle sorts every install into one of 7 stable groups and
+  # only offers the update to group N once N intervals have passed, so at 12
+  # hours the release reaches everyone over 3 days rather than all at once. The
+  # point is time — with no telemetry in Envy by design, a broken release is
+  # only ever discovered by someone reporting it, and this buys a few days to
+  # hear about it and run push-to-prod.sh --rollback while most users have not
+  # been offered the build yet.
+  #
+  # Two things it deliberately does not do. It never gates a manual "Check for
+  # Updates…", which always offers the newest version regardless of group. And
+  # since SUEnableAutomaticChecks is false, it only ever applies to users who
+  # opted into background checks — which is the population worth protecting,
+  # since they are the ones who would take a bad build without noticing.
+  #
+  # For a security fix, where slow propagation is the problem rather than the
+  # protection, add --critical-update-version "$VERSION" to bypass phasing.
+  PHASED_ROLLOUT_INTERVAL=43200  # 12 hours; full rollout in 3 days
+  "$GENERATE_APPCAST" \
+    --download-url-prefix "https://envynote.app/assets/updates/" \
+    --phased-rollout-interval "$PHASED_ROLLOUT_INTERVAL" \
+    "$UPDATES_DIR"
   echo "==> appcast.xml updated: $UPDATES_DIR/appcast.xml"
+  echo "    (phased rollout: ${PHASED_ROLLOUT_INTERVAL}s per group, ~3 days to reach everyone)"
   echo "    (deploy EnvyWebsite, e.g. via netlify deploy, for this to take effect)"
 else
   echo "==> Skipping appcast update (generate_appcast or ../EnvyWebsite not found)."
