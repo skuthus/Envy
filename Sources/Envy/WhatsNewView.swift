@@ -6,8 +6,8 @@ import SwiftUI
 /// own, rather than a flat list of everything that changed; the rest of the
 /// release still gets a line, just a quieter one underneath.
 struct WhatsNewView: View {
-    @Environment(\.dismiss) private var dismiss
-    @Environment(\.openURL) private var openURL
+    @Environment(\.{dismiss}) private var dismiss
+    @Environment(\.{openURL}) private var openURL
 
     private var versionText: String {
         Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? ""
@@ -28,12 +28,12 @@ struct WhatsNewView: View {
             }
 
             VStack(spacing: 10) {
-                Image(systemName: "switch.2")
+                Image(systemName: "pin.fill")
                     .font(.system(size: 44))
                     .foregroundStyle(EnvyBrand.mark)
-                Text("Turn Off What You Don't Use")
+                Text("Pinned Notes Stay Put")
                     .font(.title3.bold())
-                Text("Not everyone wants an Inbox, and not everyone wants the camera. Now you can switch either one off completely.\n\nTurn the Inbox off and it disappears: no badge beside the search bar, no fleeting notes, no inbox: operator. Turn Continuity Camera off and its button goes away, while text recognition stays available if you still want searchable text from images you add another way.\n\nThe Inbox switch lives in Settings → General, the camera in Settings → Import. Envy should be only the parts you actually use.")
+                Text("Keep your place: pinned notes can stay put while the list scrolls, and searching now takes you to the match instead of only lighting it up.\n\nPark up to three pinned notes just below the search bar so they stay reachable no matter how far you scroll. And when you open a note from search, the editor jumps straight to the match.")
                     .font(.body)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
