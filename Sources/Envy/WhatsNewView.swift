@@ -28,12 +28,12 @@ struct WhatsNewView: View {
             }
 
             VStack(spacing: 10) {
-                Image(systemName: "switch.2")
+                Image(systemName: "pin.fill")
                     .font(.system(size: 44))
                     .foregroundStyle(EnvyBrand.mark)
-                Text("Turn Off What You Don't Use")
+                Text("Pinned Notes Stay Put")
                     .font(.title3.bold())
-                Text("Not everyone wants an Inbox, and not everyone wants the camera. Now you can switch either one off completely.\n\nTurn the Inbox off and it disappears: no badge beside the search bar, no fleeting notes, no inbox: operator. Turn Continuity Camera off and its button goes away, while text recognition stays available if you still want searchable text from images you add another way.\n\nThe Inbox switch lives in Settings → General, the camera in Settings → Import. Envy should be only the parts you actually use.")
+                Text("Keep your place. Settings → General → Note List → “Keep pinned notes visible while scrolling” parks your pinned notes just below the search bar, so they stay reachable however far down the list you go.\n\nSearch now jumps to the match, too. Typing used to highlight every hit without moving the editor, so a match below the fold lit up offscreen. The first match now scrolls into view.")
                     .font(.body)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
