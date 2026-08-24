@@ -109,7 +109,7 @@ enum ShortcutAction: String, CaseIterable, Identifiable {
 
     var label: String {
         switch self {
-        case .jumpToOmniBar: "Jump to OmniBar"
+        case .jumpToOmniBar: "Jump to Search"
         case .newFromTemplate: "New Note from Template"
         case .deleteNote: "Delete Note"
         case .toggleLayout: "Toggle Layout"
@@ -125,7 +125,7 @@ enum ShortcutAction: String, CaseIterable, Identifiable {
         case .focusNextArea: "Focus Next Area (Search / List / Editor)"
         case .focusPreviousArea: "Focus Previous Area (Search / List / Editor)"
         case .togglePin: "Pin/Unpin Note"
-        case .toggleBacklinks: "Toggle Backlinks"
+        case .toggleBacklinks: "Toggle Interlinks"
         case .showPinnedNote: "Show/Hide Pinned Note (works from any app)"
         case .unpinFromMenuBar: "Unpin Note from Menu Bar (works from any app)"
         case .keepOnTop: "Keep Envy on Top (works from any app)"
