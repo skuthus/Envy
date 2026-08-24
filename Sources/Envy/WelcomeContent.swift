@@ -23,7 +23,7 @@ enum WelcomeContent {
     - Use **↑** and **↓** to move the highlighted note without leaving the search box.
     - **⌥↓** and **⌥↑** move keyboard focus between the search box, the note list, and the editor.
     - If your search matches the start of an existing title (or, typing `tag:`, the start of a tag you've already used), the rest shows up in grey. Press **→** to complete it.
-    - **⌘N** creates a blank note directly.
+    - **⌘L** jumps to search. Type a name and press Return to open or create.
     - **⌘⌫** deletes the selected note. It goes to a `Trash` folder inside your Index (visible in Finder, and it syncs with your notes), not gone for good. Settings → General → Trash controls how often that gets swept into the real macOS Trash.
     - **⌘⇧⌫** restores the note(s) you just deleted, right back where they were.
     - Search `trash:` to browse everything currently trashed, anywhere in The Index. Clicking or arrowing through results just previews them, read-only. Restore, Reveal in Finder, and Delete are always a right-click (or a button right there in the preview) away, never a side effect of looking.
