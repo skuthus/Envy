@@ -6,8 +6,8 @@ import SwiftUI
 /// own, rather than a flat list of everything that changed; the rest of the
 /// release still gets a line, just a quieter one underneath.
 struct WhatsNewView: View {
-    @Environment(\.{dismiss}) private var dismiss
-    @Environment(\.{openURL}) private var openURL
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.openURL) private var openURL
 
     private var versionText: String {
         Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? ""
