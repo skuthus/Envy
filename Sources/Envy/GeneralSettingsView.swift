@@ -242,7 +242,7 @@ struct GeneralSettingsView: View {
                     .foregroundStyle(.secondary)
                 Toggle("Show fleeting notes in the list", isOn: $showInboxInMainList)
                     .disabled(!inboxEnabled)
-                Text("Notes waiting in Inbox/ appear alongside the rest, marked with a dot. Turn this off to keep them out of the way until you go looking with \u{201C}inbox:\u{201D}.")
+                Text("Notes waiting in Inbox/ appear alongside the rest, marked with an amber !. Turn this off to keep them out of the way until you go looking with \u{201C}inbox:\u{201D}.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 Picker("Show a note's folder as", selection: folderListDisplay) {
