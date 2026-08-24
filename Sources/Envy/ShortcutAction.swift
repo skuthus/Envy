@@ -109,7 +109,7 @@ enum ShortcutAction: String, CaseIterable, Identifiable {
 
     var label: String {
         switch self {
-        case .jumpToOmniBar: "Jump to OmniBar"
+        case .jumpToOmniBar: "Jump to Search"
         case .newFromTemplate: "New Note from Template"
         case .deleteNote: "Delete Note"
         case .toggleLayout: "Toggle Layout"
@@ -125,7 +125,7 @@ enum ShortcutAction: String, CaseIterable, Identifiable {
         case .focusNextArea: "Focus Next Area (Search / List / Editor)"
         case .focusPreviousArea: "Focus Previous Area (Search / List / Editor)"
         case .togglePin: "Pin/Unpin Note"
-        case .toggleBacklinks: "Toggle Backlinks"
+        case .toggleBacklinks: "Toggle Interlinks"
         case .showPinnedNote: "Show/Hide Pinned Note (works from any app)"
         case .unpinFromMenuBar: "Unpin Note from Menu Bar (works from any app)"
         case .keepOnTop: "Keep Envy on Top (works from any app)"
@@ -174,7 +174,7 @@ enum ShortcutAction: String, CaseIterable, Identifiable {
             ShortcutBinding(character: "p", keyCode: kVK_ANSI_P, modifiers: SwiftUI.EventModifiers([.command, .option]).rawValue)
         case .toggleBacklinks:
             // Plain ⌘B is already Bold — ⇧ added rather than picking an
-            // unrelated letter, so it's still "B for backlinks."
+            // unrelated letter, so it's still "B for interlinks."
             ShortcutBinding(character: "b", keyCode: kVK_ANSI_B, modifiers: SwiftUI.EventModifiers([.command, .shift]).rawValue)
         case .showPinnedNote:
             ShortcutBinding(character: String(KeyEquivalent.downArrow.character), keyCode: kVK_DownArrow, modifiers: SwiftUI.EventModifiers([.command, .option]).rawValue)

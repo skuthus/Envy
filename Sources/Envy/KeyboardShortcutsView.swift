@@ -46,11 +46,11 @@ struct KeyboardShortcutsView: View {
                 Entry(keys: "⌘-click a [[link]]", description: "Open the linked note (creates it if it doesn't exist)"),
             ]),
             Group(title: "Search & Navigation", entries: [
-                Entry(action: .jumpToOmniBar, description: "Jump to the OmniBar from anywhere: type a name and hit ↩ to create a note"),
+                Entry(action: .jumpToOmniBar, description: "Jump to the search box from anywhere: type a name and hit ↩ to create a note"),
                 Entry(keys: "↑ / ↓", description: "Move the highlighted note while searching"),
                 Entry(keys: "⇧↑ / ⇧↓", description: "Extend the selection to the next/previous note, same as Finder"),
                 Entry(keys: "↩", description: "Open the highlighted note, or create one from your search text"),
-                Entry(keys: "⌥⌫", description: "Clear the OmniBar completely"),
+                Entry(keys: "⌥⌫", description: "Clear the search box completely"),
                 Entry(action: .focusNextArea, description: "Move focus to the next area (search → list → editor)"),
                 Entry(action: .focusPreviousArea, description: "Move focus to the previous area"),
             ]),
@@ -58,7 +58,7 @@ struct KeyboardShortcutsView: View {
                 Entry(action: .centerWindow, description: "Center the window on screen"),
                 Entry(action: .toggleLayout, description: "Toggle horizontal / vertical layout"),
                 Entry(action: .togglePlainTextMode, description: "Toggle plain-text mode (ignores all markdown formatting)"),
-                Entry(action: .toggleBacklinks, description: "Show or hide the backlinks list in the footer"),
+                Entry(action: .toggleBacklinks, description: "Show or hide the interlinks list in the footer"),
             ]),
             Group(title: "Font", entries: [
                 Entry(action: .bold, description: "Bold the selected text (wraps it in **, or unwraps it if already bold)"),
