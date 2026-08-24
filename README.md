@@ -53,7 +53,7 @@ Every shortcut below can be remapped in Settings → Shortcuts.
 | `⌘⇧⌫` | Restore the most recently deleted note(s) |
 | `⌥⌘P` | Pin or unpin the selected note |
 | `⌥⌘⇧P` | Unpin the note pinned to the menu bar — works from any app |
-| `⌘⇧B` | Toggle the backlinks list in the footer |
+| `⌘⇧B` | Toggle the interlinks list in the footer |
 | `⌘`-click a `[[link]]` | Open the linked note (creates it if it doesn't exist) |
 | `⌥`-click a `[[link]]` | Preview the linked note without leaving where you are |
 | `↑` / `↓` | Move the highlighted note while searching |
