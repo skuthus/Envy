@@ -2,6 +2,13 @@
 
 Also published at [envynote.app/changelog.html](https://envynote.app/changelog.html).
 
+## 1.11.1 — August 31, 2026
+
+Envy runs on Intel Macs again.
+
+- **Intel Macs are supported again.** Recent builds were compiled for Apple Silicon only, so on an Intel Mac Envy simply wouldn't open. Builds now carry both architectures and run natively on either. If you're on an Intel Mac, grab the new build from [envynote.app](https://envynote.app) — the old one couldn't launch far enough to update itself.
+- **Fixed:** Envy advertised itself as working on macOS 14 and later when it actually requires macOS 26. On anything older it would get partway into launching and fail with an unhelpful error. It now states the real requirement, so the Finder tells you plainly instead of letting you find out the hard way.
+
 ## 1.11.0 — August 17, 2026
 
 Keep your place: pinned notes can stay put while the list scrolls, and searching now takes you to the match instead of only lighting it up.
