@@ -19,8 +19,13 @@ DIST_DIR="$ROOT_DIR/dist"
 APP_BUNDLE="$DIST_DIR/$APP_NAME.app"
 
 echo "==> Building release binary..."
-swift build -c release --product "Envy"
-BINARY_PATH="$(swift build -c release --product "Envy" --show-bin-path)/Envy"
+# Built universal (arm64 + x86_64), not just for the host arch. A plain
+# `swift build` on an Apple Silicon Mac emits an arm64-only binary, which
+# will not launch at all on the Intel Macs that macOS 26 still supports.
+# IconGenerator below stays host-only on purpose: it is a build-time tool
+# that never ships inside the bundle.
+swift build -c release --arch arm64 --arch x86_64 --product "Envy"
+BINARY_PATH="$(swift build -c release --arch arm64 --arch x86_64 --product "Envy" --show-bin-path)/Envy"
 
 echo "==> Regenerating app icon..."
 swift build -c release --product IconGenerator
