@@ -2049,6 +2049,145 @@ struct SelfCheck {
             check("inbox: submit files even when the title collides at root", dupFiled != nil && dupFiled.map { !store.isInboxNote($0) } ?? false)
         }
 
+        // Pipe tables: parsing, cell splitting, serialization, block detection.
+        do {
+            check("table: a header + delimiter + row is a table line",
+                  PipeTable.isTableLine("| a | b |"))
+            check("table: a lone pipe is not a table line",
+                  !PipeTable.isTableLine("a | b"))
+            check("table: the delimiter row is recognized",
+                  PipeTable.isTableSep("| --- | :---: | ---: |"))
+            check("table: a data row is not a delimiter",
+                  !PipeTable.isTableSep("| a | b |"))
+
+            let cells = PipeTable.splitCells("| a | b | c |").map { $0.trimmingCharacters(in: .whitespaces) }
+            check("table: splitCells finds three cells", cells == ["a", "b", "c"])
+            // A pipe inside `[[wiki|alias]]` or `code` is not a split.
+            let protectedCells = PipeTable.splitCells("| [[Note|Alias]] | `a|b` |").map { $0.trimmingCharacters(in: .whitespaces) }
+            check("table: pipes inside protected spans don't split",
+                  protectedCells == ["[[Note|Alias]]", "`a|b`"])
+            // An escaped pipe stays one cell and unescapes.
+            let escaped = PipeTable.splitCells(#"| a \| b | c |"#).map { $0.trimmingCharacters(in: .whitespaces) }
+            check("table: an escaped pipe is one cell", escaped == ["a | b", "c"])
+
+            check("table: emptyRow pads two cells",
+                  PipeTable.emptyRow(cols: 2) == "|  |  |")
+            check("table: serializeTableRow pads with single spaces",
+                  PipeTable.serializeTableRow(["a", "b"]) == "| a | b |")
+            check("table: a structural pipe in a cell is escaped on serialize",
+                  PipeTable.serializeTableRow(["a|b", "c"]) == #"| a\|b | c |"#)
+
+            // padTableSource lines the columns up and keeps alignment markers.
+            let padded = PipeTable.padTableSource("| a | bb |\n| :--- | ---: |\n| ccc | d |")
+            let paddedLines = padded.components(separatedBy: "\n")
+            check("table: padded rows share one width",
+                  paddedLines.count == 3 && paddedLines.allSatisfy { $0.count == paddedLines[0].count })
+            check("table: padding keeps a right-aligned delimiter",
+                  paddedLines[1].contains("-:") && paddedLines[1].contains(":-"))
+
+            // Block detection over a whole note.
+            let note = "Intro\n\n| Name | Role |\n| --- | --- |\n| Ada | Eng |\n| Bob | PM |\n\nOutro"
+            let blocks = PipeTable.tableBlocks(in: note)
+            check("table: one block found in the note", blocks.count == 1)
+            if let block = blocks.first {
+                check("table: block header parsed", block.header == ["Name", "Role"])
+                check("table: block has two data rows", block.rows.count == 2)
+                check("table: block rows parsed", block.rows == [["Ada", "Eng"], ["Bob", "PM"]])
+                check("table: block aligns default to left", block.aligns == [.left, .left])
+                // The block range must cover whole lines: from the header's
+                // start through the last row's trailing newline.
+                let ns = note as NSString
+                let src = ns.substring(with: block.range)
+                check("table: block range starts at the header",
+                      src.hasPrefix("| Name | Role |"))
+                check("table: block range ends after the last row",
+                      src.contains("| Bob | PM |"))
+            }
+
+            // A pipe table inside a fenced code block is source, not a table.
+            let fenced = "```\n| a | b |\n| --- | --- |\n| 1 | 2 |\n```"
+            check("table: a table inside a fence is not detected",
+                  PipeTable.tableBlocks(in: fenced).isEmpty)
+
+            // Alignment read from the delimiter row.
+            let aligned = PipeTable.tableBlocks(in: "| a | b | c |\n| :--- | :---: | ---: |\n| 1 | 2 | 3 |")
+            check("table: mixed alignments parsed",
+                  aligned.first?.aligns == [.left, .center, .right])
+
+            // Cell content ranges for Tab navigation, offset within the line.
+            let line = "| ab | c |"
+            let ranges = PipeTable.cellContentRanges(in: line)
+            check("table: two cell ranges on the line", ranges.count == 2)
+            if ranges.count == 2 {
+                let l = line as NSString
+                check("table: first cell range is 'ab'", l.substring(with: ranges[0]) == "ab")
+                check("table: second cell range is 'c'", l.substring(with: ranges[1]) == "c")
+            }
+            // An empty cell's range is a caret one space in from its pipe.
+            let emptyRanges = PipeTable.cellContentRanges(in: "|  |  |")
+            check("table: empty cells produce zero-length caret ranges",
+                  emptyRanges.count == 2 && emptyRanges.allSatisfy { $0.length == 0 })
+        }
+
+        // Structural edits: add / delete rows and columns.
+        do {
+            func block(_ src: String) -> PipeTableBlock { PipeTable.tableBlocks(in: src).first! }
+            let base = "| A | B |\n| --- | --- |\n| 1 | 2 |\n| 3 | 4 |"
+
+            let addBelow = PipeTable.apply(.insertRowBelow(row: 1), to: block(base), trailingNewline: false)
+            check("table-edit: insert row below adds a row",
+                  addBelow.flatMap { PipeTable.tableBlocks(in: $0).first?.rows.count } == 3)
+
+            let addAbove = PipeTable.apply(.insertRowAbove(row: 1), to: block(base), trailingNewline: false)
+            check("table-edit: insert row above the first data row",
+                  addAbove.flatMap { PipeTable.tableBlocks(in: $0).first?.rows.first } == ["", ""])
+
+            check("table-edit: insert row above the header is refused",
+                  PipeTable.apply(.insertRowAbove(row: 0), to: block(base), trailingNewline: false) == nil)
+
+            let delRow = PipeTable.apply(.deleteRow(row: 1), to: block(base), trailingNewline: false)
+            check("table-edit: delete row removes it",
+                  delRow.flatMap { PipeTable.tableBlocks(in: $0).first?.rows } == [["3", "4"]])
+
+            check("table-edit: delete the header row is refused",
+                  PipeTable.apply(.deleteRow(row: 0), to: block(base), trailingNewline: false) == nil)
+
+            let addColRight = PipeTable.apply(.insertColumnRight(col: 0), to: block(base), trailingNewline: false)
+            if let result = addColRight.map({ PipeTable.tableBlocks(in: $0).first! }) {
+                check("table-edit: insert column right widens the header",
+                      result.header == ["A", "", "B"])
+                check("table-edit: insert column right widens every row",
+                      result.rows == [["1", "", "2"], ["3", "", "4"]])
+                check("table-edit: insert column right widens the alignments",
+                      result.aligns.count == 3)
+            } else {
+                check("table-edit: insert column right produced a table", false)
+            }
+
+            let addColLeft = PipeTable.apply(.insertColumnLeft(col: 0), to: block(base), trailingNewline: false)
+            check("table-edit: insert column left prepends a column",
+                  addColLeft.flatMap { PipeTable.tableBlocks(in: $0).first?.header } == ["", "A", "B"])
+
+            let delCol = PipeTable.apply(.deleteColumn(col: 1), to: block(base), trailingNewline: false)
+            if let result = delCol.map({ PipeTable.tableBlocks(in: $0).first! }) {
+                check("table-edit: delete column drops it from the header", result.header == ["A"])
+                check("table-edit: delete column drops it from every row", result.rows == [["1"], ["3"]])
+            } else {
+                check("table-edit: delete column produced a table", false)
+            }
+
+            // A single-column table won't delete its only column.
+            let oneCol = PipeTable.tableBlocks(in: "| A |\n| --- |\n| 1 |").first!
+            check("table-edit: delete the only column is refused",
+                  PipeTable.apply(.deleteColumn(col: 0), to: oneCol, trailingNewline: false) == nil)
+
+            // A trailing newline survives an edit, so the block still drops back
+            // into the document cleanly.
+            let withTail = PipeTable.apply(.insertRowBelow(row: 2), to: block(base), trailingNewline: true)
+            check("table-edit: a trailing newline is preserved",
+                  withTail?.hasSuffix("\n") == true)
+        }
+
         print("")
         if failures.isEmpty {
             print("All checks passed.")

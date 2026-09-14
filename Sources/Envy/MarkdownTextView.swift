@@ -263,6 +263,37 @@ final class HoverAwareTextView: NSTextView {
         }
     }
 
+    /// Inserts a 2×2 pipe-table skeleton at the caret and selects its first
+    /// header cell, so the first thing typed replaces "Column 1". The selection
+    /// lands inside the new block, which shows as raw pipes rather than the
+    /// rendered grid — exactly right for a header you're about to overtype; it
+    /// renders the moment the caret leaves. Padded onto its own lines the same
+    /// way an embed reference is, so it always parses as a table block.
+    func insertTableSkeleton() {
+        let selection = selectedRange()
+        let ns = string as NSString
+        let atLineStart = selection.location == 0 || ns.character(at: selection.location - 1) == 10
+        let followedByText: Bool = {
+            let after = selection.location + selection.length
+            guard after < ns.length else { return false }
+            let lineRange = ns.lineRange(for: NSRange(location: after, length: 0))
+            let tail = ns.substring(with: NSRange(location: after, length: lineRange.location + lineRange.length - after))
+            return !tail.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }()
+        let prefix = atLineStart ? "" : "\n\n"
+        let suffix = followedByText ? "\n\n" : "\n"
+        let insertion = prefix + PipeTable.skeleton + suffix
+        guard shouldChangeText(in: selection, replacementString: insertion) else { return }
+        textStorage?.replaceCharacters(in: selection, with: insertion)
+        didChangeText()
+        // The table renders at once as an editable grid (with "Column 1"/
+        // "Column 2" placeholder headers to click and rename), so the caret is
+        // left just after it rather than inside the pipes.
+        let caret = min(selection.location + (insertion as NSString).length, (string as NSString).length)
+        setSelectedRange(NSRange(location: caret, length: 0))
+        scrollRangeToVisible(NSRange(location: caret, length: 0))
+    }
+
     // MARK: - Continuity Camera (Import from iPhone or iPad)
 
     /// Declaring this view a valid requestor for an image (or PDF) return type
@@ -1363,6 +1394,11 @@ struct MarkdownTextView: NSViewRepresentable {
         /// rationale as embeds and checkboxes, but plain image views since an
         /// image needs no SwiftUI state of its own.
         private var imageOverlayViews: [AttachmentView] = []
+        /// One floating grid per rendered pipe table, pooled exactly like the
+        /// embed overlays. The grid content is `.allowsHitTesting(false)`, so a
+        /// click falls through to the collapsed pipe source underneath and the
+        /// caret dropping into the block reveals it for editing.
+        private var tableOverlayViews: [NSHostingView<AnyView>] = []
         /// Decoded attachment images, keyed by filename. Attachments are
         /// immutable once written (a new paste gets a fresh name), so a name is
         /// a safe cache key — and this is what keeps updateImageOverlays from
@@ -1400,6 +1436,11 @@ struct MarkdownTextView: NSViewRepresentable {
         /// imageEmbedRanges' `key`), feeding the styler's block reservation the
         /// same way embedHeights does for note embeds.
         var imageHeights: [String: CGFloat] = [:]
+
+        /// Measured grid height per table, keyed by the table's source text —
+        /// the same feedback loop as embedHeights, keyed by content so it
+        /// survives the table moving as text above it is edited.
+        var tableHeights: [String: CGFloat] = [:]
 
         /// Last height handed to onContentHeightChange, so an unchanged
         /// layout doesn't re-trigger the host's restyle.
@@ -2124,6 +2165,7 @@ struct MarkdownTextView: NSViewRepresentable {
             return true
         }
 
+
         /// Keeps a selection from ever including the protected "⎈" signature
         /// line — the pill stands in for that text, so selecting the hidden
         /// characters underneath it (a drag across the pill, or ⌘A) would be
@@ -2133,12 +2175,15 @@ struct MarkdownTextView: NSViewRepresentable {
         /// is on and a signature exists — otherwise the proposal is returned
         /// untouched.
         func textView(_ textView: NSTextView, willChangeSelectionFromCharacterRanges oldSelectedCharRanges: [NSValue], toCharacterRanges newSelectedCharRanges: [NSValue]) -> [NSValue] {
+            var proposal = newSelectedCharRanges
+            proposal = clampSelectionOutOfTables(proposal, old: oldSelectedCharRanges, in: textView)
+
             guard parent.protectAISignature,
                   let signatureRange = cachedAISignatureRange(in: textView.string) else {
-                return newSelectedCharRanges
+                return proposal
             }
             let limit = signatureRange.location
-            return newSelectedCharRanges.map { value in
+            return proposal.map { value in
                 let range = value.rangeValue
                 if range.location >= limit {
                     return NSValue(range: NSRange(location: limit, length: 0))
@@ -2147,6 +2192,40 @@ struct MarkdownTextView: NSViewRepresentable {
                     return NSValue(range: NSRange(location: range.location, length: limit - range.location))
                 }
                 return value
+            }
+        }
+
+        /// A table renders as an editable grid over collapsed pipe source, so an
+        /// insertion point must never come to rest *inside* that source — it
+        /// would be invisible, and typing there would corrupt the pipes. Any
+        /// caret that lands strictly within a table block is pushed to the block's
+        /// far edge in the direction it was travelling: past the table going
+        /// forward, onto the line above it going back. Range selections are left
+        /// alone (the collapsed text selects through harmlessly).
+        @MainActor
+        private func clampSelectionOutOfTables(_ proposal: [NSValue], old: [NSValue], in textView: NSTextView) -> [NSValue] {
+            guard !parent.plainTextMode else { return proposal }
+            let ns = textView.string as NSString
+            guard ns.range(of: "|").location != NSNotFound else { return proposal }
+            let blocks = PipeTable.tableBlocks(in: textView.string)
+            guard !blocks.isEmpty else { return proposal }
+            let oldLocation = old.first?.rangeValue.location
+            let docLength = ns.length
+            return proposal.map { value in
+                let range = value.rangeValue
+                guard range.length == 0 else { return value }
+                let loc = range.location
+                guard let block = blocks.first(where: { $0.range.location < loc && loc < $0.range.location + $0.range.length }) else {
+                    return value
+                }
+                let movingForward = (oldLocation.map { loc >= $0 }) ?? true
+                let target: Int
+                if movingForward {
+                    target = min(block.range.location + block.range.length, docLength)
+                } else {
+                    target = block.range.location > 0 ? block.range.location - 1 : min(block.range.location + block.range.length, docLength)
+                }
+                return NSValue(range: NSRange(location: target, length: 0))
             }
         }
 
@@ -2188,6 +2267,7 @@ struct MarkdownTextView: NSViewRepresentable {
                 allowsEmbeds: parent.allowsEmbeds,
                 embedHeights: embedHeights,
                 imageHeights: imageHeights,
+                tableHeights: tableHeights,
                 noteTitles: parent.noteTitles
             )
             lastRestyleCursorLocation = textView.selectedRange().location
@@ -2243,6 +2323,16 @@ struct MarkdownTextView: NSViewRepresentable {
             // unpositioned rather than just unstyled text, a worse failure
             // mode than the plain-text case windowing already avoids below.
             guard nsText.range(of: "![[").location == NSNotFound else { return nil }
+            // A pipe table is likewise non-line-local — its block spans several
+            // lines whose height is reserved as a unit, and updateTableOverlays
+            // walks the whole string to position the grids — so a note holding
+            // one declines windowing for the same reason a fenced block does.
+            // Gated behind the cheap "is there even a pipe?" check so the parser
+            // only runs when one could exist.
+            if nsText.range(of: "|").location != NSNotFound,
+               !PipeTable.tableBlocks(in: textView.string).isEmpty {
+                return nil
+            }
             // When signature protection is on, updateSignaturePill re-clears
             // the pill's underlying text every restyle; a window that skipped
             // the signature line would leave stale styling there. The line is
@@ -2280,6 +2370,7 @@ struct MarkdownTextView: NSViewRepresentable {
             updateCheckboxOverlays(in: textView)
             updateEmbedOverlays(in: textView)
             updateImageOverlays(in: textView)
+            updateTableOverlays(in: textView)
             updateSignaturePill(in: textView)
         }
 
@@ -2509,6 +2600,110 @@ struct MarkdownTextView: NSViewRepresentable {
             // Deferred: this arrives from inside the embed's own layout pass,
             // and restyling the host synchronously would mutate text storage
             // while AppKit is still laying out a view that reads from it.
+            DispatchQueue.main.async { [weak self] in
+                guard let self, let textView = self.textView else { return }
+                self.restyle(textView)
+            }
+        }
+
+        /// Floats a rendered grid over each pipe-table block whose caret is
+        /// elsewhere — the table counterpart to updateEmbedOverlays. The styler
+        /// has already collapsed the block's pipe source and reserved its height
+        /// across the block's lines; this positions the TableWidgetView over
+        /// exactly that reserved rect. A block the caret is inside shows its raw
+        /// pipes instead, so its overlay is hidden.
+        @MainActor
+        func updateTableOverlays(in textView: NSTextView) {
+            guard let layoutManager = textView.layoutManager, let textContainer = textView.textContainer else { return }
+            guard !parent.plainTextMode else {
+                tableOverlayViews.forEach { $0.isHidden = true }
+                return
+            }
+            let blocks = PipeTable.tableBlocks(in: textView.string)
+            guard !blocks.isEmpty else {
+                tableOverlayViews.forEach { $0.isHidden = true }
+                return
+            }
+            let textLength = (textView.string as NSString).length
+            let lastEnd = blocks.map { $0.range.location + $0.range.length }.max() ?? textLength
+            layoutManager.ensureLayout(forCharacterRange: NSRange(location: 0, length: min(lastEnd, textLength)))
+
+            while tableOverlayViews.count < blocks.count {
+                let hostingView = NSHostingView(rootView: AnyView(EmptyView()))
+                textView.addSubview(hostingView)
+                tableOverlayViews.append(hostingView)
+            }
+
+            let origin = textView.textContainerOrigin
+            let width = max(textContainer.size.width, 100)
+            let base = parent.theme.resolvedFont.pointSize
+            let fontSize = parent.fontZoom == 0 ? base : max(6, base + parent.fontZoom)
+            let editable = textView.isEditable
+
+            for (index, hostingView) in tableOverlayViews.enumerated() {
+                guard index < blocks.count else {
+                    hostingView.isHidden = true
+                    continue
+                }
+                let block = blocks[index]
+                let glyphRange = layoutManager.glyphRange(forCharacterRange: block.range, actualCharacterRange: nil)
+                let rect = layoutManager.boundingRect(forGlyphRange: glyphRange, in: textContainer)
+                hostingView.frame = NSRect(
+                    x: origin.x,
+                    y: rect.origin.y + origin.y,
+                    width: width,
+                    height: rect.height
+                )
+                let source = block.source
+                // No .id(source): the pooled hosting view keeps one SwiftUI
+                // identity so the grid's editing @State survives the restyle a
+                // write-back triggers. The widget re-syncs from `source` itself
+                // when it changes under a grid that isn't being edited.
+                hostingView.rootView = AnyView(TableWidgetView(
+                    source: source,
+                    hasTrailingNewline: source.hasSuffix("\n"),
+                    theme: parent.theme,
+                    fontSize: fontSize,
+                    onContentHeightChange: { [weak self] height in
+                        self?.updateTableHeight(for: source, to: height, in: textView)
+                    },
+                    onEdit: editable ? { [weak self] newSource in
+                        self?.writeTableSource(oldSource: source, newSource: newSource, in: textView)
+                    } : { _ in }
+                ))
+                hostingView.isHidden = false
+            }
+        }
+
+        /// Writes a table's rewritten pipe source back into the document,
+        /// finding the block fresh by its previous source. The caret is left
+        /// where the person put it (adjusted for the length change), so a
+        /// write-back never yanks the insertion point around.
+        @MainActor
+        func writeTableSource(oldSource: String, newSource: String, in textView: NSTextView) {
+            guard textView.isEditable, oldSource != newSource else { return }
+            guard let block = PipeTable.tableBlocks(in: textView.string).first(where: { $0.source == oldSource }) else { return }
+            guard textView.shouldChangeText(in: block.range, replacementString: newSource) else { return }
+            let selection = textView.selectedRange()
+            let delta = (newSource as NSString).length - block.range.length
+            textView.textStorage?.replaceCharacters(in: block.range, with: newSource)
+            textView.didChangeText()
+            let blockEnd = block.range.location + block.range.length
+            if selection.location >= blockEnd {
+                let docLength = (textView.string as NSString).length
+                textView.setSelectedRange(NSRange(location: min(selection.location + delta, docLength), length: 0))
+            }
+        }
+
+        /// Records a table's measured grid height and, if it changed, restyles
+        /// so the reserved space matches — the table counterpart to
+        /// updateEmbedHeight, deferred for the same reason (the height arrives
+        /// mid-layout, so mutating text storage synchronously is unsafe).
+        @MainActor
+        func updateTableHeight(for source: String, to height: CGFloat, in textView: NSTextView) {
+            let clamped = max(24, height)
+            guard abs((tableHeights[source] ?? 0) - clamped) > 1 else { return }
+            tableHeights[source] = clamped
             DispatchQueue.main.async { [weak self] in
                 guard let self, let textView = self.textView else { return }
                 self.restyle(textView)
@@ -3084,14 +3279,24 @@ struct MarkdownTextView: NSViewRepresentable {
 
         @objc func insertImageMenuAction() { presentImagePicker() }
 
+        @MainActor
+        @objc func insertTableMenuAction() {
+            guard let textView = self.textView, textView.isEditable else { return }
+            textView.window?.makeFirstResponder(textView)
+            textView.insertTableSkeleton()
+        }
+
         func textView(_ textView: NSTextView, menu: NSMenu, for event: NSEvent, at charIndex: Int) -> NSMenu? {
             // Offer "Insert Image…" on the real editor's own right-click menu,
             // above whatever else the menu holds.
             if parent.store != nil, textView.isEditable {
-                let insert = NSMenuItem(title: "Insert Image\u{2026}", action: #selector(insertImageMenuAction), keyEquivalent: "")
-                insert.target = self
-                menu.insertItem(insert, at: 0)
-                menu.insertItem(.separator(), at: 1)
+                let insertImage = NSMenuItem(title: "Insert Image\u{2026}", action: #selector(insertImageMenuAction), keyEquivalent: "")
+                insertImage.target = self
+                menu.insertItem(insertImage, at: 0)
+                let insertTable = NSMenuItem(title: "Insert Table", action: #selector(insertTableMenuAction), keyEquivalent: "")
+                insertTable.target = self
+                menu.insertItem(insertTable, at: 1)
+                menu.insertItem(.separator(), at: 2)
             }
 
             guard UserDefaults.standard.object(forKey: "linkDomainPills") as? Bool ?? true,

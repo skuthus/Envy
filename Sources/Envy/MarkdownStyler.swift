@@ -709,6 +709,10 @@ enum MarkdownStyler {
         /// imageEmbedRanges' `key`). Missing means "not measured yet" and falls
         /// back to embedHeight, same first-frame placeholder as a note embed.
         imageHeights: [String: CGFloat] = [:],
+        /// Measured grid height per table (keyed by the table's source text).
+        /// Missing means "not laid out yet" and falls back to an estimate from
+        /// the row count, the same first-frame placeholder embeds use.
+        tableHeights: [String: CGFloat] = [:],
         // Which "![[...]]" markers are real embeds vs. still-being-typed
         // text — see embedRanges(in:noteTitles:) above for why this can't
         // just be "any syntactically valid span."
@@ -782,6 +786,19 @@ enum MarkdownStyler {
             textStorage.addAttribute(.font, value: monoFont, range: match.range)
             textStorage.addAttribute(.backgroundColor, value: codeBackground, range: match.range)
             claimed.append(match.range)
+        }
+
+        // GFM pipe tables. A table is always shown as its rendered grid — the
+        // pipes are the on-disk format, never something edited by hand — so the
+        // source collapses to nothing and the block's height is reserved for the
+        // floating, editable grid (Coordinator.updateTableOverlays). Claimed
+        // whole, so no inline rule reinterprets a `*` or `#` in a cell.
+        for block in PipeTable.tableBlocks(in: text) {
+            guard NSIntersectionRange(block.range, full).length > 0 else { continue }
+            guard !isClaimed(block.range) else { continue }
+            let height = tableHeights[block.source] ?? estimatedTableHeight(for: block, font: baseFont)
+            reserveTableBlock(block: block, text: text, textStorage: textStorage, baseFont: baseFont, height: height)
+            claimed.append(block.range)
         }
 
         // The marker line itself is completely untouched (just colored, the
@@ -1650,6 +1667,63 @@ enum MarkdownStyler {
         if selectionStart >= range.location && selectionStart <= rangeEnd { return true }
         if selectionEnd >= range.location && selectionEnd <= rangeEnd { return true }
         return selectionStart <= range.location && selectionEnd >= rangeEnd
+    }
+
+    // MARK: - Pipe tables
+
+    /// A first-frame height for a table before its grid has measured itself —
+    /// header row plus one per body row, in line-height multiples of the base
+    /// font, plus the view's own vertical padding. Replaced by the real
+    /// measured height the moment updateTableOverlays lays the grid out.
+    static func estimatedTableHeight(for block: PipeTableBlock, font: NSFont) -> CGFloat {
+        let rowHeight = font.pointSize * 2.0 + 6
+        return 12 + CGFloat(1 + block.rows.count) * rowHeight
+    }
+
+    /// Rendered mode: hide a table's pipe source and reserve the grid's height
+    /// across the block's lines so the floated TableWidgetView has room. Each
+    /// line's visible characters are collapsed (so a wide row can't wrap and
+    /// inflate the reservation) and the block's height is split evenly over its
+    /// lines, whose stacked fragment rects the overlay pass then covers.
+    private static func reserveTableBlock(block: PipeTableBlock, text: String, textStorage: NSTextStorage, baseFont: NSFont, height: CGFloat) {
+        let lines = lineRanges(within: block.range, in: text)
+        guard !lines.isEmpty else { return }
+        let perLine = max(1, height / CGFloat(lines.count))
+        let nsText = text as NSString
+        for lineRange in lines {
+            let paragraph = NSMutableParagraphStyle()
+            paragraph.minimumLineHeight = perLine
+            paragraph.maximumLineHeight = perLine
+            textStorage.addAttribute(.paragraphStyle, value: paragraph, range: lineRange)
+            let content = strippingTrailingNewline(lineRange, in: nsText)
+            if content.length > 0 {
+                collapse(range: content, in: textStorage, text: text, font: baseFont)
+            }
+        }
+    }
+
+    /// The whole-line ranges (each including its trailing newline) that fall
+    /// within `range`.
+    private static func lineRanges(within range: NSRange, in text: String) -> [NSRange] {
+        let nsText = text as NSString
+        var lines: [NSRange] = []
+        var idx = range.location
+        let end = min(range.location + range.length, nsText.length)
+        while idx < end {
+            let r = nsText.lineRange(for: NSRange(location: idx, length: 0))
+            lines.append(r)
+            idx = r.location + r.length
+        }
+        return lines
+    }
+
+    private static func strippingTrailingNewline(_ range: NSRange, in nsText: NSString) -> NSRange {
+        var content = range
+        while content.length > 0 {
+            let last = nsText.character(at: content.location + content.length - 1)
+            if last == 10 || last == 13 { content.length -= 1 } else { break }
+        }
+        return content
     }
 
     /// Makes a run of characters visually disappear: transparent ink plus negative
