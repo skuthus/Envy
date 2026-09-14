@@ -56,12 +56,12 @@ struct TableWidgetView: View {
     private var textColor: Color { Color(nsColor: theme.resolvedTextColor) }
 
     // Cells size to their content: each column is as wide as its widest cell,
-    // recomputed as the model changes so a column grows while you type.
+    // recomputed as the model changes so a column grows while you type — up to a
+    // cap, past which the text wraps to another line inside the cell instead.
     private var hPad: CGFloat { fontSize * 0.7 }
     private var vPad: CGFloat { fontSize * 0.45 }
-    private var rowHeight: CGFloat { (fontSize * 1.35).rounded(.up) + vPad * 2 }
     private var minColumnWidth: CGFloat { fontSize * 3 }
-    private var maxColumnWidth: CGFloat { 520 }
+    private var maxColumnWidth: CGFloat { fontSize * 22 }
 
     var body: some View {
         let widths = columnWidths()
@@ -72,6 +72,9 @@ struct TableWidgetView: View {
                         cell(row: row, column: column, width: widths[safe: column] ?? minColumnWidth)
                     }
                 }
+                // The row is as tall as its tallest (wrapped) cell; the cells
+                // stretch to fill it so their borders line up.
+                .fixedSize(horizontal: false, vertical: true)
             }
         }
         .padding(.vertical, 6)
@@ -105,8 +108,15 @@ struct TableWidgetView: View {
     private func cell(row: Int, column: Int, width: CGFloat) -> some View {
         let isHeader = row == 0
         let align = model.aligns[safe: column] ?? .left
-        TextField("", text: binding(row: row, column: column))
+        // One field type throughout — always multi-line, so a value that
+        // reaches the column's width cap wraps onto another line in place, with
+        // no swap that would interrupt an in-progress edit. Below the cap the
+        // column simply grows; the generous per-cell width slack (see
+        // textWidth) keeps the field a step wider than its text so a single
+        // keystroke never momentarily overflows and sticks a wrap.
+        TextField("", text: binding(row: row, column: column), axis: .vertical)
             .textFieldStyle(.plain)
+            .lineLimit(1...8)
             .font(.system(size: fontSize).weight(isHeader ? .bold : .regular))
             .monospacedDigit()
             .foregroundStyle(textColor)
@@ -114,15 +124,19 @@ struct TableWidgetView: View {
             .focused($focused, equals: CellID(row: row, column: column))
             .padding(.horizontal, hPad)
             .padding(.vertical, vPad)
-            .frame(width: width, height: rowHeight, alignment: frameAlignment(align))
+            .frame(width: width, alignment: frameAlignment(align))
+            // Fill the row's height (set by its tallest cell) so borders align.
+            .frame(maxHeight: .infinity, alignment: .top)
             .overlay(Rectangle().stroke(borderColor, lineWidth: 1))
             .contentShape(Rectangle())
             .onKeyPress(phases: .down) { press in handleKey(press, row: row, column: column) }
             .contextMenu { cellMenu(row: row, column: column) }
     }
 
-    /// Each column's width: its widest cell (header included), measured in the
-    /// cell's own font, plus the horizontal padding, clamped to a sane range.
+    /// Each column's width: its widest cell's content (header included) plus
+    /// padding, clamped between a floor and a cap. Purely a function of the text
+    /// and the font — no dependence on the editor's laid-out width — so it is
+    /// correct on the very first render. A cell longer than the cap wraps.
     private func columnWidths() -> [CGFloat] {
         let cols = columnCount
         guard cols > 0 else { return [] }
@@ -139,10 +153,13 @@ struct TableWidgetView: View {
 
     private func textWidth(_ text: String, bold: Bool) -> CGFloat {
         let font = NSFont.systemFont(ofSize: fontSize, weight: bold ? .bold : .regular)
-        // An empty cell still needs a thumb-width of room to click into; a bit
-        // of slack past the measured text keeps the caret off the border.
+        // Two characters of slack past the measured text: an empty cell still
+        // has room to click into, and — the load-bearing reason — the frame
+        // stays wide enough that the next keystroke's optimistic render fits
+        // before the width recomputes, so the multi-line field never flickers a
+        // wrap that then sticks for the rest of the edit.
         let measured = ((text.isEmpty ? "M" : text) as NSString).size(withAttributes: [.font: font]).width
-        return ceil(measured) + 8
+        return ceil(measured) + ceil(fontSize * 1.6)
     }
 
     private func binding(row: Int, column: Int) -> Binding<String> {
