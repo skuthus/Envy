@@ -330,7 +330,7 @@ extension AppDelegate {
 
     @MainActor
     private func showStatusMenu() {
-        guard let button = statusItem?.button else { return }
+        guard let statusItem, let button = statusItem.button else { return }
         let menu = NSMenu()
 
         let newNote = NSMenuItem(title: "New Note", action: #selector(newNoteFromStatusMenu), keyEquivalent: "")
@@ -366,7 +366,17 @@ extension AppDelegate {
 
         menu.addItem(NSMenuItem(title: "Quit Envy", action: #selector(NSApplication.terminate(_:)), keyEquivalent: ""))
 
-        menu.popUp(positioning: nil, at: NSPoint(x: 0, y: button.bounds.maxY + 4), in: button)
+        // Present through the status item so AppKit positions the menu under
+        // the menu bar itself. A manual popUp(positioning:at:in:) anchored to
+        // the button's top pushed the menu's top above the screen edge on
+        // recent macOS, so the menu scrolled to fit and hid its first item
+        // ("New Note") behind an up-chevron scroll arrow. Attaching the menu
+        // only for this click — then clearing it once tracking ends — keeps a
+        // plain left-click running the button's summon action instead of
+        // opening the menu.
+        statusItem.menu = menu
+        button.performClick(nil)
+        statusItem.menu = nil
     }
 
     @MainActor
