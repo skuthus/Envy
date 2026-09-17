@@ -851,7 +851,12 @@ extension ContentView {
     /// declared on WindowGroup after its own deferred window setup.
     func applyWindowTitleVisibility() {
         guard let window = NSApp.windows.first else { return }
-        window.titleVisibility = .visible
+        // In windowless mode the title slot is hidden so the bar collapses and
+        // the content sits flush; otherwise it's kept visible-but-blank (the
+        // original behavior, which avoids a unified toolbar's items jumping when
+        // the slot collapses). Either way the title text is empty — the app's
+        // own chrome already names the window.
+        window.titleVisibility = windowless ? .hidden : .visible
         window.title = ""
     }
 

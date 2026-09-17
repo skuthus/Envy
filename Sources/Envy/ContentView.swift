@@ -89,6 +89,10 @@ struct ContentView: View {
     @State var trashSweepTask: Task<Void, Never>?
     @FocusState var focusedField: FocusField?
     @AppStorage("layoutMode") var layoutModeRaw = LayoutMode.vertical.rawValue
+    // "Windowless" mode: the main window drops its title bar and traffic-light
+    // buttons (see AppDelegate.applyWindowChrome) and the content sits flush to
+    // the top edge. Toggles live.
+    @AppStorage("windowlessMode") var windowless = false
     @AppStorage("newNotesStartInInbox") var newNotesStartInInbox = false
     @AppStorage("showInboxInMainList") var showInboxInMainList = true
     @AppStorage("searchImageText") var searchImageText = true
@@ -690,6 +694,15 @@ struct ContentView: View {
 
     var body: some View {
         notificationHandledLayout
+        // Windowless: hide the window toolbar so nothing reserves a top strip.
+        // The flush top edge itself is handled once, at the window level, by the
+        // negative title-bar safe-area inset in AppDelegate.applyWindowChrome —
+        // reclaiming it here as well would pull the content up twice and clip
+        // the search bar off the top.
+        .toolbar(windowless ? .hidden : .automatic, for: .windowToolbar)
+        // Update the title slot live when the setting is toggled (AppDelegate
+        // re-applies the rest of the chrome on its own settings observer).
+        .onChange(of: windowless) { _, _ in applyWindowTitleVisibility() }
         // An adaptive theme has to be resolved on every appearance change,
         // not only when it's picked. Doing it here rather than inside each
         // resolved* accessor keeps a Theme a plain snapshot of colors — the

@@ -4,6 +4,7 @@ import ServiceManagement
 import EnvyCore
 
 struct GeneralSettingsView: View {
+    @AppStorage("windowlessMode") private var windowless = false
     @AppStorage("showNotePreview") private var showNotePreview = false
     @AppStorage("showFooterVaultCounts") private var showFooterVaultCounts = true
     @AppStorage("noteDotTrailing") private var noteDotTrailing = true
@@ -142,6 +143,9 @@ struct GeneralSettingsView: View {
                 ))
                 Toggle("Hide Envy when clicking outside the app", isOn: $hideOnFocusLoss)
                 Toggle("Keep focus where it was when summoned", isOn: $restoreFocusOnSummon)
+                Toggle("Windowless mode", isOn: $windowless)
+                Text("Drops the title bar and its window buttons so the search box meets the top edge. The window stays resizable and can be dragged by its background; show or hide it with the summon shortcut, and close it with ⌘W.")
+                    .foregroundStyle(.secondary)
                 Picker("Show Envy in", selection: appVisibility) {
                     ForEach(AppVisibility.allCases) { visibility in
                         Text(visibility.label).tag(visibility)

@@ -494,8 +494,12 @@ extension ContentView {
             searchField
             if cameraEnabled { cameraBadge }
         }
-        .padding(.horizontal, 10)
-        .padding(.top, 10)
+        // In windowless mode the search bar meets a flush top edge, so it gets
+        // 16pt all round — matching the footer bar's corner-curvature margin —
+        // to nest its rounded corners inside the window's rounded corners. With
+        // a normal title bar above it, the original tighter margins apply.
+        .padding(.horizontal, windowless ? 16 : 10)
+        .padding(.top, windowless ? 16 : 10)
     }
 
     /// A camera pill mirroring the fleeting badge, on the far side of the search

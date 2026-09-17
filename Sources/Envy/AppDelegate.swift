@@ -187,6 +187,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 self?.applyUnpinNoteHotKey()
                 self?.applyKeepOnTopHotKey()
                 self?.applyAppVisibility()
+                self?.refreshWindowChromeFromSettings()
             }
         }
 
@@ -369,15 +370,51 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         summonMainWindow()
     }
 
+    static let windowlessModeKey = "windowlessMode"
+
     private static func applyWindowChrome(to window: NSWindow) {
         window.styleMask.insert(.fullSizeContentView)
-        // The title bar is deliberately opaque (not transparent like the
-        // rest of the window) so it reads as one solid block together with
-        // the search/sort chrome directly below it, rather than fading into
-        // the translucent backdrop behind the note list and editor.
-        window.titlebarAppearsTransparent = false
+        let windowless = UserDefaults.standard.bool(forKey: windowlessModeKey)
+        // Windowless: the title bar is made transparent and its traffic-light
+        // buttons hidden, so the search/sort chrome meets the top edge with no
+        // title-bar strip above it. The window stays titled — so it's still
+        // resizable and can become key/main — only its title bar is emptied,
+        // the same treatment the pinned-note panel already uses. Re-applied on
+        // didBecomeKey and on the settings observer (see call sites), so AppKit
+        // re-creating the buttons — or the user toggling the setting — takes
+        // effect without a relaunch.
+        //
+        // Normal (windowless off): the original opaque title bar with its
+        // buttons, reading as one block with the search chrome below it.
+        window.titlebarAppearsTransparent = windowless
+        window.standardWindowButton(.closeButton)?.isHidden = windowless
+        window.standardWindowButton(.miniaturizeButton)?.isHidden = windowless
+        window.standardWindowButton(.zoomButton)?.isHidden = windowless
+        // With no title bar left to grab, dragging falls to the background;
+        // show/hide stays on the ⌥⌘↩ summon hotkey and ⌘W/⌘M.
+        window.isMovableByWindowBackground = windowless
         window.isOpaque = true
         window.backgroundColor = .windowBackgroundColor
+
+        // The reason content sat below an empty band: a fullSizeContentView
+        // titled window still insets its content view's safe area by the title
+        // bar's height. Cancel that with an equal negative additional inset so
+        // the SwiftUI content — both split layouts — meets the flush top edge.
+        // The height is derived from the style mask, not the (possibly not-yet
+        // laid-out) window, so it's stable on the first pass.
+        let titleBarHeight = NSWindow.frameRect(forContentRect: .zero, styleMask: [.titled]).height
+        window.contentView?.additionalSafeAreaInsets = windowless
+            ? NSEdgeInsets(top: -titleBarHeight, left: 0, bottom: 0, right: 0)
+            : NSEdgeInsets()
+    }
+
+    /// Re-applies the main window's chrome when the windowless setting is
+    /// toggled in Settings, so it takes effect live. Called from the shared
+    /// UserDefaults observer.
+    @MainActor
+    func refreshWindowChromeFromSettings() {
+        guard let window = resolveMainWindow() else { return }
+        Self.applyWindowChrome(to: window)
     }
 
     /// The WindowGroup window's signature: a real, titled window that isn't a
