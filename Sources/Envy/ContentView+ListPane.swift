@@ -317,7 +317,7 @@ extension ContentView {
                 }
             }
             .padding(.horizontal, 4)
-            .padding(.vertical, 3)
+            .padding(.vertical, Spacing.xs)
             .background(Color(nsColor: .windowBackgroundColor))
             Divider()
         }
@@ -329,7 +329,7 @@ extension ContentView {
             .padding(.horizontal, 8)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                RoundedRectangle(cornerRadius: Radius.small, style: .continuous)
                     .fill(isSelected(note) ? Color(nsColor: theme.resolvedSelectionColor) : Color.clear)
             )
             .contentShape(Rectangle())
@@ -534,6 +534,9 @@ extension ContentView {
         }
         .fixedSize()
         .help("New note from an iPhone photo or scan")
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Take Photo or Scan")
+        .accessibilityAddTraits(.isButton)
     }
 
     /// How many notes are sitting in Inbox/ — counted over every note
@@ -651,6 +654,7 @@ extension ContentView {
                 if sortField == field {
                     Image(systemName: sortAscending ? "chevron.up" : "chevron.down")
                         .font(.system(size: 9 * interfaceFontScale, weight: .bold))
+                        .accessibilityLabel(sortAscending ? "ascending" : "descending")
                 }
             }
             .font(.system(size: 11 * interfaceFontScale, weight: .semibold))
@@ -699,6 +703,7 @@ extension ContentView {
         HStack(spacing: 8) {
             Image(systemName: "doc.badge.plus")
                 .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
             Text(template.name)
                 .font(.system(size: 13 * interfaceFontScale))
             Spacer()
@@ -707,7 +712,7 @@ extension ContentView {
         .padding(.horizontal, 8)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
-            RoundedRectangle(cornerRadius: 6, style: .continuous)
+            RoundedRectangle(cornerRadius: Radius.small, style: .continuous)
                 .fill(isTemplateSelected(template) ? Color(nsColor: theme.resolvedSelectionColor) : Color.clear)
         )
         .contentShape(Rectangle())
@@ -839,7 +844,7 @@ extension ContentView {
         .padding(.horizontal, 8)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
-            RoundedRectangle(cornerRadius: 6, style: .continuous)
+            RoundedRectangle(cornerRadius: Radius.small, style: .continuous)
                 .fill(highlighted ? Color(nsColor: theme.resolvedSelectionColor) : Color.clear)
         )
         .contentShape(Rectangle())
@@ -898,7 +903,7 @@ extension ContentView {
         .padding(.horizontal, 8)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
-            RoundedRectangle(cornerRadius: 6, style: .continuous)
+            RoundedRectangle(cornerRadius: Radius.small, style: .continuous)
                 .fill(highlighted ? Color(nsColor: theme.resolvedSelectionColor) : Color.clear)
         )
         .contentShape(Rectangle())
@@ -917,6 +922,7 @@ extension ContentView {
         HStack(spacing: 8) {
             Image(systemName: "trash")
                 .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
             Text(note.title)
                 .font(.system(size: 13 * interfaceFontScale))
             Spacer()
@@ -928,7 +934,7 @@ extension ContentView {
         .padding(.horizontal, 8)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
-            RoundedRectangle(cornerRadius: 6, style: .continuous)
+            RoundedRectangle(cornerRadius: Radius.small, style: .continuous)
                 .fill(isTrashSelected(note) ? Color(nsColor: theme.resolvedSelectionColor) : Color.clear)
         )
         .contentShape(Rectangle())

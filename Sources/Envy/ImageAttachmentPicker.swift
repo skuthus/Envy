@@ -104,7 +104,7 @@ private struct ImageAttachmentPickerView: View {
     private func cell(_ url: URL) -> some View {
         VStack(spacing: 4) {
             ZStack {
-                RoundedRectangle(cornerRadius: 6).fill(Color.primary.opacity(0.06))
+                RoundedRectangle(cornerRadius: Radius.small, style: .continuous).fill(Color.primary.opacity(0.06))
                 if let thumb = AttachmentThumbnailCache.thumbnail(for: url) {
                     Image(nsImage: thumb).resizable().scaledToFit().padding(4)
                 } else {

@@ -49,7 +49,7 @@ struct WhatsNewView: View {
             .padding(18)
             .frame(maxWidth: .infinity)
             .background(EnvyBrand.iris.opacity(0.1))
-            .clipShape(RoundedRectangle(cornerRadius: 12))
+            .clipShape(RoundedRectangle(cornerRadius: Radius.large, style: .continuous))
 
             Button("Continue") {
                 dismiss()

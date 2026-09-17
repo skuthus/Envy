@@ -296,7 +296,7 @@ struct ThemeSettingsView: View {
                 previewText
                     .padding(10)
                     .background(Color(nsColor: theme.resolvedBackgroundColor))
-                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.small, style: .continuous))
             }
 
             Button("Reset to Defaults") {
@@ -429,7 +429,7 @@ struct ThemeSettingsView: View {
         }()
         VStack(spacing: 4) {
             ZStack(alignment: .topTrailing) {
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                RoundedRectangle(cornerRadius: Radius.medium, style: .continuous)
                     .fill(Color(nsColor: preview.resolvedBackgroundColor))
                     .frame(width: 64, height: 44)
                     .overlay(
@@ -438,7 +438,7 @@ struct ThemeSettingsView: View {
                             .foregroundStyle(Color(nsColor: preview.resolvedTextColor))
                     )
                     .overlay(
-                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        RoundedRectangle(cornerRadius: Radius.medium, style: .continuous)
                             .strokeBorder(isSelected ? Color.accentColor : Color.secondary.opacity(0.25), lineWidth: isSelected ? 2 : 1)
                     )
                 HStack(spacing: 3) {

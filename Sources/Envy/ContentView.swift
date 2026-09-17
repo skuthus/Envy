@@ -49,6 +49,7 @@ struct ContentView: View {
         directory: IndexPreference.load(),
         includeSubfolders: UserDefaults.standard.bool(forKey: IndexPreference.includeSubfoldersKey)
     )
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @State var query = ""
     @State var selectedID: String?
     // --- Editor split ---
@@ -901,7 +902,14 @@ struct ContentView: View {
 
     @ViewBuilder
     private var backgroundView: some View {
-        if let material = backgroundBlurStrength.material {
+        // Reduce Transparency → a solid backdrop, whatever the blur setting.
+        // (The app's other translucency — .bar chrome, glass pills, the
+        // NSVisualEffectView itself — are system materials that already turn
+        // opaque under this setting; this covers the one place a chosen blur
+        // would otherwise stay translucent.)
+        if reduceTransparency {
+            Color(nsColor: .windowBackgroundColor)
+        } else if let material = backgroundBlurStrength.material {
             VisualEffectBackground(material: material)
         } else {
             Color(nsColor: .windowBackgroundColor)

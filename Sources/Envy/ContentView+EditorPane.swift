@@ -344,8 +344,8 @@ extension ContentView {
         // A touch more than the usual 10pt — this bar runs edge-to-edge at
         // the bottom of the window, where the screen/window corner
         // curvature can clip content sitting right at 10pt.
-        .padding(.horizontal, 16)
-        .padding(.vertical, 4)
+        .padding(.horizontal, Spacing.l)
+        .padding(.vertical, Spacing.xs)
         .background(.bar)
         .animation(.easeInOut(duration: 0.15), value: showLoadingIndicator)
     }

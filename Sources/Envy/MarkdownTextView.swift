@@ -889,7 +889,7 @@ private struct SignaturePillView: View {
             .lineLimit(1)
             .foregroundStyle(Color(nsColor: theme.resolvedMarkerColor))
             .padding(.horizontal, 9)
-            .padding(.vertical, 3)
+            .padding(.vertical, Spacing.xs)
             .background(Capsule().fill(Color(nsColor: theme.resolvedMarkerColor).opacity(0.12)))
             .overlay(Capsule().strokeBorder(Color(nsColor: theme.resolvedMarkerColor).opacity(0.35), lineWidth: 1))
             .help("Marked as AI-authored and protected. Right-click to remove it, or turn off \u{201C}Protect AI signatures\u{201D} in Settings.")
