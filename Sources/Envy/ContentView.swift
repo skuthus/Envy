@@ -106,6 +106,8 @@ struct ContentView: View {
     @AppStorage("layoutMode") var layoutModeRaw = LayoutMode.vertical.rawValue
     /// Hides the note list entirely, leaving just the editor — in either layout.
     @AppStorage("listCollapsed") var listCollapsed = false
+    /// Turns the app's chrome into frosted Liquid Glass panels (see Glassify.swift).
+    @AppStorage("glassify") var glassify = false
     // "Windowless" mode: the main window drops its title bar and traffic-light
     // buttons (see AppDelegate.applyWindowChrome) and the content sits flush to
     // the top edge. Toggles live.
@@ -632,6 +634,7 @@ struct ContentView: View {
     private var notificationHandledLayout: some View {
         layoutSwitch
         .background(backgroundView.ignoresSafeArea())
+        .environment(\.glassify, glassify)
         .onReceive(NotificationCenter.default.publisher(for: .newNoteRequested)) { _ in
             createBlankNote()
         }
@@ -918,6 +921,10 @@ struct ContentView: View {
         // would otherwise stay translucent.)
         if reduceTransparency {
             Color(nsColor: .windowBackgroundColor)
+        } else if glassify {
+            // Glassify deepens the frost so the glass panels have something rich
+            // to sit over, regardless of the chosen blur strength.
+            VisualEffectBackground(material: .hudWindow)
         } else if let material = backgroundBlurStrength.material {
             VisualEffectBackground(material: material)
         } else {

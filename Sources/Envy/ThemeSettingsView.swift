@@ -7,6 +7,7 @@ struct ThemeSettingsView: View {
     @AppStorage("themePair") private var themePairRaw = ""
     @Environment(\.colorScheme) private var colorScheme
     @AppStorage("backgroundBlurStrength") private var backgroundBlurStrengthRaw = BlurStrength.strong.rawValue
+    @AppStorage("glassify") private var glassify = false
     @AppStorage("appearanceMode") private var appearanceModeRaw = AppearanceMode.system.rawValue
     @AppStorage("listDensity") private var listDensityRaw = ListDensity.compact.rawValue
     @AppStorage("interfaceTextSize") private var interfaceTextSizeRaw = InterfaceTextSize.large.rawValue
@@ -204,6 +205,9 @@ struct ThemeSettingsView: View {
                         Text(strength.label).tag(strength)
                     }
                 }
+                Toggle("Glassify", isOn: $glassify)
+                Text("Turns Envy's chrome — the note list header, editor body, title bars, and footer — into frosted Liquid Glass floating over a deeper backdrop blur. Purely a look; every control and gesture stays exactly the same.")
+                    .foregroundStyle(.secondary)
             }
 
             // Everything about the focus highlight lives here — fade,

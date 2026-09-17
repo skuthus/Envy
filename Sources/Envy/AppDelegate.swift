@@ -371,14 +371,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     static let windowlessModeKey = "windowlessMode"
+    static let glassifyKey = "glassify"
 
     private static func applyWindowChrome(to window: NSWindow) {
         let windowless = UserDefaults.standard.bool(forKey: windowlessModeKey)
-        // Full-size content only in windowless mode, where the content is meant
-        // to reach the top edge. In normal mode a standard, opaque title bar
-        // sits above the content — otherwise the window's translucent backdrop
-        // shows through the title bar as a glassy strip.
-        if windowless {
+        let glassify = UserDefaults.standard.bool(forKey: glassifyKey)
+        // Full-size content in windowless mode (content reaches the top edge)
+        // and in Glassify (content — and its frosted material — flows up under
+        // the title bar, so the title-bar strip reads continuously with the
+        // header below it instead of showing the darker native title-bar
+        // material). In plain normal mode a standard, opaque title bar sits
+        // above the content, since the backdrop would otherwise glass the strip.
+        if windowless || glassify {
             window.styleMask.insert(.fullSizeContentView)
         } else {
             window.styleMask.remove(.fullSizeContentView)
@@ -394,15 +398,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         //
         // Normal (windowless off): the original opaque title bar with its
         // buttons, reading as one block with the search chrome below it.
-        window.titlebarAppearsTransparent = windowless
+        // Transparent in Glassify too (not just windowless) so the native
+        // title-bar material doesn't paint its darker fill over the content's
+        // frosted material flowing up beneath it. The traffic-light buttons
+        // stay visible in Glassify — only windowless hides them.
+        window.titlebarAppearsTransparent = windowless || glassify
         window.standardWindowButton(.closeButton)?.isHidden = windowless
         window.standardWindowButton(.miniaturizeButton)?.isHidden = windowless
         window.standardWindowButton(.zoomButton)?.isHidden = windowless
         // With no title bar left to grab, dragging falls to the background;
         // show/hide stays on the ⌥⌘↩ summon hotkey and ⌘W/⌘M.
         window.isMovableByWindowBackground = windowless
-        window.isOpaque = true
-        window.backgroundColor = .windowBackgroundColor
+        // Glassify makes the window itself non-opaque with a clear background, so
+        // the behind-window blur (the .hudWindow VisualEffectBackground) actually
+        // samples the desktop instead of a solid fill — the Ghostty-style
+        // translucency. The content surfaces (editor text view, note list) go
+        // translucent to match; the frosted chrome stays legible on top. Normal
+        // mode keeps the classic opaque window.
+        window.isOpaque = !glassify
+        window.backgroundColor = glassify ? .clear : .windowBackgroundColor
 
         // The reason content sat below an empty band: a fullSizeContentView
         // titled window still insets its content view's safe area by the title

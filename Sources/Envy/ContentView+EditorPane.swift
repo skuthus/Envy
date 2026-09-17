@@ -38,7 +38,9 @@ extension ContentView {
         // covering the strip between the opaque native title bar and where
         // NoteEditorView's own background starts, letting the blur show
         // through there and reading as a stray transparent gap.
-        .background(Color(nsColor: .windowBackgroundColor).ignoresSafeArea(edges: .top))
+        // In Glassify the editor body becomes a frosted panel so the deepened
+        // backdrop reads through it, still filling up under the title bar.
+        .background(editorPaneBackground.ignoresSafeArea(edges: .top))
         .onChange(of: selectedID) { _, newValue in
             if newValue == nil {
                 editorWordCount = 0
@@ -357,8 +359,26 @@ extension ContentView {
         // curvature can clip content sitting right at 10pt.
         .padding(.horizontal, Spacing.l)
         .padding(.vertical, Spacing.xs)
-        .background(.bar)
+        .chromeBar(glassify)
         .animation(.easeInOut(duration: 0.15), value: showLoadingIndicator)
+    }
+
+    /// The editor body's fill: an opaque window background normally, a frosted
+    /// material in Glassify. A `@ViewBuilder` (not the `chromePanel` modifier)
+    /// because this one is composed with `.ignoresSafeArea(edges:)` at the call
+    /// site to keep filling up under the native title bar.
+    @ViewBuilder
+    var editorPaneBackground: some View {
+        if glassify {
+            // The editor's actual surface in Glassify: a low-alpha tint of the
+            // theme background painted here in SwiftUI (the text stack above is
+            // fully transparent — see MarkdownTextView.applyTheme), so it
+            // composites cleanly over the window's behind-window blur while
+            // keeping enough tint for body text to stay legible.
+            Color(nsColor: theme.resolvedBackgroundColor).opacity(0.55)
+        } else {
+            Color(nsColor: .windowBackgroundColor)
+        }
     }
 
     var hasAnyInterlinks: Bool {
@@ -399,7 +419,7 @@ extension ContentView {
         .padding(.vertical, 8)
         .frame(maxWidth: .infinity, alignment: .leading)
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { interlinksWidth = $0 }
-        .background(.bar)
+        .chromeBar(glassify)
     }
 
     /// The three interlink sections (only the non-empty ones), each an

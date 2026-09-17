@@ -33,6 +33,10 @@ struct NoteEditorView: View {
     /// Read here (rather than threaded in) so a recolor from anywhere —
     /// the list's context menu, Settings — repaints the chip live.
     @AppStorage(FolderColorPreferences.storageKey) private var folderColorsRaw = ""
+    /// Threaded in through the environment (ContentView owns the setting) so
+    /// the note title bar joins the rest of the chrome in turning to frosted
+    /// glass when Glassify is on. A theme-supplied title-bar color still wins.
+    @Environment(\.glassify) private var glassify
     var showDuePill: Bool
     var linkPreviewTrigger: LinkPreviewTrigger
     var fontZoom: CGFloat
@@ -173,6 +177,7 @@ struct NoteEditorView: View {
                 searchQuery: searchQuery,
                 fontZoom: fontZoom,
                 plainTextMode: plainTextMode,
+                glassify: glassify,
                 // Always the real store, not nil'd out when link previews
                 // are off — store also gates embed expansion
                 // (MarkdownTextView.Coordinator.updateEmbedOverlays), an
@@ -443,7 +448,17 @@ struct NoteEditorView: View {
         .padding(.top, 6)
         .padding(.bottom, 4)
         .background {
-            if let color = theme.noteTitleBarBackgroundColor?.color {
+            if glassify {
+                // Glassify wins over the opaque defaults: a theme's title-bar
+                // color keeps its identity but drops to the same low-alpha tint
+                // as the editor body so the blur reads through; with no theme
+                // color it's true Liquid Glass.
+                if let color = theme.noteTitleBarBackgroundColor?.color {
+                    color.opacity(0.55)
+                } else {
+                    Rectangle().glassEffect(.regular, in: Rectangle())
+                }
+            } else if let color = theme.noteTitleBarBackgroundColor?.color {
                 color
             } else {
                 Rectangle().fill(.bar)

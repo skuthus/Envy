@@ -914,6 +914,11 @@ struct MarkdownTextView: NSViewRepresentable {
     var searchQuery: String
     var fontZoom: CGFloat = 0
     var plainTextMode: Bool = false
+    /// Glassify: the editor body becomes translucent so the window's
+    /// behind-window blur (and the desktop through it) reads behind the text,
+    /// like a terminal's background-opacity. The theme background is kept as a
+    /// low-alpha tint rather than going fully clear so body text stays legible.
+    var glassify: Bool = false
     /// False only for the wikilink hover preview's initial, click-to-edit
     /// state — every other caller (the main editor, the pinned popup, the
     /// template editor) leaves this at the default, always-editable.
@@ -1265,13 +1270,21 @@ struct MarkdownTextView: NSViewRepresentable {
         // for unstyled text is already covered by MarkdownStyler.style's own
         // textStorage.setAttributes(...) call over the full range.
 
-        // Always solid, regardless of the window's own transparency — body text
-        // needs a legible, non-blurred backdrop even when the surrounding chrome
-        // (sidebar, titlebar) is translucent.
-        textView.drawsBackground = true
+        // Normally solid, regardless of the window's own transparency — body
+        // text needs a legible, non-blurred backdrop even when the surrounding
+        // chrome (sidebar, titlebar) is translucent. Glassify is the deliberate
+        // exception: the whole text stack goes fully transparent — text view,
+        // scroll view, AND the clip view (whose own opaque fill would otherwise
+        // sit behind the text and cancel any translucency out) — so the
+        // low-alpha tint SwiftUI paints behind the editor (see
+        // ContentView.editorPaneBackground) is what shows, letting the
+        // behind-window blur read through the terminal way.
+        textView.drawsBackground = !glassify
         textView.backgroundColor = theme.resolvedBackgroundColor
-        scrollView.drawsBackground = true
+        scrollView.drawsBackground = !glassify
         scrollView.backgroundColor = theme.resolvedBackgroundColor
+        scrollView.contentView.drawsBackground = !glassify
+        scrollView.contentView.backgroundColor = theme.resolvedBackgroundColor
         textView.insertionPointColor = theme.resolvedTextColor
         // NSTextView's own default selection color otherwise wins — a
         // system-derived light blue, regardless of anything else in the

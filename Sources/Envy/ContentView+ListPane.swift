@@ -25,15 +25,29 @@ private let searchFieldBorderColor = NSColor(name: nil) { appearance in
 private struct RowHoverBackground: ViewModifier {
     let isSelected: Bool
     let selectionColor: Color
+    var glassify: Bool = false
     @State private var isHovering = false
 
     func body(content: Content) -> some View {
         content
-            .background(
-                RoundedRectangle(cornerRadius: Radius.small, style: .continuous)
-                    .fill(fill)
-            )
+            .background(rowBackground)
             .onHover { isHovering = $0 }
+    }
+
+    // In Glassify a selected row is a floating glass chip: the Liquid Glass
+    // material inside the rounded shape, with the theme selection color laid
+    // over it as a translucent tint so the choice of accent still reads. Hover
+    // and the unselected state are unchanged — a plain faint fill.
+    @ViewBuilder
+    private var rowBackground: some View {
+        let shape = RoundedRectangle(cornerRadius: Radius.small, style: .continuous)
+        if isSelected && glassify {
+            shape
+                .glassEffect(.regular, in: shape)
+                .overlay(shape.fill(selectionColor.opacity(0.55)))
+        } else {
+            shape.fill(fill)
+        }
     }
 
     private var fill: Color {
@@ -115,7 +129,11 @@ extension ContentView {
             // Deliberately NOT tinted by fileListBackgroundColor — that
             // setting is scoped to the scrollable notes below, not this
             // header, which stays looking like the rest of the window chrome.
-            .background(Color(nsColor: .windowBackgroundColor))
+            //
+            // In Glassify this opaque exception is exactly what we trade for a
+            // frosted panel — one that reaches up under the transparent title
+            // bar so the strip above reads continuously with this header.
+            .chromeHeaderPanel(glassify)
             Divider()
             // Pinned notes parked below the search/sort chrome so they stay
             // reachable no matter how far the list is scrolled (opt-in, up to
@@ -342,7 +360,7 @@ extension ContentView {
             }
             .padding(.horizontal, 4)
             .padding(.vertical, Spacing.xs)
-            .background(Color(nsColor: .windowBackgroundColor))
+            .chromePanel(glassify)
             Divider()
         }
     }
@@ -354,7 +372,8 @@ extension ContentView {
             .frame(maxWidth: .infinity, alignment: .leading)
             .modifier(RowHoverBackground(
                 isSelected: isSelected(note),
-                selectionColor: Color(nsColor: theme.resolvedSelectionColor)
+                selectionColor: Color(nsColor: theme.resolvedSelectionColor),
+                glassify: glassify
             ))
             .contentShape(Rectangle())
             .onTapGesture {
@@ -383,7 +402,10 @@ extension ContentView {
     @ViewBuilder
     private var fileListBackground: some View {
         if let fileListColor = theme.fileListBackgroundColor {
-            fileListColor.color
+            // In Glassify a theme's opaque list color drops to a low-alpha tint
+            // so the behind-window blur reads through the note rows to match the
+            // editor; otherwise it stays fully clear and shows the backdrop.
+            fileListColor.color.opacity(glassify ? 0.55 : 1)
         } else {
             Color.clear
         }
