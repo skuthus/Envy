@@ -152,6 +152,16 @@ struct EnvyApp: App {
                 }
                 .keyboardShortcut(binding(for: .toggleLayout).keyEquivalent, modifiers: binding(for: .toggleLayout).eventModifiers)
 
+                Button("Split Editor / Close Split") {
+                    NotificationCenter.default.post(name: .toggleSplitRequested, object: nil)
+                }
+                .keyboardShortcut(binding(for: .toggleSplit).keyEquivalent, modifiers: binding(for: .toggleSplit).eventModifiers)
+
+                Button("Flip Split Direction") {
+                    NotificationCenter.default.post(name: .flipSplitRequested, object: nil)
+                }
+                .keyboardShortcut(binding(for: .flipSplit).keyEquivalent, modifiers: binding(for: .flipSplit).eventModifiers)
+
                 Button("Toggle Plain-Text Mode") {
                     NotificationCenter.default.post(name: .togglePlainTextModeRequested, object: nil)
                 }

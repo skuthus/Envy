@@ -437,7 +437,11 @@ struct NoteEditorView: View {
             .transaction { $0.animation = nil }
         }
         .padding(.horizontal)
-        .padding(.vertical, 8)
+        // Slightly more above than below: the headline font's descender space
+        // sits under short, no-descender titles, which otherwise makes the text
+        // read as riding high in the bar. This nudges it to optical centre.
+        .padding(.top, 6)
+        .padding(.bottom, 4)
         .background {
             if let color = theme.noteTitleBarBackgroundColor?.color {
                 color

@@ -104,6 +104,8 @@ enum ShortcutAction: String, CaseIterable, Identifiable {
     case importFromAppleNotes
     case extractToNote
     case insertImage
+    case toggleSplit
+    case flipSplit
 
     var id: String { rawValue }
 
@@ -132,6 +134,8 @@ enum ShortcutAction: String, CaseIterable, Identifiable {
         case .importFromAppleNotes: "Import from Apple Notes"
         case .extractToNote: "Extract Selection to New Note"
         case .insertImage: "Insert Image"
+        case .toggleSplit: "Split Editor / Close Split"
+        case .flipSplit: "Flip Split Direction"
         }
     }
 
@@ -197,6 +201,11 @@ enum ShortcutAction: String, CaseIterable, Identifiable {
             // ⇧⌘I — "I for Image," kept distinct from ⌘I (Italic) and ⌥⌘I
             // (Import from Apple Notes) by the shift.
             ShortcutBinding(character: "i", keyCode: kVK_ANSI_I, modifiers: SwiftUI.EventModifiers([.command, .shift]).rawValue)
+        case .toggleSplit:
+            // ⌘\ — the backslash between the panes; ⌘⌥\ flips its direction.
+            ShortcutBinding(character: "\\", keyCode: kVK_ANSI_Backslash, modifiers: SwiftUI.EventModifiers.command.rawValue)
+        case .flipSplit:
+            ShortcutBinding(character: "\\", keyCode: kVK_ANSI_Backslash, modifiers: SwiftUI.EventModifiers([.command, .option]).rawValue)
         }
     }
 }

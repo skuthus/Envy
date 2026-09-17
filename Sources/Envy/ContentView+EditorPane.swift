@@ -17,8 +17,85 @@ extension ContentView {
 
     var editorPane: some View {
         VStack(spacing: 0) {
-            Group {
-                if isTemplateQuery {
+            editorContentArea
+                .frame(maxHeight: .infinity)
+            // Lives here (not inside NoteEditorView) specifically so it stays
+            // visible — clock included — even when no note is selected and
+            // NoteEditorView isn't in the view hierarchy at all.
+            Divider()
+            // Sits directly above the footer bar (rather than the bar
+            // growing to contain it) so expanding the list grows the panel
+            // upward into the editor instead of pushing the footer down.
+            if backlinksExpanded && hasAnyInterlinks && !isTemplateQuery {
+                interlinksExpandedList
+                Divider()
+            }
+            editorFooter
+        }
+        // Opaque, not the window's translucent backdrop — in horizontal
+        // layout this is the detail column of a NavigationSplitView, which
+        // (unlike the sidebar's search/sort chrome) had nothing of its own
+        // covering the strip between the opaque native title bar and where
+        // NoteEditorView's own background starts, letting the blur show
+        // through there and reading as a stray transparent gap.
+        .background(Color(nsColor: .windowBackgroundColor).ignoresSafeArea(edges: .top))
+        .onChange(of: selectedID) { _, newValue in
+            if newValue == nil {
+                editorWordCount = 0
+                editorCharacterCount = 0
+            }
+            recomputeInterlinks()
+        }
+    }
+
+    /// One editor pane when not split; two panes side by side (or stacked) when
+    /// the split is on and no search operator has taken over the pane.
+    @ViewBuilder
+    var editorContentArea: some View {
+        if splitEnabled && !isEditorQueryMode {
+            PersistentVSplitView(
+                storageKey: "editorSplitFraction",
+                defaultTopFraction: 0.5,
+                isVertical: !splitStacked
+            ) {
+                notePane(noteID: leadingPaneID, isActive: !activePaneIsTrailing, trailing: false)
+            } bottom: {
+                notePane(noteID: trailingPaneID, isActive: activePaneIsTrailing, trailing: true)
+            }
+            // Recreate on a direction flip so the NSSplitView takes the new axis.
+            .id(splitStacked)
+        } else {
+            singleEditorArea
+        }
+    }
+
+    /// One physical editor pane in a split: the note editor (or an empty
+    /// placeholder), a thin accent bar along the active pane's top edge, and a
+    /// click anywhere in it that makes it the active pane.
+    @ViewBuilder
+    func notePane(noteID: String?, isActive: Bool, trailing: Bool) -> some View {
+        Group {
+            if let noteID, store.note(withID: noteID) != nil {
+                noteEditorContent(noteID: noteID, isActive: isActive)
+            } else {
+                ContentUnavailableView("No Note Selected", systemImage: "note.text")
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .overlay(alignment: .top) {
+            Rectangle()
+                .fill(isActive ? Color(nsColor: theme.resolvedFocusHighlightColor) : Color.clear)
+                .frame(height: 2)
+        }
+        .contentShape(Rectangle())
+        // Simultaneous so it never eats a click meant for the editor — any
+        // click in a pane just also makes it active.
+        .simultaneousGesture(TapGesture().onEnded { activatePane(trailing: trailing) })
+    }
+
+    var singleEditorArea: some View {
+        Group {
+            if isTemplateQuery {
                     // Whichever template is highlighted (arrow keys, a click,
                     // or a freshly-created one) shows here, live-editable and
                     // auto-saving — clicking/browsing just opens it, same as
@@ -62,68 +139,7 @@ extension ContentView {
                     ContentUnavailableView("Browsing Folders", systemImage: "folder", description: Text("Pick a folder to see its notes."))
 
                 } else if let selectedID, store.note(withID: selectedID) != nil {
-                    // Resolved once per render — the computed property is an
-                    // O(notes) scan, and the two closure parameters below
-                    // would otherwise each run it fresh in the same body pass
-                    // (SwiftUI doesn't share computed-property evaluations).
-                    let fleetingNote = fleetingNote
-                    NoteEditorView(
-                        store: store,
-                        noteID: selectedID,
-                        focusedField: $focusedField,
-                        onNavigate: navigateToNote,
-                        onExtractSelection: extractSelectionToNote,
-                        onRename: { newTitle in renameSelectedNote(to: newTitle) },
-                        // The note is resolved at CLICK time (self.fleetingNote,
-                        // not the local snapshot above), never captured: the
-                        // Submit menu's action closures can outlive a note
-                        // switch (SwiftUI menus don't reliably refresh what
-                        // they captured when the view updates), and a submit
-                        // auto-advances the selection right under the menu —
-                        // a captured note value meant the second consecutive
-                        // submit re-submitted the already-moved note (refused
-                        // as a collision) instead of the one on screen.
-                        onSubmitFleeting: fleetingNote == nil ? nil : { folder in
-                            if let current = self.fleetingNote { submitFromInbox(current, toSubfolder: folder) }
-                        },
-                        onDeleteFleeting: fleetingNote == nil ? nil : {
-                            if let current = self.fleetingNote { deleteFromInbox(current) }
-                        },
-                        // Submit's dropdown offers the same folders Move to
-                        // does; empty (a plain button) when subfolder
-                        // scanning is off, since folders don't exist then.
-                        submitFolders: indexIncludeSubfolders ? subfolderCache : [],
-                        submitFolderSwatch: { folderSwatchCache[$0] },
-                        onTagSearch: searchByTag,
-                        onFolderSearch: searchByFolder,
-                        theme: theme,
-                        requireModifierForLinkClick: requireModifierForLinkClick,
-                        searchQuery: editorSearchQuery,
-                        showTagsInTitleBar: showTagsInTitleBar,
-                        showFolderInTitleBar: showFolderInTitleBar,
-                        showDuePill: showDuePill,
-                        linkPreviewTrigger: linkPreviewTrigger,
-                        fontZoom: CGFloat(editorFontZoom),
-                        plainTextMode: plainTextMode,
-                        protectAISignature: protectAISignature,
-                        noteTitles: noteTitlesByRecencyCache,
-                        onStatsChange: { words, characters in
-                            editorWordCount = words
-                            editorCharacterCount = characters
-                        }
-                    )
-                    // Deliberately NOT .id(selectedID): giving it one recreated
-                    // the whole NoteEditorView + NSTextView per note switch,
-                    // which flashed the editor blank for a couple of frames on
-                    // every click. It's reused across notes now and swaps
-                    // content in place — NoteEditorView.switchNote handles the
-                    // per-note reset (flush the old note's save, load the new
-                    // content, reset undo/scroll), and MarkdownTextView keys the
-                    // in-place text replacement off the note id changing. The
-                    // old "one note's content inside another's editor" race that
-                    // .id() guarded against is gone: switchNote loads the new
-                    // content in the same step that signals the swap, so they
-                    // can't arrive a render apart.
+                    noteEditorContent(noteID: selectedID, isActive: true)
                 } else {
                     ContentUnavailableView("No Note Selected", systemImage: "note.text")
                 }
@@ -136,33 +152,65 @@ extension ContentView {
                 lineWidth: CGFloat(theme.focusHighlightThickness),
                 shape: Rectangle()
             )
-            // Lives here (not inside NoteEditorView) specifically so it stays
-            // visible — clock included — even when no note is selected and
-            // NoteEditorView isn't in the view hierarchy at all.
-            Divider()
-            // Sits directly above the footer bar (rather than the bar
-            // growing to contain it) so expanding the list grows the panel
-            // upward into the editor instead of pushing the footer down.
-            if backlinksExpanded && hasAnyInterlinks && !isTemplateQuery {
-                interlinksExpandedList
-                Divider()
+    }
+
+    /// The note editor for one note, used by the single pane and by each split
+    /// pane. `isActive` gates the shared footer's word/char counts to the active
+    /// pane so the inactive pane's editing doesn't overwrite them.
+    ///
+    /// Deliberately NOT given `.id(noteID)`: an id recreated the whole
+    /// NoteEditorView + NSTextView per note switch, flashing the editor blank.
+    /// It's reused and swaps content in place — NoteEditorView.switchNote handles
+    /// the per-note reset (flush the old save, load new content, reset
+    /// undo/scroll) keyed off `noteID` changing.
+    @ViewBuilder
+    func noteEditorContent(noteID: String, isActive: Bool) -> some View {
+        let paneNote = store.note(withID: noteID)
+        let isFleeting = isActive && inboxEnabled && (paneNote.map(store.isInboxNote) ?? false)
+        NoteEditorView(
+            store: store,
+            noteID: noteID,
+            focusedField: $focusedField,
+            onNavigate: navigateToNote,
+            onExtractSelection: extractSelectionToNote,
+            onRename: { newTitle in
+                if let note = store.note(withID: noteID) { renameNote(note, to: newTitle) }
+            },
+            // Resolved at CLICK time, never captured: a Submit menu's closure can
+            // outlive a note switch, and a submit auto-advances the selection, so
+            // a captured note value would re-submit the already-moved note.
+            onSubmitFleeting: !isFleeting ? nil : { folder in
+                if let note = store.note(withID: noteID), store.isInboxNote(note) {
+                    submitFromInbox(note, toSubfolder: folder)
+                }
+            },
+            onDeleteFleeting: !isFleeting ? nil : {
+                if let note = store.note(withID: noteID), store.isInboxNote(note) {
+                    deleteFromInbox(note)
+                }
+            },
+            submitFolders: indexIncludeSubfolders ? subfolderCache : [],
+            submitFolderSwatch: { folderSwatchCache[$0] },
+            onTagSearch: searchByTag,
+            onFolderSearch: searchByFolder,
+            theme: theme,
+            requireModifierForLinkClick: requireModifierForLinkClick,
+            searchQuery: editorSearchQuery,
+            showTagsInTitleBar: showTagsInTitleBar,
+            showFolderInTitleBar: showFolderInTitleBar,
+            showDuePill: showDuePill,
+            linkPreviewTrigger: linkPreviewTrigger,
+            fontZoom: CGFloat(editorFontZoom),
+            plainTextMode: plainTextMode,
+            protectAISignature: protectAISignature,
+            noteTitles: noteTitlesByRecencyCache,
+            onStatsChange: { words, characters in
+                if isActive {
+                    editorWordCount = words
+                    editorCharacterCount = characters
+                }
             }
-            editorFooter
-        }
-        // Opaque, not the window's translucent backdrop — in horizontal
-        // layout this is the detail column of a NavigationSplitView, which
-        // (unlike the sidebar's search/sort chrome) had nothing of its own
-        // covering the strip between the opaque native title bar and where
-        // NoteEditorView's own background starts, letting the blur show
-        // through there and reading as a stray transparent gap.
-        .background(Color(nsColor: .windowBackgroundColor).ignoresSafeArea(edges: .top))
-        .onChange(of: selectedID) { _, newValue in
-            if newValue == nil {
-                editorWordCount = 0
-                editorCharacterCount = 0
-            }
-            recomputeInterlinks()
-        }
+        )
     }
 
     /// Shown in the editor pane's own slot while "trash:" is typed — read

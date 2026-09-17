@@ -1476,14 +1476,26 @@ struct MarkdownTextView: NSViewRepresentable {
             // The .main queue already guarantees these run on the main
             // thread; assumeIsolated is just telling the compiler what the
             // queue already promised.
+            // Guarded on being the focused editor, so with two split editor
+            // panes open only the one the caret is in acts on the shortcut,
+            // rather than both toggling bold / both extracting.
             boldObserver = NotificationCenter.default.addObserver(forName: .boldSelectionRequested, object: nil, queue: .main) { [weak self] _ in
-                MainActor.assumeIsolated { self?.toggleBold() }
+                MainActor.assumeIsolated {
+                    guard let self, let tv = self.textView, tv.window?.firstResponder === tv else { return }
+                    self.toggleBold()
+                }
             }
             italicObserver = NotificationCenter.default.addObserver(forName: .italicSelectionRequested, object: nil, queue: .main) { [weak self] _ in
-                MainActor.assumeIsolated { self?.toggleItalic() }
+                MainActor.assumeIsolated {
+                    guard let self, let tv = self.textView, tv.window?.firstResponder === tv else { return }
+                    self.toggleItalic()
+                }
             }
             extractObserver = NotificationCenter.default.addObserver(forName: .extractToNoteRequested, object: nil, queue: .main) { [weak self] _ in
-                MainActor.assumeIsolated { self?.extractSelectionToNote() }
+                MainActor.assumeIsolated {
+                    guard let self, let tv = self.textView, tv.window?.firstResponder === tv else { return }
+                    self.extractSelectionToNote()
+                }
             }
             insertImageObserver = NotificationCenter.default.addObserver(forName: .insertImageRequested, object: nil, queue: .main) { [weak self] _ in
                 MainActor.assumeIsolated {

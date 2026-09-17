@@ -184,23 +184,30 @@ extension ContentView {
                 )
             }
             .background(fileListBackground)
+            // Floated over the list's bottom rather than a row below it: a row
+            // sat over the window's translucent backdrop as a full-width band
+            // (the blur showing through, lighter than the tinted list). As an
+            // overlay it's just the pill, over the list's own background.
             // queryHasExactTitleMatch comes from the background search pass
             // rather than scanning every title here in the body on each
-            // keystroke render — it trails typing by the debounce, which
-            // for a hint pill is imperceptible.
-            if !query.trimmingCharacters(in: .whitespaces).isEmpty && !isSearchOperatorQuery && !queryHasExactTitleMatch {
-                // Folder-aware when the query reads as "Folder/Title" against
-                // a real folder — the pill is the promise of what ⏎ does, so
-                // it must say where the note will land.
-                let creation = folderTargetedCreation(from: query.trimmingCharacters(in: .whitespaces))
-                Text(creation.map { "Press \u{23CE} to create \"\($0.title)\" in \($0.folder)" }
-                     ?? "Press \u{23CE} to create \"\(query)\"")
-                    .font(.system(size: 11 * interfaceFontScale))
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 6)
-                    .glassEffect(.regular, in: Capsule())
-                    .padding(.bottom, 10)
+            // keystroke render — it trails typing by the debounce, which for a
+            // hint pill is imperceptible.
+            .overlay(alignment: .bottom) {
+                if !query.trimmingCharacters(in: .whitespaces).isEmpty && !isSearchOperatorQuery && !queryHasExactTitleMatch {
+                    // Folder-aware when the query reads as "Folder/Title" against
+                    // a real folder — the pill is the promise of what ⏎ does, so
+                    // it must say where the note will land.
+                    let creation = folderTargetedCreation(from: query.trimmingCharacters(in: .whitespaces))
+                    Text(creation.map { "Press \u{23CE} to create \"\($0.title)\" in \($0.folder)" }
+                         ?? "Press \u{23CE} to create \"\(query)\"")
+                        .font(.system(size: 11 * interfaceFontScale))
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .glassEffect(.regular, in: Capsule())
+                        .fixedSize()
+                        .padding(.bottom, 10)
+                }
             }
         }
     }

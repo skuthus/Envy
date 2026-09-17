@@ -12,6 +12,9 @@ extension Notification.Name {
     /// synchronous — observers have flushed by the time post() returns.
     static let flushPendingEditsRequested = Notification.Name("flushPendingEditsRequested")
     static let toggleLayoutRequested = Notification.Name("toggleLayoutRequested")
+    static let toggleSplitRequested = Notification.Name("toggleSplitRequested")
+    static let flipSplitRequested = Notification.Name("flipSplitRequested")
+    static let openInSplitRequested = Notification.Name("openInSplitRequested")
     static let zoomInRequested = Notification.Name("zoomInRequested")
     static let zoomOutRequested = Notification.Name("zoomOutRequested")
     static let zoomResetRequested = Notification.Name("zoomResetRequested")

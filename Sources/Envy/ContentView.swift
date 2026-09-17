@@ -51,6 +51,20 @@ struct ContentView: View {
     )
     @State var query = ""
     @State var selectedID: String?
+    // --- Editor split ---
+    // Two editor panes side by side (or stacked). `selectedID` is always the
+    // *active* pane's note — the list highlight, footer counts, and interlinks
+    // keep reading it unchanged — and `inactivePaneID` is the other pane's note
+    // (nil = an empty pane). `activePaneIsTrailing` says which physical slot the
+    // active pane occupies, so a click on the other pane swaps the two values
+    // and flips this flag: the notes stay put on screen while `selectedID`
+    // becomes whichever pane you clicked.
+    @State var splitEnabled = false
+    @State var inactivePaneID: String?
+    @State var activePaneIsTrailing = false
+    /// "auto" follows the layout (side by side under a wide editor, stacked
+    /// beside a tall one); "stacked"/"side" pin it. Persisted per machine.
+    @AppStorage("editorSplitDirection") var splitDirectionRaw = "auto"
     /// Extra notes ⌘-selected alongside selectedID, for multi-select bulk
     /// actions (Delete/Move/Open in Finder). selectedID stays the "primary"
     /// selection driving the editor pane and keyboard navigation, unchanged
@@ -652,6 +666,15 @@ struct ContentView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .toggleLayoutRequested)) { _ in
             layoutModeRaw = (layoutMode == .horizontal ? LayoutMode.vertical : .horizontal).rawValue
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .toggleSplitRequested)) { _ in
+            toggleSplit()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .flipSplitRequested)) { _ in
+            flipSplit()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .openInSplitRequested)) { note in
+            if let id = note.object as? String { openInSplitPane(id) }
         }
         .modifier(EditorViewNotifications(
             zoomIn: { editorFontZoom = min(60, editorFontZoom + 1) },

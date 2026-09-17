@@ -633,6 +633,9 @@ extension ContentView {
         Button("Pop Out") {
             popOutNote(note)
         }
+        Button("Open in Split") {
+            openInSplitPane(note.id)
+        }
         Button("Rename") {
             renameText = note.title
             renamingNote = note
