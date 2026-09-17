@@ -82,6 +82,17 @@ extension ContentView {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        // The inactive pane recedes under a faint scrim so the active one reads
+        // as focused at a glance — light enough that its note stays readable,
+        // and non-interactive so a click still activates the pane underneath.
+        .overlay {
+            if !isActive {
+                Rectangle()
+                    .fill(Color.primary.opacity(0.05))
+                    .allowsHitTesting(false)
+            }
+        }
+        // A thin accent line marks the active pane's top edge.
         .overlay(alignment: .top) {
             Rectangle()
                 .fill(isActive ? Color(nsColor: theme.resolvedFocusHighlightColor) : Color.clear)

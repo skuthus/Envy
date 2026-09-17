@@ -19,6 +19,30 @@ private let searchFieldBorderColor = NSColor(name: nil) { appearance in
     return isDark ? NSColor.white.withAlphaComponent(0.22) : NSColor.black.withAlphaComponent(0.28)
 }
 
+/// The rounded fill behind a note row: the theme's selection colour when
+/// selected, a faint tint on hover otherwise. Split into a modifier so each row
+/// can own its own hover state (a plain function view can't).
+private struct RowHoverBackground: ViewModifier {
+    let isSelected: Bool
+    let selectionColor: Color
+    @State private var isHovering = false
+
+    func body(content: Content) -> some View {
+        content
+            .background(
+                RoundedRectangle(cornerRadius: Radius.small, style: .continuous)
+                    .fill(fill)
+            )
+            .onHover { isHovering = $0 }
+    }
+
+    private var fill: Color {
+        if isSelected { return selectionColor }
+        if isHovering { return Color.primary.opacity(0.06) }
+        return .clear
+    }
+}
+
 extension ContentView {
     var listPane: some View {
         listPaneBody
@@ -328,10 +352,10 @@ extension ContentView {
             .padding(.vertical, listDensity.rowVerticalPadding)
             .padding(.horizontal, 8)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                RoundedRectangle(cornerRadius: Radius.small, style: .continuous)
-                    .fill(isSelected(note) ? Color(nsColor: theme.resolvedSelectionColor) : Color.clear)
-            )
+            .modifier(RowHoverBackground(
+                isSelected: isSelected(note),
+                selectionColor: Color(nsColor: theme.resolvedSelectionColor)
+            ))
             .contentShape(Rectangle())
             .onTapGesture {
                 if NSEvent.modifierFlags.contains(.shift) {
