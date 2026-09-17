@@ -11,6 +11,8 @@ Tables, without the markdown: write one and Envy renders a real grid you edit by
 - **Columns size themselves.** Each column grows to fit its widest cell as you type, and a long value wraps onto more lines rather than stretching the table off the page. Column alignment written in the table (`:---`, `:--:`, `--:`) is carried through, and pipes inside `[[wiki|links]]` and `` `code` `` are left alone.
 - **Windowless mode.** A new toggle in Settings → General drops the window's title bar and its buttons, so the search box meets the top edge for a cleaner, minimal look. The window stays resizable and can be dragged by its background; summon it with the shortcut as always, and ⌘W closes it.
 - **Two notes at once.** Split the editor to see two notes side by side (or stacked) without popping one out. Press ⌘\ to split, right-click a note → "Open in Split" to open it beside the current one, ⌘⌥\ to flip the direction, and drag the divider to resize. Click a pane to make it active; the footer and list follow it.
+- **Hide the note list.** Press ⌃⌘S to collapse the list so the editor fills the whole window — in either layout.
+- **A cleaner side-by-side layout.** The list-beside-editor layout now shares the stacked layout's divider, translucency, and polish, with a draggable column whose width is remembered. Alongside smaller refinements throughout: a hover highlight in the note list, rounder corners, and better VoiceOver labels.
 - **Fixed:** the menu-bar icon's right-click menu showed a stray up-arrow that quietly hid the "New Note" item behind it. The menu now opens correctly under the menu bar with every item in reach.
 
 ## 1.11.1 — August 31, 2026
