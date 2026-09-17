@@ -9,6 +9,7 @@ Tables, without the markdown: write one and Envy renders a real grid you edit by
 - **Tables you edit visually.** A Markdown pipe table now shows as a drawn grid in the editor, not raw `| pipes |`. Click a cell and type straight into it; **Tab** and **Shift-Tab** move between cells (and add a row when you tab off the end), **Return** drops to the next row. The pipes are still what's saved to your `.md` file — you just never have to line them up by hand.
 - **Add and remove rows and columns.** Right-click any cell for Insert Row Above / Below, Insert Column Left / Right, and Delete Row / Column. Right-click empty space in a note and choose **Insert Table** to drop in a starter grid to fill out.
 - **Columns size themselves.** Each column grows to fit its widest cell as you type, and a long value wraps onto more lines rather than stretching the table off the page. Column alignment written in the table (`:---`, `:--:`, `--:`) is carried through, and pipes inside `[[wiki|links]]` and `` `code` `` are left alone.
+- **Windowless mode.** A new toggle in Settings → General drops the window's title bar and its buttons, so the search box meets the top edge for a cleaner, minimal look. The window stays resizable and can be dragged by its background; summon it with the shortcut as always, and ⌘W closes it.
 - **Fixed:** the menu-bar icon's right-click menu showed a stray up-arrow that quietly hid the "New Note" item behind it. The menu now opens correctly under the menu bar with every item in reach.
 
 ## 1.11.1 — August 31, 2026
