@@ -152,6 +152,11 @@ struct EnvyApp: App {
                 }
                 .keyboardShortcut(binding(for: .toggleLayout).keyEquivalent, modifiers: binding(for: .toggleLayout).eventModifiers)
 
+                Button("Hide / Show Note List") {
+                    NotificationCenter.default.post(name: .toggleListRequested, object: nil)
+                }
+                .keyboardShortcut(binding(for: .toggleList).keyEquivalent, modifiers: binding(for: .toggleList).eventModifiers)
+
                 Button("Split Editor / Close Split") {
                     NotificationCenter.default.post(name: .toggleSplitRequested, object: nil)
                 }

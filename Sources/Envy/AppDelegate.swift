@@ -373,8 +373,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     static let windowlessModeKey = "windowlessMode"
 
     private static func applyWindowChrome(to window: NSWindow) {
-        window.styleMask.insert(.fullSizeContentView)
         let windowless = UserDefaults.standard.bool(forKey: windowlessModeKey)
+        // Full-size content only in windowless mode, where the content is meant
+        // to reach the top edge. In normal mode a standard, opaque title bar
+        // sits above the content — otherwise the window's translucent backdrop
+        // shows through the title bar as a glassy strip.
+        if windowless {
+            window.styleMask.insert(.fullSizeContentView)
+        } else {
+            window.styleMask.remove(.fullSizeContentView)
+        }
         // Windowless: the title bar is made transparent and its traffic-light
         // buttons hidden, so the search/sort chrome meets the top edge with no
         // title-bar strip above it. The window stays titled — so it's still

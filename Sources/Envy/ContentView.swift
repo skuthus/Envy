@@ -104,6 +104,8 @@ struct ContentView: View {
     @State var trashSweepTask: Task<Void, Never>?
     @FocusState var focusedField: FocusField?
     @AppStorage("layoutMode") var layoutModeRaw = LayoutMode.vertical.rawValue
+    /// Hides the note list entirely, leaving just the editor — in either layout.
+    @AppStorage("listCollapsed") var listCollapsed = false
     // "Windowless" mode: the main window drops its title bar and traffic-light
     // buttons (see AppDelegate.applyWindowChrome) and the content sits flush to
     // the top edge. Toggles live.
@@ -595,26 +597,28 @@ struct ContentView: View {
     // tipped it back over the threshold.
     private var layoutSwitch: some View {
         Group {
-            switch layoutMode {
-            case .horizontal:
-                NavigationSplitView {
-                    listPane
-                        .navigationSplitViewColumnWidth(min: 220, ideal: 280)
-                } detail: {
-                    editorPane
-                }
-                // NavigationSplitView auto-adds a leading sidebar-toggle
-                // button to the window's toolbar — an unbalanced leading
-                // item throws off the title's centering (which is computed
-                // relative to the space between leading/trailing toolbar
-                // items, not the raw window width).
-                .toolbar(removing: .sidebarToggle)
-            case .vertical:
-                PersistentVSplitView(storageKey: "verticalSplitFraction", defaultTopFraction: 0.6) {
+            if listCollapsed {
+                // List hidden — just the editor, filling the window.
+                editorPane
+            } else {
+                // Both layouts are the same custom split, only the axis differs:
+                // vertical stacks the list above the editor; horizontal puts the
+                // list in a left column beside it. Using one component keeps the
+                // two cohesive and in feature parity by construction. Recreated
+                // on a layout change (via .id) so the NSSplitView takes the new
+                // axis rather than reconfiguring in place.
+                PersistentVSplitView(
+                    storageKey: layoutMode == .horizontal ? "horizontalSplitFraction" : "verticalSplitFraction",
+                    defaultTopFraction: layoutMode == .horizontal ? 0.3 : 0.6,
+                    isVertical: layoutMode == .horizontal,
+                    minFirst: layoutMode == .horizontal ? 220 : 140,
+                    minSecond: layoutMode == .horizontal ? 380 : 180
+                ) {
                     listPane
                 } bottom: {
                     editorPane
                 }
+                .id(layoutMode)
             }
         }
         // Every chrome font() call site reads this directly (not
@@ -670,6 +674,11 @@ struct ContentView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .toggleSplitRequested)) { _ in
             toggleSplit()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .toggleListRequested)) { _ in
+            withAnimation(.easeInOut(duration: 0.18)) { listCollapsed.toggle() }
+            // Focus the editor when the list goes away; the search box otherwise.
+            focusedField = listCollapsed ? .editor : .search
         }
         .onReceive(NotificationCenter.default.publisher(for: .flipSplitRequested)) { _ in
             flipSplit()

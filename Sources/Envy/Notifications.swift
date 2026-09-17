@@ -13,6 +13,7 @@ extension Notification.Name {
     static let flushPendingEditsRequested = Notification.Name("flushPendingEditsRequested")
     static let toggleLayoutRequested = Notification.Name("toggleLayoutRequested")
     static let toggleSplitRequested = Notification.Name("toggleSplitRequested")
+    static let toggleListRequested = Notification.Name("toggleListRequested")
     static let flipSplitRequested = Notification.Name("flipSplitRequested")
     static let openInSplitRequested = Notification.Name("openInSplitRequested")
     static let zoomInRequested = Notification.Name("zoomInRequested")

@@ -106,6 +106,7 @@ enum ShortcutAction: String, CaseIterable, Identifiable {
     case insertImage
     case toggleSplit
     case flipSplit
+    case toggleList
 
     var id: String { rawValue }
 
@@ -136,6 +137,7 @@ enum ShortcutAction: String, CaseIterable, Identifiable {
         case .insertImage: "Insert Image"
         case .toggleSplit: "Split Editor / Close Split"
         case .flipSplit: "Flip Split Direction"
+        case .toggleList: "Hide / Show Note List"
         }
     }
 
@@ -206,6 +208,9 @@ enum ShortcutAction: String, CaseIterable, Identifiable {
             ShortcutBinding(character: "\\", keyCode: kVK_ANSI_Backslash, modifiers: SwiftUI.EventModifiers.command.rawValue)
         case .flipSplit:
             ShortcutBinding(character: "\\", keyCode: kVK_ANSI_Backslash, modifiers: SwiftUI.EventModifiers([.command, .option]).rawValue)
+        case .toggleList:
+            // ⌃⌘S — the macOS convention for hiding a sidebar, "S for Sidebar."
+            ShortcutBinding(character: "s", keyCode: kVK_ANSI_S, modifiers: SwiftUI.EventModifiers([.command, .control]).rawValue)
         }
     }
 }
