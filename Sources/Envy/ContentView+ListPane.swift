@@ -310,14 +310,19 @@ extension ContentView {
     /// it, so a plain prefix compare matches without re-standardizing every URL.
     func rebuildNoteFolderCaches() {
         guard indexIncludeSubfolders else { noteSubfolderCache = [:]; noteFolderColorCache = [:]; return }
-        let rootPrefix = store.noteDirectory.path + "/"
         var subs: [String: String] = [:]
         var colors: [String: Color] = [:]
         for note in store.notes {
-            let parent = note.url.deletingLastPathComponent().path
-            guard parent.hasPrefix(rootPrefix) else { continue }
-            let relative = String(parent.dropFirst(rootPrefix.count))
-            guard !relative.isEmpty, relative != NoteStore.inboxFolderName else { continue }
+            // Use the store's own subfolderPath — the same standardized,
+            // symlink-safe derivation the title-bar chip and its unit tests
+            // rely on. An earlier inline prefix compare here matched
+            // `note.url.path` (standardized) against `noteDirectory.path`
+            // (un-standardized), so under a special root like /private/tmp —
+            // where standardizedFileURL rewrites /private/tmp → /tmp — the
+            // prefix never matched and this cache came out empty (blank list-row
+            // folders, zeroed folder-browse counts). standardizedFileURL is
+            // string-only (no I/O), so deriving it per note costs nothing real.
+            guard let relative = store.subfolderPath(of: note) else { continue }
             subs[note.id] = relative
             if let color = folderColorMap[relative] { colors[note.id] = color }
         }
