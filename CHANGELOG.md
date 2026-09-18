@@ -2,6 +2,10 @@
 
 Also published at [envynote.app/changelog.html](https://envynote.app/changelog.html).
 
+## 1.11.4 — Unreleased
+
+- **Nested folders read as a trail in the title bar.** A note filed in a folder inside a folder now shows its location in the editor's title bar as "projects › work" rather than "projects/work", so the nesting is easier to read at a glance. Clicking it still opens that folder's notes exactly as before.
+
 ## 1.11.3 — September 17, 2026
 
 A maintenance release. Fixes an issue that could cause the update from 1.11.2 to fail, and corrects the What's New shown after updating. No feature changes since 1.11.2.
