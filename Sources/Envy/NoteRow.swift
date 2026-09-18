@@ -104,6 +104,7 @@ struct NoteRow: View {
                 if dotTrailing { folderIndicator.zIndex(1) }
                 Text(note.preview)
                     .font(.system(size: 11 * interfaceFontScale))
+                    .italic()
                     .foregroundStyle(.secondary)
                     .fontWeight(bold ? .bold : nil)
                     .lineLimit(1)
