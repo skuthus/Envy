@@ -392,7 +392,12 @@ struct NoteEditorView: View {
                     HStack(spacing: 3) {
                         Image(systemName: "folder.fill")
                             .font(.system(size: 8))
-                        Text(folder)
+                        // Display-only prettifying: a nested path reads as
+                        // "projects › work" rather than "projects/work". The
+                        // `folder` value itself stays the real relative path —
+                        // it's what the color lookup, the tap-to-search, and the
+                        // help text below all key on.
+                        Text(folder.replacingOccurrences(of: "/", with: " › "))
                             .font(.caption.bold())
                     }
                     .foregroundStyle(folderColor)
