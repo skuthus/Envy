@@ -82,6 +82,10 @@ struct ContentView: View {
     /// note's Move to → New Folder…, the whole selection from the bulk menu's.
     @State var newFolderNotes: [Note] = []
     @State var newFolderName = ""
+    /// When the New Folder prompt was opened from an existing folder's "New
+    /// Subfolder…" item, the folder to nest the new one under; nil for a plain
+    /// top-level New Folder.
+    @State var newFolderParent: String? = nil
     // Set by a move, which reconciles everything it affects itself; the next
     // store.notes change is then skipped rather than triggering a full-vault
     // re-filter/re-sort that a move never actually changes.
@@ -898,17 +902,18 @@ struct ContentView: View {
                 renamingNote = nil
             }
         }
-        .alert("New Folder", isPresented: Binding(
+        .alert(newFolderParent == nil ? "New Folder" : "New Subfolder", isPresented: Binding(
             get: { !newFolderNotes.isEmpty },
-            set: { if !$0 { newFolderNotes = [] } }
+            set: { if !$0 { newFolderNotes = []; newFolderParent = nil } }
         )) {
-            TextField("Folder name", text: $newFolderName)
+            TextField(newFolderParent == nil ? "Folder name" : "Subfolder name", text: $newFolderName)
             Button("Create") { createFolderAndMove() }
-            Button("Cancel", role: .cancel) { newFolderNotes = [] }
+            Button("Cancel", role: .cancel) { newFolderNotes = []; newFolderParent = nil }
         } message: {
+            let where_ = newFolderParent.map { "inside \"\($0)\"" } ?? "inside your Index"
             Text(newFolderNotes.count > 1
-                ? "Create a folder inside your Index and move these \(newFolderNotes.count) notes into it."
-                : "Create a folder inside your Index and move this note into it.")
+                ? "Create a folder \(where_) and move these \(newFolderNotes.count) notes into it."
+                : "Create a folder \(where_) and move this note into it.")
         }
     }
 

@@ -656,22 +656,23 @@ extension ContentView {
                 }
                 .disabled(current == nil)
 
-                if !subfolderCache.isEmpty { Divider() }
-                ForEach(subfolderCache, id: \.self) { folder in
-                    Button {
-                        moveNoteToSubfolder(note, folder)
-                    } label: {
-                        if let swatch = folderSwatchCache[folder] {
-                            Label { Text(folder) } icon: { Image(nsImage: swatch) }
-                        } else {
-                            Label(folder, systemImage: "folder")
-                        }
-                    }
-                    .disabled(current == folder)
+                if !folderTree.isEmpty { Divider() }
+                // Folders nest as submenus mirroring the hierarchy: each offers
+                // Move Here + New Subfolder…, then its own child folders.
+                ForEach(folderTree) { node in
+                    FolderMoveMenu(
+                        node: node,
+                        currentPath: current,
+                        moveLabel: "Move Here",
+                        onMove: { moveNoteToSubfolder(note, $0) },
+                        onNewSubfolder: { newFolderParent = $0; newFolderName = ""; newFolderNotes = [note] },
+                        swatch: { folderSwatchCache[$0] }
+                    )
                 }
 
                 Divider()
                 Button("New Folder…") {
+                    newFolderParent = nil
                     newFolderName = ""
                     newFolderNotes = [note]
                 }
@@ -682,21 +683,26 @@ extension ContentView {
         }
     }
 
-    /// Creates `newFolderName` and moves every `newFolderNotes` entry into it —
-    /// one note from the single-note menu, the whole selection from the bulk
-    /// menu. moveNote makes the folder on demand, so this is just a move to a
-    /// name that doesn't exist yet. Called from the New Folder alert's Create
-    /// button.
+    /// Creates the folder named in the New Folder / New Subfolder prompt and
+    /// moves every `newFolderNotes` entry into it — one note from the
+    /// single-note menu, the whole selection from the bulk menu. moveNote makes
+    /// the folder on demand, so this is just a move to a path that doesn't
+    /// exist yet. When opened from a folder's "New Subfolder…" the new one is
+    /// nested under `newFolderParent`. Called from the prompt's Create button.
     func createFolderAndMove() {
         let pending = newFolderNotes
-        guard !pending.isEmpty else { return }
-        let name = newFolderName
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .replacingOccurrences(of: "/", with: "-")
+        let parent = newFolderParent
         newFolderNotes = []
+        newFolderParent = nil
+        guard !pending.isEmpty else { return }
+        // Keep any internal "/" so the user can type a nested path directly
+        // (only leading/trailing slashes and spaces are trimmed); moveNote
+        // sanitizes the result against "../" escapes before touching disk.
+        let name = newFolderName.trimmingCharacters(in: CharacterSet(charactersIn: "/ \n\t"))
         guard !name.isEmpty else { return }
+        let target = parent.map { "\($0)/\(name)" } ?? name
         for note in pending {
-            guard let moved = moveNoteToSubfolder(note, name) else { continue }
+            guard let moved = moveNoteToSubfolder(note, target) else { continue }
             if multiSelectedIDs.remove(note.id) != nil {
                 multiSelectedIDs.insert(moved.id)
             }
@@ -704,6 +710,13 @@ extension ContentView {
                 selectionAnchorID = moved.id
             }
         }
+    }
+
+    /// The folder hierarchy the "Move to" menus render as nested submenus,
+    /// built from the flat `subfolderCache`. Cheap to recompute when a menu
+    /// opens — the cache is small and already maintained.
+    var folderTree: [FolderNode] {
+        FolderNode.build(from: subfolderCache)
     }
 
     /// Moves a note into a subfolder (nil = the Index root) and carries the
@@ -795,21 +808,21 @@ extension ContentView {
                     Label("The Index", systemImage: "tray")
                 }
 
-                if !subfolderCache.isEmpty { Divider() }
-                ForEach(subfolderCache, id: \.self) { folder in
-                    Button {
-                        bulkMoveToSubfolder(folder)
-                    } label: {
-                        if let swatch = folderSwatchCache[folder] {
-                            Label { Text(folder) } icon: { Image(nsImage: swatch) }
-                        } else {
-                            Label(folder, systemImage: "folder")
-                        }
-                    }
+                if !folderTree.isEmpty { Divider() }
+                ForEach(folderTree) { node in
+                    FolderMoveMenu(
+                        node: node,
+                        currentPath: nil,
+                        moveLabel: "Move \(count) Notes Here",
+                        onMove: { bulkMoveToSubfolder($0) },
+                        onNewSubfolder: { newFolderParent = $0; newFolderName = ""; newFolderNotes = selectedNotes() },
+                        swatch: { folderSwatchCache[$0] }
+                    )
                 }
 
                 Divider()
                 Button("New Folder…") {
+                    newFolderParent = nil
                     newFolderName = ""
                     newFolderNotes = selectedNotes()
                 }
