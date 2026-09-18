@@ -1871,7 +1871,12 @@ public final class NoteStore: ObservableObject {
     nonisolated private static func relativeFolderPath(of note: Note, rootLower: String?) -> String {
         let parentURL = note.url.deletingLastPathComponent()
         guard let rootLower else { return parentURL.lastPathComponent.lowercased() }
-        let parent = parentURL.path.lowercased()
+        // standardizedFileURL on both sides (here and where rootLower is built):
+        // the note-scan enumerator hands back URLs in /private/tmp form while a
+        // symlink-resolved root is /tmp form, so a raw-path prefix compare would
+        // miss and fall back to the leaf — breaking folder: on nested paths under
+        // a symlinked/private root. Standardizing normalizes both to the same form.
+        let parent = parentURL.standardizedFileURL.path.lowercased()
         if parent == rootLower { return "" }
         if parent.hasPrefix(rootLower + "/") { return String(parent.dropFirst(rootLower.count + 1)) }
         return parentURL.lastPathComponent.lowercased()
@@ -2175,7 +2180,7 @@ public final class NoteStore: ObservableObject {
         // folder:'s reference point, computed once per group. The path work
         // per note only runs when a folder token is actually present.
         let needsFolderPath = folderFilter != nil || !excludeFolders.isEmpty || isFolderedOnly || isRootOnly
-        let rootLower = root?.path.lowercased()
+        let rootLower = root?.standardizedFileURL.path.lowercased()
 
         return notes.compactMap { note -> (Note, Int)? in
             // Membership is the folder the file sits in — there's no flag on
