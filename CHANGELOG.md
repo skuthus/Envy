@@ -6,6 +6,8 @@ Also published at [envynote.app/changelog.html](https://envynote.app/changelog.h
 
 - **Nested folders read as a trail in the title bar.** A note filed in a folder inside a folder now shows its location in the editor's title bar as "projects › work" rather than "projects/work", so the nesting is easier to read at a glance. Clicking it still opens that folder's notes exactly as before.
 - **Make a subfolder while moving a note.** Right-click a note → "Move to" now shows your folders as a nested menu that mirrors their structure, and each folder offers "New Subfolder…" — so you can file a note into a new folder-within-a-folder in one step, instead of only ever creating top-level folders.
+- **Image embeds aren't note links.** A note that only has `![[photo.png]]` (and no `[[links]]` to other notes) now correctly shows up under `orphan:`. Searching `link:` only matches real note links, not attached pictures.
+- **Tags in the `tag:` list are easier to read.** The bare `tag:` catalog no longer paints tags green, so the highlighted row stays clear. Colored tag chips in the title bar are unchanged.
 
 ## 1.11.3 — September 17, 2026
 
