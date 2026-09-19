@@ -53,6 +53,7 @@ private final class NoteDerivedCache: @unchecked Sendable {
     private var _lowercasedContent: String?
     private var _tags: Set<String>?
     private var _wikiLinks: Set<String>?
+    private var _imageEmbedTargets: Set<String>?
     private var _hasUncheckedTask: Bool?
     private var _embedKinds: (image: Bool, note: Bool)?
     private var _preview: String?
@@ -102,17 +103,58 @@ private final class NoteDerivedCache: @unchecked Sendable {
         }
     }
 
+    /// Note-to-note link targets (`[[Title]]` and note embeds `![[Title]]`),
+    /// never image attachments. `wikiLinkRegex` alone would also match the
+    /// `[[…]]` inside `![[photo.png]]`; those are attachment refs, not graph
+    /// edges — see `imageEmbedTargets`. Note embeds still count here so
+    /// orphan:/link:/interlink:/rename keep treating a transclusion as a
+    /// real connection to that note.
     var wikiLinks: Set<String> {
         memoized(&_wikiLinks) {
-            let matches = Note.wikiLinkRegex.matches(in: content, range: NSRange(content.startIndex..., in: content))
-            return Set(matches.compactMap { match -> String? in
-                guard let range = Range(match.range(at: 1), in: content) else { return nil }
+            var links = Set<String>()
+            let nsContent = content as NSString
+            let full = NSRange(location: 0, length: nsContent.length)
+
+            for match in Note.wikiLinkRegex.matches(in: content, range: full) {
+                // Skip `![[…]]` — image vs note embed is decided below.
+                if match.range.location > 0,
+                   nsContent.character(at: match.range.location - 1) == 33 /* ! */ {
+                    continue
+                }
+                guard let range = Range(match.range(at: 1), in: content) else { continue }
                 // The *target*, not the raw body — otherwise [[Note|alias]]
                 // registers a link to a note called "Note|alias", which can't
                 // exist, and the real note loses the backlink.
                 let title = WikiLink.parse(String(content[range])).target.lowercased()
-                return title.isEmpty ? nil : title
-            })
+                if !title.isEmpty { links.insert(title) }
+            }
+
+            guard content.contains("![[") else { return links }
+            for match in Note.embedRegex.matches(in: content, range: full) {
+                guard let parsed = Note.parseEmbedInner(match, in: content),
+                      !parsed.isImage else { continue }
+                let title = WikiLink.parse(parsed.name).target.lowercased()
+                if !title.isEmpty { links.insert(title) }
+            }
+            return links
+        }
+    }
+
+    /// Lowercased attachment filenames referenced by `![[photo.png]]`
+    /// (size/caption suffixes stripped). Backs OCR search and attachment
+    /// rename rewrites — kept separate from `wikiLinks` so image refs don't
+    /// pollute the note-link graph.
+    var imageEmbedTargets: Set<String> {
+        memoized(&_imageEmbedTargets) {
+            guard content.contains("![[") else { return [] }
+            var names = Set<String>()
+            let full = NSRange(content.startIndex..., in: content)
+            for match in Note.embedRegex.matches(in: content, range: full) {
+                guard let parsed = Note.parseEmbedInner(match, in: content),
+                      parsed.isImage else { continue }
+                names.insert(parsed.name.lowercased())
+            }
+            return names
         }
     }
 
@@ -127,14 +169,8 @@ private final class NoteDerivedCache: @unchecked Sendable {
             var hasImage = false, hasNote = false
             let matches = Note.embedRegex.matches(in: content, range: NSRange(content.startIndex..., in: content))
             for match in matches {
-                guard let range = Range(match.range(at: 1), in: content) else { continue }
-                let inner = content[range]
-                let name = inner.split(separator: "|", maxSplits: 1, omittingEmptySubsequences: false).first.map(String.init) ?? String(inner)
-                if Note.imageAttachmentExtensions.contains((name as NSString).pathExtension.lowercased()) {
-                    hasImage = true
-                } else {
-                    hasNote = true
-                }
+                guard let parsed = Note.parseEmbedInner(match, in: content) else { continue }
+                if parsed.isImage { hasImage = true } else { hasNote = true }
                 if hasImage && hasNote { break }
             }
             return (hasImage, hasNote)
@@ -290,13 +326,19 @@ public struct Note: Identifiable, Sendable {
 
     fileprivate static let tagRegex = try! NSRegularExpression(pattern: #"(?<![\w#])#([A-Za-z0-9_-]+)"#)
 
-    /// Titles of every note this one links to via `[[Title]]`, lowercased
-    /// for case-insensitive lookups — same convention as
-    /// NoteStore.exactTitleMatch(for:), which is what actually resolves a
-    /// wiki-link on click, so a link matches its target here exactly when
-    /// it would there. Trimmed since a title typed inside "[[ ]]" can pick
-    /// up incidental leading/trailing whitespace.
+    /// Titles of every note this one links to via `[[Title]]` or a note
+    /// embed `![[Title]]`, lowercased for case-insensitive lookups — same
+    /// convention as NoteStore.exactTitleMatch(for:), which is what actually
+    /// resolves a wiki-link on click, so a link matches its target here
+    /// exactly when it would there. Image embeds (`![[photo.png]]`) are
+    /// *not* included; see `imageEmbedTargets`. Trimmed since a title typed
+    /// inside "[[ ]]" can pick up incidental leading/trailing whitespace.
     public var wikiLinks: Set<String> { cache.wikiLinks }
+
+    /// Lowercased image-attachment filenames this note embeds via
+    /// `![[photo.png]]` (optional `|size` / caption stripped). Used by OCR
+    /// search and attachment rename rewrites.
+    public var imageEmbedTargets: Set<String> { cache.imageEmbedTargets }
 
     fileprivate static let wikiLinkRegex = try! NSRegularExpression(pattern: #"\[\[([^\[\]]+)\]\]"#)
 
@@ -330,6 +372,19 @@ public struct Note: Identifiable, Sendable {
     /// search and the editor never disagree on what counts as an image.
     fileprivate static let embedRegex = try! NSRegularExpression(pattern: #"!\[\[([^\[\]]+)\]\]"#)
     public static let imageAttachmentExtensions: Set<String> = ["png", "jpg", "jpeg", "gif", "webp", "heic", "heif", "tiff", "tif", "bmp"]
+
+    /// Target name + whether it's an image attachment, from one `embedRegex`
+    /// match. Strips `|size` / caption so `photo.png|400` still classifies
+    /// as an image.
+    fileprivate static func parseEmbedInner(_ match: NSTextCheckingResult, in content: String) -> (name: String, isImage: Bool)? {
+        guard let range = Range(match.range(at: 1), in: content) else { return nil }
+        let inner = content[range]
+        let name = inner.split(separator: "|", maxSplits: 1, omittingEmptySubsequences: false).first.map(String.init) ?? String(inner)
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        let isImage = imageAttachmentExtensions.contains((trimmed as NSString).pathExtension.lowercased())
+        return (trimmed, isImage)
+    }
 
     fileprivate static let uncheckedTaskRegex = try! NSRegularExpression(
         pattern: #"^\s*(?:[-*+][ \t]+)?\[ \][ \t]+"#, options: [.anchorsMatchLines]

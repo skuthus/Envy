@@ -1147,7 +1147,7 @@ public final class NoteStore: ObservableObject {
     /// After an attachment rename, rewrite every `![[old.png]]` (including
     /// `![[old.png|300]]` / `![[old.png|300|caption]]` — the size/caption
     /// suffix survives via group 2) across the vault. Mirrors
-    /// updateWikiLinkReferences: candidates come from the wikiLinks cache, and
+    /// updateWikiLinkReferences: candidates come from `imageEmbedTargets`, and
     /// a reference-only rewrite keeps each note's modified date so renaming a
     /// picture doesn't shove its referrers to the top of a date-sorted list.
     private func updateAttachmentReferences(from oldName: String, to newName: String) {
@@ -1160,7 +1160,7 @@ public final class NoteStore: ObservableObject {
         ) else { return }
         let template = "![[" + NSRegularExpression.escapedTemplate(for: newName) + "$1]]"
 
-        for idx in notes.indices where notes[idx].wikiLinks.contains(oldLower) {
+        for idx in notes.indices where notes[idx].imageEmbedTargets.contains(oldLower) {
             let content = notes[idx].content
             let updated = regex.stringByReplacingMatches(
                 in: content,
@@ -2238,9 +2238,8 @@ public final class NoteStore: ObservableObject {
             // body search over text notes stays free.
             var ocrBlob = ""
             if !imageText.isEmpty, isImageOnly || foldImageText, note.hasImageEmbed {
-                for link in note.wikiLinks
-                where Note.imageAttachmentExtensions.contains((link as NSString).pathExtension.lowercased()) {
-                    if let recognized = imageText[link] { ocrBlob += recognized + " " }
+                for name in note.imageEmbedTargets {
+                    if let recognized = imageText[name] { ocrBlob += recognized + " " }
                 }
             }
             if !phraseRegexes.isEmpty {

@@ -92,6 +92,25 @@ struct SelfCheck {
                   reloaded.notes.first { $0.title == "Referrer" }?.content.contains("[[New Name]]") == true)
         }
 
+        // renameAttachmentRewritesEmbedsViaImageEmbedTargets
+        do {
+            let store = await makeTempStore()
+            let dir = store.attachmentsDirectory
+            try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            try? Data([0x89, 0x50, 0x4E, 0x47]).write(to: dir.appendingPathComponent("old.png"))
+
+            var referrer = store.create(title: "Has Picture")
+            referrer.content = "see ![[old.png|300]] here"
+            store.save(referrer)
+
+            let renamed = store.renameAttachment(from: "old.png", to: "new.png")
+            check("renameAttachment returns the new filename", renamed == "new.png")
+            check("renameAttachment rewrites ![[old.png]] across notes",
+                  store.notes.first { $0.title == "Has Picture" }?.content.contains("![[new.png|300]]") == true)
+            check("renameAttachment updates imageEmbedTargets",
+                  store.notes.first { $0.title == "Has Picture" }?.imageEmbedTargets == ["new.png"])
+        }
+
         // deleteRemovesNoteFromListAndDisk
         do {
             let store = await makeTempStore()
@@ -1101,6 +1120,22 @@ struct SelfCheck {
             )
             check("wikiLinks records targets, not raw link bodies",
                   note.wikiLinks == ["real note", "other"])
+
+            // Image embeds must not pollute the note-link graph; note embeds
+            // still count as connections (orphan:/link:/rename).
+            let mixed = Note(
+                id: "m",
+                url: URL(fileURLWithPath: "/tmp/Mixed.md"),
+                content: "see [[Ideas]] and ![[Other Note]] plus ![[shot.png|400]]",
+                modifiedDate: Date()
+            )
+            check("wikiLinks includes plain links and note embeds, not images",
+                  mixed.wikiLinks == ["ideas", "other note"])
+            check("imageEmbedTargets lists only attachment filenames",
+                  mixed.imageEmbedTargets == ["shot.png"])
+            check("a note with only an image embed has empty wikiLinks",
+                  Note(id: "p", url: URL(fileURLWithPath: "/tmp/Pic.md"),
+                       content: "just ![[photo.png]]", modifiedDate: Date()).wikiLinks.isEmpty)
         }
 
         do {
@@ -1405,6 +1440,20 @@ struct SelfCheck {
                   titles("orphan:", orphanSet) == ["Lonely"])
             check("linked: is everything except the orphans",
                   titles("linked:", orphanSet) == ["Hub", "Leaf", "Ideas"])
+
+            // An image embed is not a note-link. A note whose only "link" is
+            // ![[shot.png]] is an orphan; a note embed still connects.
+            let pictureOnly = note("Picture Only", "doodle ![[shot.png]]")
+            let embedsNote = note("Embeds Note", "pulls in ![[Ideas]]")
+            let imageOrphanSet = [pictureOnly, embedsNote, target]
+            check("orphan: a note with only an image embed is an orphan",
+                  titles("orphan:", imageOrphanSet) == ["Picture Only"])
+            check("orphan: a note embed still counts as a link out",
+                  !titles("orphan:", imageOrphanSet).contains("Embeds Note"))
+            check("link: does not match image attachment filenames",
+                  titles("link:shot.png", imageOrphanSet).isEmpty)
+            check("link: still matches a note embed target",
+                  titles("link:Ideas", imageOrphanSet) == ["Embeds Note"])
         }
 
         do {
