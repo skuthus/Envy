@@ -1139,6 +1139,35 @@ struct SelfCheck {
         }
 
         do {
+            print("NoteMarkup shared patterns")
+            let text = "#work see [[Ideas]] and ![[shot.png]] @monday @alice ~~struck~~\n⎈ created by Agent · 2026-01-01"
+            let full = NSRange(location: 0, length: (text as NSString).length)
+
+            let tags = NoteMarkup.tagRegex.matches(in: text, range: full)
+            check("NoteMarkup.tagRegex finds #work",
+                  tags.count == 1 && (text as NSString).substring(with: tags[0].range(at: 1)) == "work")
+            check("NoteMarkup.tagRegex skips markdown headings",
+                  NoteMarkup.tagRegex.numberOfMatches(in: "# Heading\n", options: [], range: NSRange(location: 0, length: 10)) == 0)
+
+            let dues = NoteMarkup.dueRegex.matches(in: text, range: full)
+            check("NoteMarkup.dueRegex finds @monday but not @alice",
+                  dues.count == 1 && (text as NSString).substring(with: dues[0].range).lowercased() == "@monday")
+
+            check("NoteMarkup.wikiLinkRegex finds [[Ideas]]",
+                  NoteMarkup.wikiLinkRegex.numberOfMatches(in: text, options: [], range: full) >= 1)
+            check("NoteMarkup.embedRegex finds ![[shot.png]]",
+                  NoteMarkup.embedRegex.numberOfMatches(in: text, options: [], range: full) == 1)
+
+            let line = NoteMarkup.aiSignatureLineRegex.firstMatch(in: text, range: full)
+            check("NoteMarkup.aiSignatureLineRegex matches the whole provenance line",
+                  line != nil && (text as NSString).substring(with: line!.range).hasPrefix("⎈ created"))
+
+            let note = Note(id: "m", url: URL(fileURLWithPath: "/tmp/m.md"), content: text, modifiedDate: Date())
+            check("Note.tags agrees with NoteMarkup.tagRegex", note.tags == ["work"])
+            check("Note.aiProvenance agrees with NoteMarkup.aiSignatureRegex", note.aiProvenance == .created)
+        }
+
+        do {
             print("Inbox filtering")
 
             func note(_ title: String, in folder: String?, content: String = "") -> Note {

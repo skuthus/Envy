@@ -20,11 +20,14 @@ enum MarkdownStyler {
     /// (which reserves the emoji's slot) and HoverAwareTextView (which draws it).
     nonisolated static let pillEmojiScale: CGFloat = 0.85
 
-    private nonisolated static let wikiLinkRegex = try! NSRegularExpression(pattern: #"\[\[([^\[\]]+)\]\]"#)
+    // Tag / due / wiki / embed / strikethrough / AI signature patterns live
+    // in EnvyCore.NoteMarkup — shared with Note's search/derived fields so
+    // the editor never paints a token search wouldn't recognize (or vice versa).
+    nonisolated private static var wikiLinkRegex: NSRegularExpression { NoteMarkup.wikiLinkRegex }
     private static let boldItalicRegex = try! NSRegularExpression(pattern: #"\*\*\*([^*\n]+)\*\*\*"#)
     private static let boldRegex = try! NSRegularExpression(pattern: #"\*\*([^*\n]+)\*\*"#)
     private static let italicRegex = try! NSRegularExpression(pattern: #"(?<!\*)\*([^*\n]+)\*(?!\*)"#)
-    private static let strikethroughRegex = try! NSRegularExpression(pattern: #"~~([^~\n]+)~~"#)
+    nonisolated private static var strikethroughRegex: NSRegularExpression { NoteMarkup.strikethroughRegex }
     private static let highlightRegex = try! NSRegularExpression(pattern: #"==([^=\n]+)=="#)
     private nonisolated static let codeRegex = try! NSRegularExpression(pattern: #"`([^`\n]+)`"#)
     private nonisolated static let fencedCodeBlockRegex = try! NSRegularExpression(pattern: #"^```[^\n]*\n([\s\S]*?)\n```[ \t]*$"#, options: [.anchorsMatchLines])
@@ -47,30 +50,9 @@ enum MarkdownStyler {
     private static let bareURLRegex = try! NSRegularExpression(pattern: #"(?<![(<])\bhttps?://[^\s<>()]+\b"#)
     private static let footnoteDefinitionRegex = try! NSRegularExpression(pattern: #"^\[\^([^\]]+)\]:[ \t]*"#, options: [.anchorsMatchLines])
     private static let footnoteReferenceRegex = try! NSRegularExpression(pattern: #"\[\^([^\]]+)\]"#)
-    // Matches Note.tagRegex in EnvyCore exactly (duplicated rather than
-    // shared since that one is private to its target) — excludes markdown
-    // headings, which require a space after "#", and mid-word/"##" false
-    // positives.
-    private static let hashtagRegex = try! NSRegularExpression(pattern: #"(?<![\w#])#[A-Za-z0-9_-]+"#)
-    // Matches Note.dueRegex in EnvyCore exactly, including restricting the
-    // capture to a day name or date-shaped characters (digits, "-", "/")
-    // rather than a greedy \S+ — \S+ swallowed trailing punctuation like a
-    // comma right after the date with no space, which then failed to parse
-    // as a date and silently fell back to the plain (not-yet-due) color
-    // regardless of the note's actual urgency, and an unrestricted
-    // alternative would also light up ordinary "@mentions" that are
-    // neither a day name nor a date. Same duplication reasoning as
-    // hashtagRegex above (that one's private to its own target).
-    private static let dueRegex = try! NSRegularExpression(
-        pattern: #"(?<![\w])@(today|tomorrow|yesterday|monday|tuesday|wednesday|thursday|friday|saturday|sunday|[0-9/-]+)(?!\w)"#,
-        options: [.caseInsensitive]
-    )
-    // Matches "![[Title]]" anywhere — mid-sentence is fine, same as
-    // wikiLinkRegex. The reserved space (see embedHeight) is never on the
-    // marker's own line regardless of what else shares that line; it's
-    // always the next, separately-required blank line, so nothing about
-    // the marker's own surrounding text has to change to make room for it.
-    private static let embedRegex = try! NSRegularExpression(pattern: #"!\[\[([^\[\]]+)\]\]"#)
+    nonisolated private static var hashtagRegex: NSRegularExpression { NoteMarkup.tagRegex }
+    nonisolated private static var dueRegex: NSRegularExpression { NoteMarkup.dueRegex }
+    nonisolated private static var embedRegex: NSRegularExpression { NoteMarkup.embedRegex }
 
     /// The character ranges covered by blockquotes, with consecutive
     /// quoted lines merged into one span.
@@ -128,12 +110,7 @@ enum MarkdownStyler {
     /// line, or nil if it has none. Matches the whole line (glyph through
     /// end of line) so the signature-protection feature can restore it
     /// verbatim — Envy never authors one, only refuses to let its own editor
-    /// strip an existing one. Anchored on the helm glyph at line start, same
-    /// as EnvyCore's own aiSignatureRegex.
-    nonisolated private static let aiSignatureLineRegex = try! NSRegularExpression(
-        pattern: #"^⎈[ \t]+(?:created|edited)\b.*$"#, options: [.anchorsMatchLines]
-    )
-
+    /// strip an existing one. Pattern: `NoteMarkup.aiSignatureLineRegex`.
     nonisolated static func aiSignatureLine(in text: String) -> String? {
         guard let range = aiSignatureRange(in: text) else { return nil }
         return (text as NSString).substring(with: range)
@@ -144,7 +121,7 @@ enum MarkdownStyler {
     /// it (see MarkdownTextView's signature protection).
     nonisolated static func aiSignatureRange(in text: String) -> NSRange? {
         let ns = text as NSString
-        return aiSignatureLineRegex.firstMatch(in: text, range: NSRange(location: 0, length: ns.length))?.range
+        return NoteMarkup.aiSignatureLineRegex.firstMatch(in: text, range: NSRange(location: 0, length: ns.length))?.range
     }
 
     /// For a note's own text, every OTHER note whose title appears

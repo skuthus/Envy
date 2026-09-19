@@ -95,7 +95,7 @@ private final class NoteDerivedCache: @unchecked Sendable {
 
     var tags: Set<String> {
         memoized(&_tags) {
-            let matches = Note.tagRegex.matches(in: content, range: NSRange(content.startIndex..., in: content))
+            let matches = NoteMarkup.tagRegex.matches(in: content, range: NSRange(content.startIndex..., in: content))
             return Set(matches.compactMap { match -> String? in
                 guard let range = Range(match.range(at: 1), in: content) else { return nil }
                 return content[range].lowercased()
@@ -104,18 +104,18 @@ private final class NoteDerivedCache: @unchecked Sendable {
     }
 
     /// Note-to-note link targets (`[[Title]]` and note embeds `![[Title]]`),
-    /// never image attachments. `wikiLinkRegex` alone would also match the
-    /// `[[…]]` inside `![[photo.png]]`; those are attachment refs, not graph
-    /// edges — see `imageEmbedTargets`. Note embeds still count here so
-    /// orphan:/link:/interlink:/rename keep treating a transclusion as a
-    /// real connection to that note.
+    /// never image attachments. `NoteMarkup.wikiLinkRegex` alone would also
+    /// match the `[[…]]` inside `![[photo.png]]`; those are attachment refs,
+    /// not graph edges — see `imageEmbedTargets`. Note embeds still count
+    /// here so orphan:/link:/interlink:/rename keep treating a transclusion
+    /// as a real connection to that note.
     var wikiLinks: Set<String> {
         memoized(&_wikiLinks) {
             var links = Set<String>()
             let nsContent = content as NSString
             let full = NSRange(location: 0, length: nsContent.length)
 
-            for match in Note.wikiLinkRegex.matches(in: content, range: full) {
+            for match in NoteMarkup.wikiLinkRegex.matches(in: content, range: full) {
                 // Skip `![[…]]` — image vs note embed is decided below.
                 if match.range.location > 0,
                    nsContent.character(at: match.range.location - 1) == 33 /* ! */ {
@@ -130,7 +130,7 @@ private final class NoteDerivedCache: @unchecked Sendable {
             }
 
             guard content.contains("![[") else { return links }
-            for match in Note.embedRegex.matches(in: content, range: full) {
+            for match in NoteMarkup.embedRegex.matches(in: content, range: full) {
                 guard let parsed = Note.parseEmbedInner(match, in: content),
                       !parsed.isImage else { continue }
                 let title = WikiLink.parse(parsed.name).target.lowercased()
@@ -149,7 +149,7 @@ private final class NoteDerivedCache: @unchecked Sendable {
             guard content.contains("![[") else { return [] }
             var names = Set<String>()
             let full = NSRange(content.startIndex..., in: content)
-            for match in Note.embedRegex.matches(in: content, range: full) {
+            for match in NoteMarkup.embedRegex.matches(in: content, range: full) {
                 guard let parsed = Note.parseEmbedInner(match, in: content),
                       parsed.isImage else { continue }
                 names.insert(parsed.name.lowercased())
@@ -167,7 +167,7 @@ private final class NoteDerivedCache: @unchecked Sendable {
         memoized(&_embedKinds) {
             guard content.contains("![[") else { return (false, false) }
             var hasImage = false, hasNote = false
-            let matches = Note.embedRegex.matches(in: content, range: NSRange(content.startIndex..., in: content))
+            let matches = NoteMarkup.embedRegex.matches(in: content, range: NSRange(content.startIndex..., in: content))
             for match in matches {
                 guard let parsed = Note.parseEmbedInner(match, in: content) else { continue }
                 if parsed.isImage { hasImage = true } else { hasNote = true }
@@ -180,7 +180,7 @@ private final class NoteDerivedCache: @unchecked Sendable {
     var aiProvenance: AIProvenance {
         memoized(&_aiProvenance) {
             let full = NSRange(content.startIndex..., in: content)
-            guard let match = Note.aiSignatureRegex.firstMatch(in: content, range: full),
+            guard let match = NoteMarkup.aiSignatureRegex.firstMatch(in: content, range: full),
                   let range = Range(match.range(at: 1), in: content) else { return .none }
             return content[range] == "created" ? .created : .edited
         }
@@ -228,9 +228,9 @@ private final class NoteDerivedCache: @unchecked Sendable {
             // exclusion scans below are worth skipping entirely for the
             // common case (most notes have no due token at all), rather
             // than always paying for them just to find nothing to exclude.
-            let dueMatches = Note.dueRegex.matches(in: content, range: fullRange)
+            let dueMatches = NoteMarkup.dueRegex.matches(in: content, range: fullRange)
             guard !dueMatches.isEmpty else { return [] }
-            let strikethroughRanges = Note.strikethroughRegex.matches(in: content, range: fullRange).map(\.range)
+            let strikethroughRanges = NoteMarkup.strikethroughRegex.matches(in: content, range: fullRange).map(\.range)
             let checkedTaskLineRanges = Note.checkedTaskLineRegex.matches(in: content, range: fullRange).map(\.range)
             func isRetired(_ range: NSRange) -> Bool {
                 strikethroughRanges.contains { NSIntersectionRange($0, range).length > 0 }
@@ -324,8 +324,6 @@ public struct Note: Identifiable, Sendable {
     /// space right after the "#", which this pattern doesn't allow.
     public var tags: Set<String> { cache.tags }
 
-    fileprivate static let tagRegex = try! NSRegularExpression(pattern: #"(?<![\w#])#([A-Za-z0-9_-]+)"#)
-
     /// Titles of every note this one links to via `[[Title]]` or a note
     /// embed `![[Title]]`, lowercased for case-insensitive lookups — same
     /// convention as NoteStore.exactTitleMatch(for:), which is what actually
@@ -340,22 +338,10 @@ public struct Note: Identifiable, Sendable {
     /// search and attachment rename rewrites.
     public var imageEmbedTargets: Set<String> { cache.imageEmbedTargets }
 
-    fileprivate static let wikiLinkRegex = try! NSRegularExpression(pattern: #"\[\[([^\[\]]+)\]\]"#)
-
     /// Which AI-provenance signature, if any, this note carries — see the
     /// AIProvenance enum. Backs the "ai:" search operator and the note-list
     /// badge.
     public var aiProvenance: AIProvenance { cache.aiProvenance }
-
-    /// The "⎈ created/edited by … · <date>" signature line. Anchored to the
-    /// helm glyph (U+2388) at line start — deliberately the same glyph the
-    /// connector stamps, and one no note-taker types by accident. Lenient on
-    /// what follows the verb (agent name / separator / date vary); only the
-    /// verb is captured, since that's all Envy needs to tell created from
-    /// edited.
-    fileprivate static let aiSignatureRegex = try! NSRegularExpression(
-        pattern: #"^⎈[ \t]+(created|edited)\b"#, options: [.anchorsMatchLines]
-    )
 
     /// Whether this note has at least one still-unchecked task-list item —
     /// backs the "todo:" search operator.
@@ -366,16 +352,13 @@ public struct Note: Identifiable, Sendable {
     /// Whether the note transcludes at least one other note — backs `embed:`.
     public var hasNoteEmbed: Bool { cache.embedKinds.note }
 
-    /// The `![[...]]` embed marker, and the file extensions that make one an
-    /// image rather than a note transclusion. The single source of truth for
-    /// that distinction — MarkdownStyler's rendering reads the same set, so
-    /// search and the editor never disagree on what counts as an image.
-    fileprivate static let embedRegex = try! NSRegularExpression(pattern: #"!\[\[([^\[\]]+)\]\]"#)
+    /// Extensions that make a `![[…]]` target an image rather than a note
+    /// embed — shared with MarkdownStyler via this set.
     public static let imageAttachmentExtensions: Set<String> = ["png", "jpg", "jpeg", "gif", "webp", "heic", "heif", "tiff", "tif", "bmp"]
 
-    /// Target name + whether it's an image attachment, from one `embedRegex`
-    /// match. Strips `|size` / caption so `photo.png|400` still classifies
-    /// as an image.
+    /// Target name + whether it's an image attachment, from one
+    /// `NoteMarkup.embedRegex` match. Strips `|size` / caption so
+    /// `photo.png|400` still classifies as an image.
     fileprivate static func parseEmbedInner(_ match: NSTextCheckingResult, in content: String) -> (name: String, isImage: Bool)? {
         guard let range = Range(match.range(at: 1), in: content) else { return nil }
         let inner = content[range]
@@ -404,39 +387,8 @@ public struct Note: Identifiable, Sendable {
     /// quietly look like it only has the one soonest one.
     public var dueDateCount: Int { cache.activeDueDates.count }
 
-    /// The negative lookbehind excludes "@" preceded by a word character
-    /// (mid-word, not the token) — same shape as Note.tagRegex's own
-    /// exclusion. The capture group only matches a day name or a run of
-    /// date-shaped characters (digits, "-", "/") rather than a greedy \S+
-    /// — besides \S+ swallowing trailing punctuation with no space before
-    /// it ("@04-16-26, call the client" captured "04-16-26," comma
-    /// included, which then failed Int parsing on the year and silently
-    /// produced no due date at all), restricting the alternatives at all is
-    /// what keeps an ordinary "@mention" (a name, a handle, anything that
-    /// isn't a day name or date-shaped) from being misread as a due token
-    /// in the first place. The trailing negative lookahead excludes a
-    /// word character right after the match too, so "@mondayish" doesn't
-    /// partially match "@monday". An unparseable token (resolveDueToken
-    /// returns nil) just means no due date, not a crash — same forgiving
-    /// failure mode as a malformed tag or wiki-link.
-    fileprivate static let dueRegex = try! NSRegularExpression(
-        pattern: #"(?<![\w])@(today|tomorrow|yesterday|monday|tuesday|wednesday|thursday|friday|saturday|sunday|[0-9/-]+)(?!\w)"#,
-        options: [.caseInsensitive]
-    )
-
-    /// Matches MarkdownStyler's own strikethroughRegex in the Envy module
-    /// exactly (duplicated rather than shared — that one's private to its
-    /// own target, same reasoning as tagRegex/dueRegex above) — used only
-    /// to tell whether a due token falls inside a crossed-out span.
-    fileprivate static let strikethroughRegex = try! NSRegularExpression(pattern: #"~~([^~\n]+)~~"#)
-
-    /// A whole checked task-list line, start to end — same "[x]"/"[X]"
-    /// shape MarkdownStyler's own taskListRegex checks, restricted to the
-    /// checked state and capturing the full line (not just the marker)
-    /// since a due token can appear anywhere in the line's remaining text,
-    /// not necessarily right after the checkbox. Used only to tell whether
-    /// a due token sits on an already-completed task line — see `due`
-    /// above for why that retires it the same as being crossed out.
+    /// A whole checked task-list line — used with `NoteMarkup.dueRegex` /
+    /// strikethrough to retire due tokens on completed tasks.
     fileprivate static let checkedTaskLineRegex = try! NSRegularExpression(
         pattern: #"^\s*(?:[-*+][ \t]+)?\[[xX]\][ \t]+.*$"#, options: [.anchorsMatchLines]
     )
