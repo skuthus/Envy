@@ -796,11 +796,55 @@ struct SelfCheck {
             check("dueDateCount only counts active tokens, not retired ones", oneRetiredOneActive.dueDateCount == 1)
             check("due still resolves to the one active token when the other is retired", oneRetiredOneActive.due == later)
         }
-        // MarkdownStyler.dueTokenRanges (the click-toggle hit-testing/state
-        // logic) lives in the Envy module, not EnvyCore, and isn't reachable
-        // from this target — covered instead by manual testing in
-        // EnvyTest.app: wrap/unwrap via click, and confirm Note.due (tested
-        // above) agrees with what the pill/search show.
+
+        do {
+            print("MarkdownSemantics (styler helpers)")
+
+            let dues = MarkdownSemantics.dueTokenRanges(in: "Ship @04-16-26 and ~~@monday~~ done")
+            check("dueTokenRanges finds two due tokens", dues.count == 2)
+
+            let plain = MarkdownSemantics.dueTokenRanges(in: "due @today")
+            check("dueTokenRanges: bare @today is not crossed out",
+                  plain.count == 1 && plain[0].isCrossedOut == false)
+            let wrapped = MarkdownSemantics.dueTokenRanges(in: "done ~~@today~~")
+            check("dueTokenRanges: ~~@today~~ is crossed out",
+                  wrapped.count == 1 && wrapped[0].isCrossedOut == true)
+            let loose = MarkdownSemantics.dueTokenRanges(in: "~~ship @today please~~")
+            check("dueTokenRanges: due inside a longer strike is not 'tight' crossed out",
+                  loose.count == 1 && loose[0].isCrossedOut == false)
+
+            let sig = "body\n⎈ created by Agent · 2026-01-01\nmore"
+            check("aiSignatureRange finds the provenance line",
+                  MarkdownSemantics.aiSignatureLine(in: sig)?.hasPrefix("⎈ created") == true)
+            check("aiSignatureRange is nil without a helm line",
+                  MarkdownSemantics.aiSignatureRange(in: "no signature here") == nil)
+
+            let suggested = MarkdownSemantics.suggestedLinkMatches(
+                in: "I talked to Ideas yesterday and also [[Meeting]]",
+                candidateTitles: ["Ideas", "Meeting", "Missing"]
+            )
+            check("suggestedLinkMatches offers an unlinked title",
+                  suggested.map(\.title) == ["Ideas"])
+            check("suggestedLinkMatches skips titles already in [[links]]",
+                  !suggested.contains { $0.title == "Meeting" })
+            check("suggestedLinkMatches skips titles that don't appear",
+                  !suggested.contains { $0.title == "Missing" })
+
+            let inCode = MarkdownSemantics.suggestedLinkMatches(
+                in: "see `Ideas` in code",
+                candidateTitles: ["Ideas"]
+            )
+            check("suggestedLinkMatches ignores titles inside inline code", inCode.isEmpty)
+
+            let quotes = MarkdownSemantics.blockquoteBlockRanges(in: "> one\n> two\n\nplain\n> three")
+            check("blockquoteBlockRanges merges consecutive quote lines",
+                  quotes.count == 2)
+
+            check("isInsideCode is true inside backticks",
+                  MarkdownSemantics.isInsideCode(at: 6, in: "use `x` here"))
+            check("isInsideCode is false outside backticks",
+                  !MarkdownSemantics.isInsideCode(at: 0, in: "use `x` here"))
+        }
 
         // filteredDueQuerySupportsTodayOverdueAndWeekBuckets
         do {

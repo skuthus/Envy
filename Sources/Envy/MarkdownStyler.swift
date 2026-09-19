@@ -29,10 +29,10 @@ enum MarkdownStyler {
     private static let italicRegex = try! NSRegularExpression(pattern: #"(?<!\*)\*([^*\n]+)\*(?!\*)"#)
     nonisolated private static var strikethroughRegex: NSRegularExpression { NoteMarkup.strikethroughRegex }
     private static let highlightRegex = try! NSRegularExpression(pattern: #"==([^=\n]+)=="#)
-    private nonisolated static let codeRegex = try! NSRegularExpression(pattern: #"`([^`\n]+)`"#)
-    private nonisolated static let fencedCodeBlockRegex = try! NSRegularExpression(pattern: #"^```[^\n]*\n([\s\S]*?)\n```[ \t]*$"#, options: [.anchorsMatchLines])
+    private nonisolated static var codeRegex: NSRegularExpression { MarkdownSemantics.inlineCodeRegex }
+    private nonisolated static var fencedCodeBlockRegex: NSRegularExpression { MarkdownSemantics.fencedCodeBlockRegex }
     private static let headerRegex = try! NSRegularExpression(pattern: #"^(#{1,6})[ \t]+(.*)$"#, options: [.anchorsMatchLines])
-    private nonisolated static let blockquoteRegex = try! NSRegularExpression(pattern: #"^(>[ \t]?)(.*)$"#, options: [.anchorsMatchLines])
+    private nonisolated static var blockquoteRegex: NSRegularExpression { MarkdownSemantics.blockquoteRegex }
     private static let horizontalRuleRegex = try! NSRegularExpression(pattern: #"^ {0,3}([-*_])[ \t]*(?:\1[ \t]*){2,}$"#, options: [.anchorsMatchLines])
     // The "-"/"*"/"+" list marker is optional (group 1 still captures it,
     // and any leading whitespace, when present) — "[ ] Buy milk" on its own
@@ -87,41 +87,24 @@ enum MarkdownStyler {
     }
 
     nonisolated static func blockquoteBlockRanges(in text: String) -> [NSRange] {
-        let nsText = text as NSString
-        let full = NSRange(location: 0, length: nsText.length)
-        var blocks: [NSRange] = []
-        for match in blockquoteRegex.matches(in: text, range: full) {
-            let line = nsText.lineRange(for: match.range)
-            if let last = blocks.last, last.location + last.length >= line.location {
-                blocks[blocks.count - 1] = NSUnionRange(last, line)
-            } else {
-                blocks.append(line)
-            }
-        }
-        return blocks
+        MarkdownSemantics.blockquoteBlockRanges(in: text)
     }
 
     nonisolated static func wikiLinkFullRanges(in text: String) -> [NSRange] {
-        let full = NSRange(location: 0, length: (text as NSString).length)
-        return wikiLinkRegex.matches(in: text, range: full).map(\.range)
+        MarkdownSemantics.wikiLinkFullRanges(in: text)
     }
 
     /// The full text of a note's "⎈ created/edited by … · <date>" provenance
-    /// line, or nil if it has none. Matches the whole line (glyph through
-    /// end of line) so the signature-protection feature can restore it
-    /// verbatim — Envy never authors one, only refuses to let its own editor
-    /// strip an existing one. Pattern: `NoteMarkup.aiSignatureLineRegex`.
+    /// line, or nil if it has none. See `MarkdownSemantics.aiSignatureLine`.
     nonisolated static func aiSignatureLine(in text: String) -> String? {
-        guard let range = aiSignatureRange(in: text) else { return nil }
-        return (text as NSString).substring(with: range)
+        MarkdownSemantics.aiSignatureLine(in: text)
     }
 
     /// The character range of the "⎈" provenance line, or nil. Used both to
     /// render it as a non-editable pill and to veto edits that would touch
     /// it (see MarkdownTextView's signature protection).
     nonisolated static func aiSignatureRange(in text: String) -> NSRange? {
-        let ns = text as NSString
-        return NoteMarkup.aiSignatureLineRegex.firstMatch(in: text, range: NSRange(location: 0, length: ns.length))?.range
+        MarkdownSemantics.aiSignatureRange(in: text)
     }
 
     /// For a note's own text, every OTHER note whose title appears
@@ -132,38 +115,7 @@ enum MarkdownStyler {
     /// range per title, even when a title appears more than once — that's
     /// the one occurrence a click actually wraps in brackets.
     nonisolated static func suggestedLinkMatches(in text: String, candidateTitles: [String]) -> [(title: String, range: NSRange)] {
-        guard !text.isEmpty, !candidateTitles.isEmpty else { return [] }
-        let nsText = text as NSString
-        let existingLinkRanges = wikiLinkFullRanges(in: text)
-
-        func isWordCharacter(_ character: unichar) -> Bool {
-            guard let scalar = Unicode.Scalar(character) else { return false }
-            return CharacterSet.alphanumerics.contains(scalar)
-        }
-
-        var results: [(title: String, range: NSRange)] = []
-        for rawTitle in candidateTitles {
-            let title = rawTitle.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !title.isEmpty else { continue }
-            var searchRange = NSRange(location: 0, length: nsText.length)
-            while searchRange.length > 0 {
-                let found = nsText.range(of: title, options: [.caseInsensitive], range: searchRange)
-                guard found.location != NSNotFound else { break }
-                let before = found.location - 1
-                let after = found.location + found.length
-                let beforeIsWord = before >= 0 && isWordCharacter(nsText.character(at: before))
-                let afterIsWord = after < nsText.length && isWordCharacter(nsText.character(at: after))
-                let isAlreadyLinked = existingLinkRanges.contains { NSIntersectionRange($0, found).length > 0 }
-                if !beforeIsWord, !afterIsWord, !isAlreadyLinked, !isInsideCode(at: found.location, in: text) {
-                    results.append((title: title, range: found))
-                    break
-                }
-                let nextStart = found.location + max(found.length, 1)
-                guard nextStart < nsText.length else { break }
-                searchRange = NSRange(location: nextStart, length: nsText.length - nextStart)
-            }
-        }
-        return results
+        MarkdownSemantics.suggestedLinkMatches(in: text, candidateTitles: candidateTitles)
     }
 
     /// The fixed height reserved for the floating embed view, applied (via
@@ -430,63 +382,15 @@ enum MarkdownStyler {
 
     /// Every due token's own range (just "@..." — never the surrounding
     /// "~~" if any) paired with whether it's currently wrapped tightly in
-    /// its own "~~@token~~" (tildes immediately adjacent, nothing else
-    /// inside) — that specific shape is exactly what clicking a due token
-    /// toggles, in MarkdownTextView's handleClick. Deliberately narrower
-    /// than "is this token anywhere inside a strikethrough span" (which is
-    /// what Note.due in EnvyCore checks, to also recognize a due date
-    /// crossed out as part of a longer struck sentence) — a click can only
-    /// meaningfully add or remove a wrap it put there itself.
+    /// its own "~~@token~~" — see `MarkdownSemantics.dueTokenRanges`.
     static func dueTokenRanges(in text: String) -> [(range: NSRange, isCrossedOut: Bool)] {
-        let nsText = text as NSString
-        let full = NSRange(location: 0, length: nsText.length)
-        let tildeLength = 2
-        return dueRegex.matches(in: text, range: full).map { match in
-            let range = match.range
-            let hasLeadingTildes = range.location >= tildeLength
-                && nsText.substring(with: NSRange(location: range.location - tildeLength, length: tildeLength)) == "~~"
-            let trailingStart = range.location + range.length
-            let hasTrailingTildes = trailingStart + tildeLength <= nsText.length
-                && nsText.substring(with: NSRange(location: trailingStart, length: tildeLength)) == "~~"
-            return (range, hasLeadingTildes && hasTrailingTildes)
-        }
+        MarkdownSemantics.dueTokenRanges(in: text)
     }
 
-    /// Whether `location` (a cursor position, not a character index — 0 and
-    /// text.count are both valid) sits inside a fenced code block or an
-    /// inline code span. Used to keep code content — which can genuinely
-    /// contain "->"-style sequences with their own unrelated meaning — from
-    /// being reinterpreted as a ligature to expand.
-    ///
-    /// Inline spans are checked against just the current paragraph, not the
-    /// whole document — codeRegex can't cross a newline, so nothing outside
-    /// it could ever match anyway, and this runs on every keystroke. Fenced
-    /// blocks are a real document-global construct, but scanning for them at
-    /// all is skipped unless the note contains a "```" somewhere — the same
-    /// cheap pre-check windowedRestyleRange (in MarkdownTextView) already
-    /// relies on for the same reason.
+    /// Whether `location` sits inside a fenced code block or an inline code
+    /// span — see `MarkdownSemantics.isInsideCode`.
     nonisolated static func isInsideCode(at location: Int, in text: String) -> Bool {
-        let nsText = text as NSString
-        let clampedLocation = min(location, nsText.length)
-
-        func contains(_ range: NSRange) -> Bool {
-            clampedLocation >= range.location && clampedLocation <= NSMaxRange(range)
-        }
-
-        let paragraphRange = nsText.paragraphRange(for: NSRange(location: clampedLocation, length: 0))
-        let paragraph = nsText.substring(with: paragraphRange)
-        let paragraphFull = NSRange(location: 0, length: (paragraph as NSString).length)
-        for match in codeRegex.matches(in: paragraph, range: paragraphFull) {
-            let rangeInDocument = NSRange(location: paragraphRange.location + match.range.location, length: match.range.length)
-            if contains(rangeInDocument) { return true }
-        }
-
-        guard nsText.range(of: "```").location != NSNotFound else { return false }
-        let full = NSRange(location: 0, length: nsText.length)
-        for match in fencedCodeBlockRegex.matches(in: text, range: full) {
-            if contains(match.range) { return true }
-        }
-        return false
+        MarkdownSemantics.isInsideCode(at: location, in: text)
     }
 
     enum ListContinuation {
