@@ -347,9 +347,9 @@ public final class NoteStore: ObservableObject {
 
     nonisolated private static func scanDirectory(_ directory: URL, includeSubfolders: Bool, reusing previous: [String: Note] = [:]) -> [Note] {
         let fm = FileManager.default
-        let urls: [URL]
+        let rawURLs: [URL]
         if includeSubfolders {
-            urls = notesRecursively(under: directory, fm: fm)
+            rawURLs = notesRecursively(under: directory, fm: fm)
         } else {
             guard let entries = try? fm.contentsOfDirectory(
                 at: directory,
@@ -365,8 +365,13 @@ public final class NoteStore: ObservableObject {
                 includingPropertiesForKeys: [.contentModificationDateKey],
                 options: [.skipsHiddenFiles]
             )) ?? []
-            urls = (entries + inbox).filter { $0.pathExtension.lowercased() == "md" }
+            rawURLs = (entries + inbox).filter { $0.pathExtension.lowercased() == "md" }
         }
+        // AGENTS.md at the vault root is the AI-agent guide, not a note — keep
+        // it out of the list. Only the root file is excluded; a note named
+        // AGENTS inside a subfolder is left alone.
+        let agentGuide = directory.appendingPathComponent(Self.agentGuideFileName).standardizedFileURL
+        let urls = rawURLs.filter { $0.standardizedFileURL != agentGuide }
 
         // Reading each file is its own independent syscall (open/read/close),
         // and doing that one file at a time in a loop means paying each
@@ -796,6 +801,11 @@ public final class NoteStore: ObservableObject {
     /// capture app writing here shouldn't depend on sync clients handling
     /// dot-directories correctly.
     nonisolated public static let inboxFolderName = "Inbox"
+
+    /// The AI-agent guide Envy writes at the vault root ("Install Agent Guide").
+    /// It's instructions for agents working with the vault, not a note, so the
+    /// scan skips it — see scanDirectory.
+    nonisolated public static let agentGuideFileName = "AGENTS.md"
 
     public var inboxDirectory: URL {
         noteDirectory.appendingPathComponent(Self.inboxFolderName, isDirectory: true)

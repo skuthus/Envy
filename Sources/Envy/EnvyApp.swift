@@ -129,6 +129,12 @@ struct EnvyApp: App {
                 Button("Import from Kindle") {
                     triggerKindleImport()
                 }
+
+                Divider()
+
+                Button("Install Agent Guide\u{2026}") {
+                    AgentSkillInstaller.installInteractively()
+                }
             }
             CommandGroup(after: .newItem) {
                 Button("Delete Note") {
