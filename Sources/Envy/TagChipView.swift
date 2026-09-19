@@ -13,23 +13,42 @@ struct TagChipView: View {
     /// Left nil where rename doesn't belong (the title-bar chip today), so
     /// the item only appears in the tag browser.
     var onRename: ((String) -> Void)? = nil
+    /// Title-bar chips stay themed (green / custom color). The `tag:` catalog
+    /// in the note list uses plain text instead — a green pill on the
+    /// selection highlight is hard to read.
+    var colored: Bool = true
 
+    @Environment(\.interfaceFontScale) private var interfaceFontScale
     @AppStorage(TagColorPreferences.storageKey) private var tagColorsRaw = ""
 
     private var customColor: Color? {
-        TagColorPreferences.color(for: tag, raw: tagColorsRaw)
+        guard colored else { return nil }
+        return TagColorPreferences.color(for: tag, raw: tagColorsRaw)
     }
 
     var body: some View {
         Text("#\(tag)")
-            .font(.caption.bold())
-            .foregroundStyle(customColor ?? Color(nsColor: theme.resolvedTagColor))
+            .font(colored ? .caption.bold() : .system(size: 13 * interfaceFontScale))
+            .lineLimit(1)
+            .foregroundStyle(
+                colored
+                    ? (customColor ?? Color(nsColor: theme.resolvedTagColor))
+                    : Color.primary
+            )
             // A tinted tag paints its own translucent capsule from its color so
             // it reads as that color without a second theme entry; an untinted
-            // one keeps the theme's ordinary tag background unchanged.
-            .padding(.horizontal, 6)
-            .padding(.vertical, 2)
-            .background(customColor.map { $0.opacity(0.18) } ?? Color(nsColor: theme.resolvedTagBackgroundColor))
+            // one keeps the theme's ordinary tag background unchanged. List
+            // rows skip the capsule so the row selection color can show through.
+            .padding(.horizontal, colored ? 6 : 0)
+            .padding(.vertical, colored ? 2 : 0)
+            .background {
+                if colored {
+                    Capsule().fill(
+                        customColor.map { $0.opacity(0.18) }
+                            ?? Color(nsColor: theme.resolvedTagBackgroundColor)
+                    )
+                }
+            }
             .clipShape(Capsule())
             .contentShape(Capsule())
             .onTapGesture { onTagSearch(tag) }
@@ -44,7 +63,10 @@ struct TagChipView: View {
 
                 Button("Custom Color…") {
                     TagColorPanel.present(
-                        initial: NSColor(customColor ?? Color(nsColor: theme.resolvedTagColor)),
+                        initial: NSColor(
+                            TagColorPreferences.color(for: tag, raw: tagColorsRaw)
+                                ?? Color(nsColor: theme.resolvedTagColor)
+                        ),
                         for: tag)
                 }
 
@@ -53,7 +75,7 @@ struct TagChipView: View {
                     Button("Rename Tag…") { onRename(tag) }
                 }
 
-                if customColor != nil {
+                if TagColorPreferences.color(for: tag, raw: tagColorsRaw) != nil {
                     Divider()
                     Button("Remove Color", role: .destructive) {
                         tagColorsRaw = TagColorPreferences.setting(nil, for: tag, in: tagColorsRaw)

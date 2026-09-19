@@ -883,7 +883,8 @@ extension ContentView {
                 tag: name,
                 theme: theme,
                 onTagSearch: { searchByTag($0) },
-                onRename: { beginTagRename($0) }
+                onRename: { beginTagRename($0) },
+                colored: false
             )
             Spacer()
             Text("\(count)")
