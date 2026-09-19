@@ -217,6 +217,16 @@ extension MarkdownTextView {
         // Registered once the text view exists, in makeNSView below.
         nonisolated(unsafe) var frameObserver: NSObjectProtocol?
 
+        // Coalesces overlay updates during a live window resize. frameDidChange
+        // fires every frame of the drag, and updateOverlays runs six passes that
+        // each force a near-full-document ensureLayout — cheap on a short note,
+        // but visibly laggy on a long, markup-dense one (the Welcome note has
+        // checkboxes, an embed, code, and images all at once). Running the passes
+        // on every intermediate frame is wasted work: the overlays only need to be
+        // correct once the width settles. Held here so each new frame event
+        // cancels the pending one, so the passes run once after the drag pauses.
+        private var overlayResizeWorkItem: DispatchWorkItem?
+
         /// Measured height per embed title (lowercased), feeding the space
         /// the styler reserves. Keyed by title rather than by index so it
         /// survives embeds being added, removed or reordered.
@@ -1165,6 +1175,30 @@ extension MarkdownTextView {
         /// no call site can forget one. Also the natural place to drop the
         /// click-target rect cache: everything that can move a clickable
         /// glyph (an edit, a restyle, a frame change) funnels through here.
+        /// Entry point for the text view's frameDidChange observer. Outside a
+        /// live resize — the checklist-settle case the observer was added for —
+        /// it updates the overlays immediately so they stay exact. During a live
+        /// resize it coalesces: each frame cancels the previous pending pass and
+        /// reschedules, so the six near-full-document layout passes run once after
+        /// the drag pauses instead of on every frame. That is what keeps resizing
+        /// a long note (the Welcome note especially) from lagging.
+        @MainActor
+        func handleFrameChange(in textView: NSTextView) {
+            guard textView.inLiveResize else {
+                overlayResizeWorkItem?.cancel()
+                overlayResizeWorkItem = nil
+                updateOverlays(in: textView)
+                return
+            }
+            overlayResizeWorkItem?.cancel()
+            let item = DispatchWorkItem { [weak self, weak textView] in
+                guard let self, let textView else { return }
+                self.updateOverlays(in: textView)
+            }
+            overlayResizeWorkItem = item
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05, execute: item)
+        }
+
         @MainActor
         func updateOverlays(in textView: NSTextView) {
             cachedClickTargetRects = nil

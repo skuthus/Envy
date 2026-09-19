@@ -195,7 +195,7 @@ struct MarkdownTextView: NSViewRepresentable {
         ) { [weak coordinator = context.coordinator, weak textView] _ in
             MainActor.assumeIsolated {
                 guard let coordinator, let textView else { return }
-                coordinator.updateOverlays(in: textView)
+                coordinator.handleFrameChange(in: textView)
             }
         }
         // Belt and suspenders alongside ensureLayout() (inside
