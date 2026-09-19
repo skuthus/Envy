@@ -19,32 +19,48 @@ struct WhatsNewView: View {
     }
 
     private let newFeatures: [Feature] = [
-        Feature(title: "Markdown tables work now!", details: [
-            "Right-click → Insert Table. You can also add and delete rows without having to delete a bunch of shit."
+        Feature(title: "Nested folders show properly", details: [
+            "debated over this one for a while but its dead useful."
         ]),
-        Feature(title: "Split editor", details: [
-            "Vertical, horizontal, whatever floats your boat, man. Use the View menu or Cmd + \\",
-            "You can also swap the split from vertical/horizontal with Opt + Cmd + \\",
-            "The split is of course resizable. I would never leave that out."
+        Feature(title: "Make a subfolder while moving a note", details: [
+            "if you right click a note in a list, you can navigate notes from there, and make new subfolders."
         ]),
-        Feature(title: "Windowless mode", details: [
-            "That's right — you can go windowless. It's in the settings. It's super cool."
-        ]),
-        Feature(title: "Glassify", details: [
-            "Why not make everything blurrier? Tim Cook (RIP) would be proud."
-        ]),
-        Feature(title: "Collapsible note list", details: [
-            "Not sure I love this one yet. Trigger it with Ctrl + Cmd + S"
-        ]),
-        Feature(title: "Unified horizontal layout", details: [
-            "I gave in and decided to throw horizontal enjoyers a bone."
-        ]),
-        Feature(title: "Design polish", details: [
-            "I made Claude scrub this thing with a toothbrush."
+        Feature(title: "Cleaner tag: list (plain text, not green)", details: [
+            "I removed colors from tags in the file list to improve readability"
         ])
     ]
 
-    private let bugFixes = "Too many to count, friend. Hopefully you love it."
+    private let bugFixes: [Feature] = [
+        Feature(title: "Image embeds no longer count as note links", details: [
+            "this is both a security fix and QOL fix."
+        ]),
+        Feature(title: "Other under the hood improvements.", details: [
+            "*closes car hood*"
+        ])
+    ]
+
+    private func section(_ heading: String, _ items: [Feature]) -> some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text(heading)
+                .font(.headline)
+                .foregroundStyle(EnvyBrand.mark)
+            ForEach(items) { item in
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(item.title)
+                        .font(.body.bold())
+                    ForEach(item.details, id: \.self) { detail in
+                        HStack(alignment: .top, spacing: 6) {
+                            Text("•")
+                            Text(detail)
+                        }
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+    }
 
     var body: some View {
         VStack(spacing: 20) {
@@ -61,36 +77,10 @@ struct WhatsNewView: View {
             }
 
             ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    Text("New Features")
-                        .font(.headline)
-                        .foregroundStyle(EnvyBrand.mark)
-
-                    ForEach(newFeatures) { feature in
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(feature.title)
-                                .font(.body.bold())
-                            ForEach(feature.details, id: \.self) { detail in
-                                HStack(alignment: .top, spacing: 6) {
-                                    Text("•")
-                                    Text(detail)
-                                }
-                                .font(.callout)
-                                .foregroundStyle(.secondary)
-                            }
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-
+                VStack(alignment: .leading, spacing: 20) {
+                    section("New Features", newFeatures)
                     Divider()
-
-                    Text("Bug Fixes")
-                        .font(.headline)
-                        .foregroundStyle(EnvyBrand.mark)
-                    Text(bugFixes)
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                    section("Bug Fixes", bugFixes)
                 }
                 .padding(18)
                 .frame(maxWidth: .infinity, alignment: .leading)
