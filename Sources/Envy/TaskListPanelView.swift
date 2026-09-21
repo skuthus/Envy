@@ -37,13 +37,15 @@ struct TaskListPanelView: View {
             onAddTask: { _ = store.appendTaskLine($0) },
             onAddSubtask: { noteID, line, occ in
                 let child = TaskPage.subtaskLine(under: line)
-                if store.insertTaskLine(noteID: noteID, afterLine: line, occurrence: occ, newLine: child) {
+                if lineExists(child, in: noteID)
+                    || store.insertTaskLine(noteID: noteID, afterLine: line, occurrence: occ, newLine: child) {
                     focusNoteID = noteID; focusLine = child
                 }
             },
             onAddTaskBelow: { noteID, line, occ in
                 let sibling = TaskPage.siblingLine(of: line)
-                if store.insertTaskLine(noteID: noteID, afterLine: line, occurrence: occ, newLine: sibling) {
+                if lineExists(sibling, in: noteID)
+                    || store.insertTaskLine(noteID: noteID, afterLine: line, occurrence: occ, newLine: sibling) {
                     focusNoteID = noteID; focusLine = sibling
                 }
             },
@@ -58,6 +60,11 @@ struct TaskListPanelView: View {
         .onAppear { recompute() }
         .onChange(of: store.notes) { _, _ in recompute() }
         .onChange(of: showCompleted) { _, _ in recompute() }
+    }
+
+    private func lineExists(_ line: String, in noteID: String) -> Bool {
+        guard let note = store.note(withID: noteID) else { return false }
+        return TaskPage.openTasks(in: note).contains { $0.sourceLine == line }
     }
 
     /// Off the main thread, exactly like the main window's pipeline — a

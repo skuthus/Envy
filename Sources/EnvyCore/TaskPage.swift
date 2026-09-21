@@ -151,7 +151,7 @@ public enum TaskPage {
             seenLine[sourceLine, default: 0] += 1
             let ordinal = tasks.count
             tasks.append(OpenTask(
-                id: note.id + "\n" + String(ordinal),
+                id: note.id + "\u{1}" + String(occurrence) + "\u{1}" + sourceLine,
                 noteID: note.id,
                 noteTitle: note.title,
                 ordinal: ordinal,

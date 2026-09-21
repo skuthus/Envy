@@ -1193,17 +1193,28 @@ extension ContentView {
     /// selected task line, and focus it. It appears on the next rebuild.
     func addSubtask(noteID: String, afterLine: String, occurrence: Int) {
         let child = TaskPage.subtaskLine(under: afterLine)
-        if store.insertTaskLine(noteID: noteID, afterLine: afterLine, occurrence: occurrence, newLine: child) {
+        // Don't create a second identical empty line — inserting one shifts the
+        // row ordinals and scrambles which row is being edited. If that exact
+        // empty task already exists, just focus it.
+        if taskLineExists(child, inNoteID: noteID)
+            || store.insertTaskLine(noteID: noteID, afterLine: afterLine, occurrence: occurrence, newLine: child) {
             taskFocusNoteID = noteID
             taskFocusLine = child
         }
+    }
+
+    /// Whether the note already has an open task whose exact source line is `line`.
+    private func taskLineExists(_ line: String, inNoteID noteID: String) -> Bool {
+        guard let note = store.note(withID: noteID) else { return false }
+        return TaskPage.openTasks(in: note).contains { $0.sourceLine == line }
     }
 
     /// Add an empty task at the same level, right after the selected task line,
     /// and focus it — a sibling, not a child.
     func addTaskBelow(noteID: String, afterLine: String, occurrence: Int) {
         let sibling = TaskPage.siblingLine(of: afterLine)
-        if store.insertTaskLine(noteID: noteID, afterLine: afterLine, occurrence: occurrence, newLine: sibling) {
+        if taskLineExists(sibling, inNoteID: noteID)
+            || store.insertTaskLine(noteID: noteID, afterLine: afterLine, occurrence: occurrence, newLine: sibling) {
             taskFocusNoteID = noteID
             taskFocusLine = sibling
         }

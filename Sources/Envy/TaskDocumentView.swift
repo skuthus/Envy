@@ -484,10 +484,10 @@ private struct TaskLineRow: View {
                 onFocusConsumed()
             }
         }
-        .onChange(of: draft) { _, _ in
-            guard editing else { return }
-            saveTask = DebouncedSave.schedule(replacing: saveTask) { commitNow() }
-        }
+        // No per-keystroke debounced save: with a content-based row id, a
+        // commit mid-typing would rescan and pull this row's identity out from
+        // under the edit (dropping focus and scrambling drafts). The edit lands
+        // when the field loses focus (below) or the box is checked instead.
         .onChange(of: focused) { _, isFocused in
             if editing, !isFocused { endEditing() }
         }

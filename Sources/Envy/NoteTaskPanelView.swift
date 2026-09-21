@@ -65,13 +65,13 @@ struct NoteTaskPanelView: View {
                 onAddTask: { _ = store.appendTaskLine(toNoteID: noteID, $0) },
                 onAddSubtask: { nid, line, occ in
                     let child = TaskPage.subtaskLine(under: line)
-                    if store.insertTaskLine(noteID: nid, afterLine: line, occurrence: occ, newLine: child) {
+                    if lineExists(child) || store.insertTaskLine(noteID: nid, afterLine: line, occurrence: occ, newLine: child) {
                         focusNoteID = nid; focusLine = child
                     }
                 },
                 onAddTaskBelow: { nid, line, occ in
                     let sibling = TaskPage.siblingLine(of: line)
-                    if store.insertTaskLine(noteID: nid, afterLine: line, occurrence: occ, newLine: sibling) {
+                    if lineExists(sibling) || store.insertTaskLine(noteID: nid, afterLine: line, occurrence: occ, newLine: sibling) {
                         focusNoteID = nid; focusLine = sibling
                     }
                 },
@@ -81,9 +81,12 @@ struct NoteTaskPanelView: View {
                 singleNote: true,
                 showCompleted: $showCompleted,
                 onAddEmptyTask: {
-                    if let line = store.appendEmptyTask(toNoteID: noteID) {
-                        focusNoteID = noteID
-                        focusLine = line
+                    // Reuse an existing empty task rather than stacking blanks.
+                    let empty = "- [ ] "
+                    if lineExists(empty) {
+                        focusNoteID = noteID; focusLine = empty
+                    } else if let line = store.appendEmptyTask(toNoteID: noteID) {
+                        focusNoteID = noteID; focusLine = line
                     }
                 }
             )
@@ -94,6 +97,11 @@ struct NoteTaskPanelView: View {
         .onAppear { recompute() }
         .onChange(of: store.notes) { _, _ in recompute() }
         .onChange(of: showCompleted) { _, _ in recompute() }
+    }
+
+    private func lineExists(_ line: String) -> Bool {
+        guard let note = store.note(withID: noteID) else { return false }
+        return TaskPage.openTasks(in: note).contains { $0.sourceLine == line }
     }
 
     /// This note's open tasks, off the main thread for consistency (a single
