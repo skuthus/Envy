@@ -313,7 +313,8 @@ struct ContentView: View {
     @State var taskDocumentLinesCache: [OpenTask] = []
     /// The note and line a task click should land on. Cleared by opening anything else.
     /// Whether the task views include completed tasks (the "Completed" toggle).
-    @State var showCompletedTasks = false
+    /// Persisted so it's remembered across the panels and relaunches.
+    @AppStorage("taskShowCompleted") var showCompletedTasks = false
     @State var taskRevealNoteID: String?
     @State var taskRevealLine: String?
     /// A task line just created via the row menu, to drop straight into edit

@@ -14,7 +14,7 @@ struct NoteTaskPanelView: View {
     @AppStorage("interfaceTextSize") private var interfaceTextSizeRaw = InterfaceTextSize.large.rawValue
 
     @State private var lines: [OpenTask] = []
-    @State private var showCompleted = false
+    @AppStorage("taskShowCompleted") private var showCompleted = false
     @State private var generation = 0
     @State private var focusNoteID: String?
     @State private var focusLine: String?
