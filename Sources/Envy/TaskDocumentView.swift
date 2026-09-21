@@ -264,8 +264,7 @@ struct TaskDocumentView: View {
             onAddSubtask: onAddSubtask,
             onAddTaskBelow: onAddTaskBelow,
             autoFocus: task.noteID == focusNoteID && task.sourceLine == focusLine,
-            onFocusConsumed: onFocusConsumed,
-            hidesOnComplete: !showCompleted
+            onFocusConsumed: onFocusConsumed
         )
     }
 
@@ -332,9 +331,6 @@ private struct TaskLineRow: View {
     /// True for a just-created row that should open in edit mode on appear.
     let autoFocus: Bool
     let onFocusConsumed: () -> Void
-    /// When completed tasks are hidden, checking a box makes the row leave; when
-    /// shown, it just flips to checked and stays.
-    let hidesOnComplete: Bool
 
     @State private var draft: String
     /// The line as it currently stands in the note, and which copy it is — the
@@ -344,9 +340,6 @@ private struct TaskLineRow: View {
     @State private var liveOccurrence: Int
     @State private var editing = false
     @State private var saveTask: Task<Void, Never>?
-    /// Set the instant the box is checked so the row leaves at once, rather
-    /// than lingering the ~one rescan it takes the data to drop it.
-    @State private var done = false
     @FocusState private var focused: Bool
 
     init(
@@ -362,8 +355,7 @@ private struct TaskLineRow: View {
         onAddSubtask: @escaping (String, String, Int) -> Void,
         onAddTaskBelow: @escaping (String, String, Int) -> Void,
         autoFocus: Bool,
-        onFocusConsumed: @escaping () -> Void,
-        hidesOnComplete: Bool
+        onFocusConsumed: @escaping () -> Void
     ) {
         self.task = task
         self.theme = theme
@@ -378,18 +370,13 @@ private struct TaskLineRow: View {
         self.onAddTaskBelow = onAddTaskBelow
         self.autoFocus = autoFocus
         self.onFocusConsumed = onFocusConsumed
-        self.hidesOnComplete = hidesOnComplete
         _draft = State(initialValue: task.body)
         _liveLine = State(initialValue: task.sourceLine)
         _liveOccurrence = State(initialValue: task.occurrence)
     }
 
     var body: some View {
-        if done {
-            EmptyView()
-        } else {
-            rowContent
-        }
+        rowContent
     }
 
     private var rowContent: some View {
@@ -411,6 +398,10 @@ private struct TaskLineRow: View {
                     }
                 }
                 .frame(width: 22, height: 18, alignment: .center)
+                // Fill the whole 22x18 as the tap target: a stroked (unfilled)
+                // checkbox is otherwise only hittable on its 1.5pt border, so
+                // clicks in the empty middle did nothing.
+                .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .accessibilityLabel(task.isCompleted ? "Mark not done" : "Mark done")
@@ -509,9 +500,6 @@ private struct TaskLineRow: View {
         saveTask?.cancel()
         if editing { commitNow() }
         onComplete(task.noteID, liveLine, liveOccurrence)
-        if !task.isCompleted, hidesOnComplete {
-            withAnimation(.easeInOut(duration: 0.12)) { done = true }
-        }
     }
 
     private func endEditing() {
