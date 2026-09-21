@@ -21,6 +21,8 @@ public struct OpenTask: Equatable, Sendable, Identifiable {
     public let marker: String
     public let body: String
     public let due: Date?
+    /// Whether this line is a checked task ([x]) rather than an open one ([ ]).
+    public let isCompleted: Bool
     /// When the note that holds this line was last saved. Lines have no
     /// time of their own, so undated lines sort by this, newest first.
     public let edited: Date
@@ -36,6 +38,7 @@ public struct OpenTask: Equatable, Sendable, Identifiable {
         marker: String,
         body: String,
         due: Date?,
+        isCompleted: Bool,
         edited: Date
     ) {
         self.id = id
@@ -48,6 +51,7 @@ public struct OpenTask: Equatable, Sendable, Identifiable {
         self.marker = marker
         self.body = body
         self.due = due
+        self.isCompleted = isCompleted
         self.edited = edited
     }
 }
@@ -56,10 +60,10 @@ public struct OpenTask: Equatable, Sendable, Identifiable {
 /// `todo:` stays a note filter. This token only switches the editor to the page.
 public enum TaskPage {
     public static let queryToken = "tasks:"
-    /// Same shape the editor treats as a task, limited to an empty box.
-    /// A line inside a code fence is skipped later. A checked line does not match.
+    /// Same shape the editor treats as a task, open ([ ]) or checked ([x]/[X]).
+    /// A line inside a code fence is skipped later.
     private static let openTaskRegex = try! NSRegularExpression(
-        pattern: #"^(\s*(?:[-*+][ \t]+)?)(\[ \])([ \t]+.*)$"#,
+        pattern: #"^(\s*(?:[-*+][ \t]+)?)(\[[ xX]\])([ \t]+.*)$"#,
         options: [.anchorsMatchLines]
     )
 
@@ -99,13 +103,17 @@ public enum TaskPage {
         return false
     }
 
-    public static func openTasks(in note: Note) -> [OpenTask] {
+    /// Every task line in the note — open and checked — in document order.
+    private static func scanTasks(in note: Note) -> [OpenTask] {
         let content = note.content
         let ns = content as NSString
-        // Fast reject: the overwhelming majority of notes hold no empty
-        // checkbox, so skip the regex and code scan entirely for them. This is
-        // what keeps a whole-vault `tasks:` scan cheap.
-        guard ns.length > 0, ns.range(of: "[ ]").location != NSNotFound else { return [] }
+        // Fast reject: a note with no checkbox at all skips the regex and code
+        // scan entirely — what keeps a whole-vault scan cheap.
+        guard ns.length > 0,
+              ns.range(of: "[ ]").location != NSNotFound
+              || ns.range(of: "[x]").location != NSNotFound
+              || ns.range(of: "[X]").location != NSNotFound
+        else { return [] }
         let full = NSRange(location: 0, length: ns.length)
         // The note's fenced-code ranges, computed once rather than re-scanned
         // per matched line. Empty when the note has no fence at all.
@@ -137,7 +145,8 @@ public enum TaskPage {
             let leadCount = rest.prefix(while: { $0 == " " || $0 == "\t" }).count
             let lead = String(rest.prefix(leadCount))
             let body = String(rest.dropFirst(leadCount))
-            let marker = ns.substring(with: match.range(at: 1)) + "[ ]" + lead
+            let box = ns.substring(with: match.range(at: 2))
+            let marker = ns.substring(with: match.range(at: 1)) + box + lead
             let occurrence = seenLine[sourceLine, default: 0]
             seenLine[sourceLine, default: 0] += 1
             let ordinal = tasks.count
@@ -152,19 +161,40 @@ public enum TaskPage {
                 marker: marker,
                 body: body,
                 due: dueDate(on: sourceLine),
+                isCompleted: box != "[ ]",
                 edited: note.modifiedDate
             ))
         }
         return tasks
     }
 
+    /// Only the open ([ ]) task lines — the default the page shows and what the
+    /// "has tasks" checks want.
+    public static func openTasks(in note: Note) -> [OpenTask] {
+        scanTasks(in: note).filter { !$0.isCompleted }
+    }
+
+    /// Open and checked lines both — for the page's "Show completed" mode.
+    public static func allTasks(in note: Note) -> [OpenTask] {
+        scanTasks(in: note)
+    }
+
+    /// The same line with its checkbox flipped: open becomes checked, checked
+    /// becomes open. nil when there's no checkbox to flip.
+    public static func toggledLine(_ line: String) -> String? {
+        if let r = line.range(of: "[ ]") { var c = line; c.replaceSubrange(r, with: "[x]"); return c }
+        if let r = line.range(of: "[x]") { var c = line; c.replaceSubrange(r, with: "[ ]"); return c }
+        if let r = line.range(of: "[X]") { var c = line; c.replaceSubrange(r, with: "[ ]"); return c }
+        return nil
+    }
+
     /// Open lines from `notes`, narrowed by the words and `due:` in the query.
     /// `tag:` and `folder:` are already applied by whoever built `notes`.
     /// Dated lines come first, soonest first. Lines with no date come last.
-    public static func lines(in notes: [Note], query: String) -> [OpenTask] {
+    public static func lines(in notes: [Note], query: String, includeCompleted: Bool = false) -> [OpenTask] {
         let groups = lineFilters(in: query).filter(\.includesTasks)
         guard !groups.isEmpty else { return [] }
-        let matched = notes.flatMap { openTasks(in: $0) }.filter { task in
+        let matched = notes.flatMap { includeCompleted ? allTasks(in: $0) : openTasks(in: $0) }.filter { task in
             groups.contains { matches($0, task: task) }
         }
         return sorted(matched)

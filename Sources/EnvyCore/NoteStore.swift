@@ -731,6 +731,26 @@ public final class NoteStore: ObservableObject {
         return true
     }
 
+    /// Append a new open task to the end of a specific note (the per-note
+    /// task panel's "New task"), rather than the root Tasks note.
+    @discardableResult
+    public func appendTaskLine(toNoteID noteID: String, _ body: String) -> Bool {
+        let cleaned = body
+            .replacingOccurrences(of: "\n", with: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleaned.isEmpty, var note = note(withID: noteID) else { return false }
+        let line = "- [ ] " + cleaned
+        if note.content.isEmpty {
+            note.content = line + "\n"
+        } else if note.content.hasSuffix("\n") {
+            note.content += line + "\n"
+        } else {
+            note.content += "\n" + line + "\n"
+        }
+        save(note)
+        return true
+    }
+
     /// Insert a new task line into `noteID` right after the `occurrence`-th
     /// line equal to `afterLine`. Returns false when that line is gone.
     @discardableResult

@@ -633,6 +633,11 @@ extension ContentView {
         Button("Pop Out") {
             popOutNote(note)
         }
+        if !TaskPage.openTasks(in: note).isEmpty {
+            Button(envAppDelegate?.isNoteTasksPinned(note.id) == true ? "Unpin Note Tasks" : "Pin Note Tasks") {
+                envAppDelegate?.togglePinNoteTasks(for: note.id)
+            }
+        }
         Button("Open in Split") {
             openInSplitPane(note.id)
         }

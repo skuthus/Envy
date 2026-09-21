@@ -14,6 +14,7 @@ struct TaskListPanelView: View {
     @AppStorage("interfaceTextSize") private var interfaceTextSizeRaw = InterfaceTextSize.large.rawValue
 
     @State private var lines: [OpenTask] = []
+    @State private var showCompleted = false
     @State private var generation = 0
     @State private var focusNoteID: String?
     @State private var focusLine: String?
@@ -48,12 +49,15 @@ struct TaskListPanelView: View {
             },
             focusNoteID: focusNoteID,
             focusLine: focusLine,
-            onFocusConsumed: { focusNoteID = nil; focusLine = nil }
+            onFocusConsumed: { focusNoteID = nil; focusLine = nil },
+            showCompleted: $showCompleted
         )
         .environment(\.interfaceFontScale, scale)
         .background(Color(nsColor: theme.resolvedBackgroundColor))
+        .ignoresSafeArea(.container, edges: .top)
         .onAppear { recompute() }
         .onChange(of: store.notes) { _, _ in recompute() }
+        .onChange(of: showCompleted) { _, _ in recompute() }
     }
 
     /// Off the main thread, exactly like the main window's pipeline — a
@@ -62,9 +66,10 @@ struct TaskListPanelView: View {
         generation += 1
         let g = generation
         let snapshot = store.notes
+        let incl = showCompleted
         Task { @MainActor in
             let result = await Task.detached(priority: .userInitiated) {
-                TaskPage.lines(in: snapshot, query: "tasks:")
+                TaskPage.lines(in: snapshot, query: "tasks:", includeCompleted: incl)
             }.value
             guard g == generation else { return }
             lines = result

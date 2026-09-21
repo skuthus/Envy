@@ -27,6 +27,14 @@ struct TaskDocumentView: View {
     let focusNoteID: String?
     let focusLine: String?
     let onFocusConsumed: () -> Void
+    /// One note's tasks only: render flat in document order (no grouping, no
+    /// source chips, no mode toggle) — the per-note pop-out panel.
+    var singleNote: Bool = false
+    /// The hint beside the "New task" field ("Adding to Tasks" by default).
+    var addTaskHint: String = "Adding to Tasks"
+    /// Whether checked tasks are shown too (they're scanned upstream only when
+    /// this is on). The header's toggle drives it; the container recomputes.
+    @Binding var showCompleted: Bool
 
     @Environment(\.interfaceFontScale) private var interfaceFontScale
     @State private var newTaskText = ""
@@ -54,10 +62,16 @@ struct TaskDocumentView: View {
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 0) {
-                header
+                if !singleNote { header }
                 newTaskField
                 if lines.isEmpty {
                     emptyState
+                } else if singleNote {
+                    // Already in document order from openTasks; subtasks indent
+                    // by their own depth, no group header or source chip.
+                    ForEach(lines) { task in
+                        row(task, showSource: false)
+                    }
                 } else if grouping == .byNote {
                     ForEach(groups) { group in
                         section(group)
@@ -80,19 +94,26 @@ struct TaskDocumentView: View {
     // MARK: Chrome
 
     private var header: some View {
-        HStack(alignment: .firstTextBaseline, spacing: Spacing.m) {
-            Text("Open tasks")
-                .font(.system(size: 15 * interfaceFontScale, weight: .bold))
-                .foregroundStyle(Color(nsColor: theme.resolvedTextColor))
-            Text("\(lines.count)")
-                .font(.system(size: 11 * interfaceFontScale))
-                .foregroundStyle(.secondary)
-            Spacer(minLength: Spacing.m)
-            modeButton("By note", grouping: .byNote)
-            dueButton
+        HStack(alignment: .firstTextBaseline, spacing: Spacing.s) {
+            Spacer(minLength: 0)
+            Button { showCompleted.toggle() } label: {
+                HStack(spacing: 3) {
+                    Image(systemName: showCompleted ? "checkmark.square" : "square")
+                        .font(.system(size: 10 * interfaceFontScale, weight: .bold))
+                    Text("Completed")
+                }
+                .font(.system(size: 11 * interfaceFontScale, weight: .semibold))
+                .foregroundStyle(showCompleted ? Color.primary : Color.secondary)
+            }
+            .buttonStyle(.plain)
+            .help("Show completed tasks")
+            if !singleNote {
+                modeButton("By note", grouping: .byNote)
+                dueButton
+            }
         }
         .padding(.horizontal, Spacing.l)
-        .padding(.top, Spacing.l)
+        .padding(.top, Spacing.m)
         .padding(.bottom, Spacing.s)
     }
 
@@ -136,7 +157,7 @@ struct TaskDocumentView: View {
                 .font(.system(size: max(13, theme.resolvedFont.pointSize) * interfaceFontScale))
                 .foregroundStyle(Color(nsColor: theme.resolvedTextColor))
                 .onSubmit(submitNewTask)
-            Text("Adding to Tasks")
+            Text(addTaskHint)
                 .font(.system(size: 11 * interfaceFontScale))
                 .foregroundStyle(.secondary)
                 .fixedSize()
@@ -222,7 +243,8 @@ struct TaskDocumentView: View {
             onAddSubtask: onAddSubtask,
             onAddTaskBelow: onAddTaskBelow,
             autoFocus: task.noteID == focusNoteID && task.sourceLine == focusLine,
-            onFocusConsumed: onFocusConsumed
+            onFocusConsumed: onFocusConsumed,
+            hidesOnComplete: !showCompleted
         )
     }
 
@@ -289,6 +311,9 @@ private struct TaskLineRow: View {
     /// True for a just-created row that should open in edit mode on appear.
     let autoFocus: Bool
     let onFocusConsumed: () -> Void
+    /// When completed tasks are hidden, checking a box makes the row leave; when
+    /// shown, it just flips to checked and stays.
+    let hidesOnComplete: Bool
 
     @State private var draft: String
     /// The line as it currently stands in the note, and which copy it is — the
@@ -316,7 +341,8 @@ private struct TaskLineRow: View {
         onAddSubtask: @escaping (String, String, Int) -> Void,
         onAddTaskBelow: @escaping (String, String, Int) -> Void,
         autoFocus: Bool,
-        onFocusConsumed: @escaping () -> Void
+        onFocusConsumed: @escaping () -> Void,
+        hidesOnComplete: Bool
     ) {
         self.task = task
         self.theme = theme
@@ -331,6 +357,7 @@ private struct TaskLineRow: View {
         self.onAddTaskBelow = onAddTaskBelow
         self.autoFocus = autoFocus
         self.onFocusConsumed = onFocusConsumed
+        self.hidesOnComplete = hidesOnComplete
         _draft = State(initialValue: task.body)
         _liveLine = State(initialValue: task.sourceLine)
         _liveOccurrence = State(initialValue: task.occurrence)
@@ -351,13 +378,21 @@ private struct TaskLineRow: View {
         // box against the words is what reads as aligned.
         HStack(alignment: .center, spacing: Spacing.s) {
             Button(action: finish) {
-                RoundedRectangle(cornerRadius: 3, style: .continuous)
-                    .strokeBorder(Color.secondary, lineWidth: 1.5)
-                    .frame(width: 14, height: 14)
-                    .frame(width: 22, height: 18, alignment: .center)
+                Group {
+                    if task.isCompleted {
+                        Image(systemName: "checkmark.square.fill")
+                            .font(.system(size: 14 * scale))
+                            .foregroundStyle(.secondary)
+                    } else {
+                        RoundedRectangle(cornerRadius: 3, style: .continuous)
+                            .strokeBorder(Color.secondary, lineWidth: 1.5)
+                            .frame(width: 14, height: 14)
+                    }
+                }
+                .frame(width: 22, height: 18, alignment: .center)
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("Mark done")
+            .accessibilityLabel(task.isCompleted ? "Mark not done" : "Mark done")
 
             Group {
                 if editing {
@@ -374,10 +409,12 @@ private struct TaskLineRow: View {
                     } label: {
                         // A placeholder keeps an empty (just-added) task tall
                         // enough to click; contentShape makes the whole width a
-                        // hit target rather than just the glyphs.
-                        (task.body.isEmpty
-                            ? Text("New task").foregroundColor(.secondary).font(.system(size: max(13, theme.resolvedFont.pointSize) * scale))
-                            : styledBody)
+                        // hit target. A completed task reads struck-through.
+                        (task.isCompleted
+                            ? Text(task.body).strikethrough().foregroundColor(.secondary).font(.system(size: max(13, theme.resolvedFont.pointSize) * scale))
+                            : (task.body.isEmpty
+                                ? Text("New task").foregroundColor(.secondary).font(.system(size: max(13, theme.resolvedFont.pointSize) * scale))
+                                : styledBody))
                             .lineLimit(1)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .contentShape(Rectangle())
@@ -444,12 +481,16 @@ private struct TaskLineRow: View {
         }
     }
 
-    /// Save the words, then check the box, so a half-typed edit is not lost.
+    /// Save the words, then flip the checkbox (the handler toggles [ ]↔[x]), so
+    /// a half-typed edit is not lost. Checking an open task while completed are
+    /// hidden makes the row leave; otherwise it stays (now checked/unchecked).
     private func finish() {
         saveTask?.cancel()
         if editing { commitNow() }
         onComplete(task.noteID, liveLine, liveOccurrence)
-        withAnimation(.easeInOut(duration: 0.12)) { done = true }
+        if !task.isCompleted, hidesOnComplete {
+            withAnimation(.easeInOut(duration: 0.12)) { done = true }
+        }
     }
 
     private func endEditing() {

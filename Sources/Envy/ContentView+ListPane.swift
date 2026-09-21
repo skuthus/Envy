@@ -1185,8 +1185,8 @@ extension ContentView {
     /// Check the box on one open line, matched the same way. The line then
     /// leaves this page on the next rebuild.
     func completeTaskLine(noteID: String, line: String, occurrence: Int) {
-        guard let done = TaskPage.completedLine(line) else { return }
-        store.rewriteTaskLine(noteID: noteID, originalLine: line, occurrence: occurrence, with: done)
+        guard let toggled = TaskPage.toggledLine(line) else { return }
+        store.rewriteTaskLine(noteID: noteID, originalLine: line, occurrence: occurrence, with: toggled)
     }
 
     /// Add an empty subtask into the note, one level indented, right after the
@@ -1237,7 +1237,8 @@ extension ContentView {
                 onAddTaskBelow: addTaskBelow,
                 focusNoteID: taskFocusNoteID,
                 focusLine: taskFocusLine,
-                onFocusConsumed: { taskFocusNoteID = nil; taskFocusLine = nil }
+                onFocusConsumed: { taskFocusNoteID = nil; taskFocusLine = nil },
+                showCompleted: $showCompletedTasks
             )
         }
         // The task lines are computed by the search pipeline, whose trigger
@@ -1249,6 +1250,7 @@ extension ContentView {
         // here, so the list being gone can't strand it. No debounce — this
         // only fires in task mode, and .task(id:) supersedes an in-flight run.
         .task(id: query) { await recomputeFilteredNotes() }
+        .onChange(of: showCompletedTasks) { _, _ in Task { await recomputeFilteredNotes() } }
     }
 
     /// Note count per folder as a drill-in counts them: the folder's own

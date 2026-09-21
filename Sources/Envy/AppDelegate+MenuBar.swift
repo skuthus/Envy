@@ -312,18 +312,17 @@ extension AppDelegate {
         guard let event = NSApp.currentEvent else { return }
         if event.type == .rightMouseUp {
             showStatusMenu()
-        } else if taskListPinned {
-            togglePinnedTaskPanel()
+            return
+        }
+        // Exactly one thing is pinned to the eye (a note's tasks / the task
+        // list, or a whole note — mutually exclusive); the click toggles its
+        // panel. Nothing pinned: toggle the window as before.
+        if !menuBarTaskPin.isEmpty {
+            toggleTaskPinPanel()
         } else if let pinnedNoteURL {
             togglePinnedNotePanel(for: pinnedNoteURL)
         } else if let window = resolveMainWindow(), window.isVisible,
                   window.styleMask.contains(.fullScreen) {
-            // In full screen the toggle's hide half is wrong: ordering out a
-            // full-screen window strands its empty space, and "hide" isn't
-            // what a click up there means mid-full-screen anyway. Just make
-            // sure Envy is front (jumping to its space if the click came
-            // from another one). The summon hotkey keeps its toggle — it's
-            // the deliberate show/hide gesture; this is a mouse reach.
             summonMainWindow()
         } else {
             toggleWindow()
@@ -347,17 +346,18 @@ extension AppDelegate {
         templateParent.submenu = templateSubmenu()
         menu.addItem(templateParent)
 
-        let unpinNote = NSMenuItem(title: "Unpin Note", action: #selector(unpinNoteFromStatusMenu), keyEquivalent: "")
-        unpinNote.target = self
-        unpinNote.isEnabled = pinnedNoteURL != nil
-        menu.addItem(unpinNote)
-
-        // Pins the task list to the icon: while checked, a click opens the
-        // full task view instead of toggling the window or a pinned note.
-        let pinTaskList = NSMenuItem(title: "Pin Task List", action: #selector(togglePinTaskListFromStatusMenu), keyEquivalent: "")
+        // Only one thing is ever pinned to the eye — a note, a note's tasks, or
+        // the task list — so a single "Unpin Item" clears whatever it is. "Pin
+        // Task List" is the one pin action here (notes are pinned from the list).
+        let pinTaskList = NSMenuItem(title: "Pin Task List", action: #selector(pinTaskListFromStatusMenu), keyEquivalent: "")
         pinTaskList.target = self
-        pinTaskList.state = taskListPinned ? .on : .off
+        pinTaskList.state = menuBarTaskPin == "list" ? .on : .off
         menu.addItem(pinTaskList)
+
+        let unpinItem = NSMenuItem(title: "Unpin Item", action: #selector(unpinItemFromStatusMenu), keyEquivalent: "")
+        unpinItem.target = self
+        unpinItem.isEnabled = pinnedNoteURL != nil || !menuBarTaskPin.isEmpty
+        menu.addItem(unpinItem)
 
         menu.addItem(.separator())
 
@@ -400,8 +400,14 @@ extension AppDelegate {
     }
 
     @MainActor
-    @objc private func unpinNoteFromStatusMenu() {
-        unpinMenuBarNote()
+    @objc private func pinTaskListFromStatusMenu() {
+        pinTaskList()
+    }
+
+    @MainActor
+    @objc private func unpinItemFromStatusMenu() {
+        // Whatever is pinned: a task pin (list or a note's tasks) or a note.
+        if !menuBarTaskPin.isEmpty { clearTaskPin() } else { unpinMenuBarNote() }
     }
 
     /// A NoteStore scoped to whatever folders are actually configured, used
@@ -461,21 +467,12 @@ extension AppDelegate {
     /// "make a pinned note" and "start typing in it."
     @MainActor
     private func pinToMenuBarAndShow(_ note: Note) {
+        clearTaskPin()
         UserDefaults.standard.set(note.id, forKey: "menuBarPinnedNotePath")
         showPinnedNotePanel(for: note.url)
     }
 
-    /// Whether the menu bar icon opens the task list on click.
-    var taskListPinned: Bool { UserDefaults.standard.bool(forKey: "taskListPinned") }
 
-    @MainActor
-    @objc private func togglePinTaskListFromStatusMenu() {
-        let now = !taskListPinned
-        UserDefaults.standard.set(now, forKey: "taskListPinned")
-        // Pinning it also opens it, so there's no extra click between "pin"
-        // and "see it" — same as New Pinned Note. Unpinning closes it.
-        if now { showPinnedTaskPanel() } else { pinnedTaskPanel?.close() }
-    }
 
     @objc private func openSettingsFromStatusMenu() {
         // The raw showSettingsWindow: selector send (a common trick for

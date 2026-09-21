@@ -122,22 +122,78 @@ extension AppDelegate {
         updateStatusItemIcon()
     }
 
-    /// The task-list twin of togglePinnedNotePanel: a menu-bar click with the
-    /// task list pinned opens the miniature panel, or closes it if it's open.
+    // MARK: - Task pin (unified: the whole-vault task list OR one note's tasks)
+    //
+    // Exactly one thing is pinned to the eye at a time. The whole-note pin
+    // (menuBarPinnedNotePath) and this task pin are mutually exclusive — setting
+    // either clears the other — so pinning a note, a note's tasks, or the task
+    // list all work identically and never tangle.
+
+    /// "" (nothing), "list" (whole-vault task list), or a note id (that note's
+    /// tasks). The single source of truth for the task side of the eye pin.
+    var menuBarTaskPin: String {
+        get { UserDefaults.standard.string(forKey: "menuBarTaskPin") ?? "" }
+        set { UserDefaults.standard.set(newValue, forKey: "menuBarTaskPin") }
+    }
+
+    var taskListPinned: Bool { menuBarTaskPin == "list" }
+    func isNoteTasksPinned(_ noteID: String) -> Bool { menuBarTaskPin == noteID }
+
+    /// Clears the task pin and closes its panel — both to unpin and to make
+    /// room when a whole note is pinned instead.
     @MainActor
-    func togglePinnedTaskPanel() {
+    func clearTaskPin() {
+        menuBarTaskPin = ""
+        pinnedTaskPanel?.close()
+    }
+
+    /// Clears the whole-note pin — the task pins call this so the two can't
+    /// both be set at once. (unpinMenuBarNote is the user-facing unpin.)
+    @MainActor
+    func clearNotePinForTaskPin() {
+        UserDefaults.standard.set("", forKey: "menuBarPinnedNotePath")
+        pinnedNotePanel?.close()
+    }
+
+    @MainActor
+    func pinTaskList() {
+        clearNotePinForTaskPin()
+        menuBarTaskPin = "list"
+        showTaskPinPanel()
+    }
+
+    /// Note-list "Pin/Unpin Note Tasks" — toggles this note's tasks as the eye's
+    /// pinned item, exactly the way Pin to Menu Bar toggles the whole note.
+    @MainActor
+    func togglePinNoteTasks(for noteID: String) {
+        if menuBarTaskPin == noteID {
+            clearTaskPin()
+        } else {
+            clearNotePinForTaskPin()
+            menuBarTaskPin = noteID
+            showTaskPinPanel()
+        }
+    }
+
+    /// The eye-click handler for a task pin: open the panel, or close it if
+    /// already open — the same toggle the pinned note gets.
+    @MainActor
+    func toggleTaskPinPanel() {
         if let panel = pinnedTaskPanel, panel.isVisible {
             panel.close()
             return
         }
-        showPinnedTaskPanel()
+        showTaskPinPanel()
     }
 
-    /// The miniature floating task list, sharing the main window's live store
-    /// (see AppDelegate.contentStore) so it needs no vault load of its own and
-    /// stays in sync. Falls back to opening the app if the store isn't up yet.
+    /// The one task-pin panel, hosting whichever view the pin names — the
+    /// whole-vault list or a single note's tasks. Anchored under the eye and
+    /// sized from one shared memory, exactly like the pinned-note panel; shares
+    /// the main window's live store so there's no second vault load.
     @MainActor
-    func showPinnedTaskPanel() {
+    func showTaskPinPanel() {
+        let pin = menuBarTaskPin
+        guard !pin.isEmpty else { return }
         pinnedTaskPanel?.close()
         guard let store = contentStore else {
             activateAndShowWindow()
@@ -151,7 +207,6 @@ extension AppDelegate {
             width: width > 0 ? width : defaultPinnedTaskPanelSize.width,
             height: height > 0 ? height : defaultPinnedTaskPanelSize.height
         )
-
         let panel = NSPanel(
             contentRect: NSRect(origin: .zero, size: size),
             styleMask: [.titled, .resizable, .nonactivatingPanel, .fullSizeContentView],
@@ -168,15 +223,17 @@ extension AppDelegate {
         panel.hidesOnDeactivate = false
         panel.isReleasedWhenClosed = false
         panel.delegate = self
-        panel.minSize = NSSize(width: 260, height: 200)
-        panel.contentViewController = NSHostingController(rootView: TaskListPanelView(
-            store: store,
-            onOpenNote: { [weak self] url in
-                self?.pinnedTaskPanel?.close()
-                self?.activateAndShowWindow()
-                NotificationCenter.default.post(name: .externalNoteOpenRequested, object: url)
-            }
-        ))
+        panel.minSize = NSSize(width: 240, height: 180)
+
+        let openInApp: (URL) -> Void = { [weak self] url in
+            self?.pinnedTaskPanel?.close()
+            self?.activateAndShowWindow()
+            NotificationCenter.default.post(name: .externalNoteOpenRequested, object: url)
+        }
+        let root: AnyView = pin == "list"
+            ? AnyView(TaskListPanelView(store: store, onOpenNote: openInApp))
+            : AnyView(NoteTaskPanelView(store: store, noteID: pin, onOpenNote: openInApp))
+        panel.contentViewController = NSHostingController(rootView: root)
 
         let buttonFrameOnScreen = buttonWindow.convertToScreen(button.convert(button.bounds, to: nil))
         var origin = NSPoint(x: buttonFrameOnScreen.midX - size.width / 2, y: buttonFrameOnScreen.minY - size.height - 4)
@@ -190,32 +247,21 @@ extension AppDelegate {
         updateStatusItemIcon()
     }
 
-    /// Catches every way the pinned note panel can close — the explicit
-    /// toggle-closed path, the outside-click auto-dismiss in
-    /// windowDidResignKey, and the "open in app" button's close() — in one
-    /// place, rather than remembering to call updateStatusItemIcon()
-    /// separately at each call site.
+    /// Catches every way a pinned panel closes in one place, so the eye icon
+    /// settles without each call site remembering to.
     func windowWillClose(_ notification: Notification) {
         guard let window = notification.object as? NSWindow,
               window === pinnedNotePanel || window === pinnedTaskPanel else { return }
-        // Not a plain updateStatusItemIcon() call — windowWillClose fires
-        // before the panel actually finishes closing, so its own isVisible
-        // still reads true at this exact moment, which meant the squint
-        // icon never reverted to closed. Computed directly instead of
-        // through the panel's own (still-stale) visibility.
+        // windowWillClose fires before the panel finishes closing, so its own
+        // isVisible still reads true here — settle from the main window's state
+        // directly instead.
         settleStatusIconAfterPinnedPanelClose()
     }
 
-    /// Auto-dismisses the pinned-note panel on any outside click — the
-    /// hand-rolled replacement for NSPopover's own .transient behavior.
-    /// Guarded to only act on the panel itself since AppDelegate is also
-    /// the main window's delegate, and this method is new (not overriding
-    /// anything the main window relied on), but better safe than sorry.
-    /// Skipped entirely while the panel's own pin button is on — that's the
-    /// whole point of it, staying open (and, via .floating level set when
-    /// the panel was created, on top of other windows) instead of closing
-    /// the moment focus moves elsewhere. Still closeable any time by
-    /// clicking the menu bar icon again, pinned or not.
+    /// Auto-dismisses a pinned panel (note or task) on any outside click — the
+    /// hand-rolled stand-in for NSPopover's .transient. The note panel honors
+    /// its keep-open pin; the task panel always dismisses. Either reopens with
+    /// a click on the eye.
     func windowDidResignKey(_ notification: Notification) {
         guard let window = notification.object as? NSWindow else { return }
         if window === pinnedTaskPanel {
@@ -227,12 +273,7 @@ extension AppDelegate {
         window.close()
     }
 
-    /// Persists the user's chosen size so the panel reopens at whatever
-    /// size they last left it, rather than always resetting back to the
-    /// default 320x400. windowDidEndLiveResize (fires once, after a resize
-    /// drag finishes) rather than windowDidResize (fires continuously
-    /// during the drag) — no reason to hit UserDefaults dozens of times for
-    /// one resize gesture.
+    /// Persists each panel's chosen size so it reopens the size it was left.
     func windowDidEndLiveResize(_ notification: Notification) {
         guard let window = notification.object as? NSWindow else { return }
         if window === pinnedTaskPanel {

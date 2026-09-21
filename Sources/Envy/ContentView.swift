@@ -44,7 +44,7 @@ enum NoteSortField: String {
 // top-level body; everything else lives with its pane/concern.
 struct ContentView: View {
     @Environment(\.openSettings) var openSettings
-    @Environment(\.appDelegate) private var envAppDelegate
+    @Environment(\.appDelegate) var envAppDelegate
     @Environment(\.openWindow) var openWindow
     @StateObject var store = NoteStore(
         directory: IndexPreference.load(),
@@ -312,6 +312,8 @@ struct ContentView: View {
     /// off the main thread, so the editor page does not rescan on every redraw.
     @State var taskDocumentLinesCache: [OpenTask] = []
     /// The note and line a task click should land on. Cleared by opening anything else.
+    /// Whether the task views include completed tasks (the "Completed" toggle).
+    @State var showCompletedTasks = false
     @State var taskRevealNoteID: String?
     @State var taskRevealLine: String?
     /// A task line just created via the row menu, to drop straight into edit
@@ -424,9 +426,10 @@ struct ContentView: View {
         let imageText = OCRIndex.shared.searchText
         let foldImageText = searchImageText
         let inbox = inboxEnabled
+        let inclCompleted = showCompletedTasks
         let result = await Task.detached(priority: .userInitiated) {
             let search = Self.computeSearch(notes: notesSnapshot, query: querySnapshot, pinnedIDs: pinnedSnapshot, sortField: field, sortAscending: ascending, showInbox: showInbox, inboxDirectory: inboxDirectory, imageText: imageText, foldImageText: foldImageText, inboxEnabled: inbox)
-            let tasks = TaskPage.isTaskQuery(querySnapshot) ? TaskPage.lines(in: search.notes, query: querySnapshot) : []
+            let tasks = TaskPage.isTaskQuery(querySnapshot) ? TaskPage.lines(in: search.notes, query: querySnapshot, includeCompleted: inclCompleted) : []
             return (search: search, tasks: tasks)
         }.value
         guard generation == searchComputeGeneration else { return }
@@ -459,7 +462,7 @@ struct ContentView: View {
         queryHasExactTitleMatch = result.hasExactTitleMatch
         fleetingCountCache = result.fleetingCount
         inboxNoteIDsCache = result.inboxNoteIDs
-        taskDocumentLinesCache = TaskPage.isTaskQuery(query) ? TaskPage.lines(in: result.notes, query: query) : []
+        taskDocumentLinesCache = TaskPage.isTaskQuery(query) ? TaskPage.lines(in: result.notes, query: query, includeCompleted: showCompletedTasks) : []
     }
 
     /// Titles of every note, newest-edited first — feeds the editors'

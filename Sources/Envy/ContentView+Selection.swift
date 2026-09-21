@@ -200,7 +200,14 @@ extension ContentView {
     /// AeroSpace's own scratchpad concept, not an ever-growing list like the
     /// regular note-list pinning above.
     func toggleMenuBarPin(_ note: Note) {
-        menuBarPinnedNotePath = isMenuBarPinned(note) ? "" : note.id
+        if isMenuBarPinned(note) {
+            menuBarPinnedNotePath = ""
+        } else {
+            // One pinned thing at a time: pinning the whole note drops any
+            // task pin (see AppDelegate.clearTaskPin).
+            envAppDelegate?.clearTaskPin()
+            menuBarPinnedNotePath = note.id
+        }
     }
 
     // MARK: - Focus
