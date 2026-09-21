@@ -379,10 +379,14 @@ private struct TaskLineRow: View {
                 Button {
                     onOpenNote(task.noteID, liveLine)
                 } label: {
-                    Text(task.noteTitle.isEmpty ? "note" : task.noteTitle)
+                    // A short fixed chip, not the note title — the title's
+                    // length was crowding out the due date at the end of the
+                    // task text. The note is still named on hover.
+                    Text("note →")
                         .font(.system(size: 10 * scale))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
+                        .fixedSize()
                         .padding(.horizontal, Spacing.s)
                         .padding(.vertical, 1)
                         .background(Capsule().fill(Color.secondary.opacity(0.12)))
