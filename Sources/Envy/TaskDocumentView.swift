@@ -308,7 +308,11 @@ private struct TaskLineRow: View {
     }
 
     private var rowContent: some View {
-        HStack(alignment: .firstTextBaseline, spacing: Spacing.s) {
+        // Center, not .firstTextBaseline: the checkbox is a Shape with no text
+        // baseline, so baseline alignment pins its bottom edge to the text
+        // baseline and it floats high. Rows are single-line, so centering the
+        // box against the words is what reads as aligned.
+        HStack(alignment: .center, spacing: Spacing.s) {
             Button(action: finish) {
                 RoundedRectangle(cornerRadius: 3, style: .continuous)
                     .strokeBorder(Color.secondary, lineWidth: 1.5)
