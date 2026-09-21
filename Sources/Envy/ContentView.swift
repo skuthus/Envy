@@ -105,6 +105,10 @@ struct ContentView: View {
     /// onChange to skip the debounced pipeline that would redo the same
     /// work. Consumed (reset) by that onChange.
     @State var suppressNextQueryDebounce = false
+    /// Set by a note-row click right before it changes selectedID, so the
+    /// list's selectedID onChange skips its ScrollViewProxy.scrollTo — the
+    /// clicked row is already on screen. Consumed (reset) by that onChange.
+    @State var suppressNextSelectionScroll = false
     @State var trashSweepTask: Task<Void, Never>?
     @FocusState var focusedField: FocusField?
     @AppStorage("layoutMode") var layoutModeRaw = LayoutMode.vertical.rawValue

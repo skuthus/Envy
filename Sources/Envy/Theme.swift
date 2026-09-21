@@ -144,7 +144,7 @@ extension Theme: RawRepresentable {
     // the stdlib's RawRepresentable-based Encodable conformance calls back into
     // `rawValue` to encode `self`. Routing through this plain Codable payload
     // (which isn't itself RawRepresentable) breaks that cycle.
-    private struct Payload: Codable {
+    private struct Payload: Codable, Equatable {
         // Only ever read, never written anymore — themes saved before the
         // nil-means-system unification carried this flag, and decoding
         // needs it to tell a real color choice apart from a snapshot (see
@@ -226,8 +226,11 @@ extension Theme: RawRepresentable {
         self = theme
     }
 
-    var rawValue: String {
-        let payload = Payload(
+    /// Every persisted field in one value — the single source of truth for
+    /// both `rawValue` and `==`, so the two can never disagree about what
+    /// makes two themes "the same."
+    private var payload: Payload {
+        Payload(
             isCustom: nil,
             fontName: fontName,
             fontSize: fontSize,
@@ -255,9 +258,24 @@ extension Theme: RawRepresentable {
             noteTitleBarTextColor: noteTitleBarTextColor,
             selectedTextColor: selectedTextColor
         )
+    }
+
+    var rawValue: String {
         guard let data = try? JSONEncoder().encode(payload),
               let string = String(data: data, encoding: .utf8) else { return "{}" }
         return string
+    }
+
+    /// Memberwise on purpose. Without this, Theme's `==` resolved to the
+    /// stdlib's RawRepresentable default, which compares `rawValue`s — a
+    /// full JSONEncoder pass per side, per comparison. SwiftUI compares the
+    /// theme handed to every note row on every list diff and on every
+    /// ScrollViewProxy.scrollTo scan, so at a few thousand notes that was
+    /// ~30% of all main-thread time during a note switch (measured with
+    /// `sample`). Same semantics as before: two themes are equal exactly
+    /// when they would persist identically.
+    static func == (lhs: Theme, rhs: Theme) -> Bool {
+        lhs.payload == rhs.payload
     }
 }
 

@@ -153,22 +153,35 @@ extension ContentView {
                             matchingFolderRows
                         } else {
                             // The pins lifted into the sticky strip above are
-                            // skipped here so they don't show twice. Skipping in
-                            // place (a 3-element Set lookup per row) keeps the
-                            // ForEach over the original, stable filteredNotes —
-                            // no per-render array copy, which is what a
-                            // dropFirst/filter would cost on a large vault.
-                            let stickyIDs = stickyPinnedIDs
-                            ForEach(filteredNotes) { note in
-                                if !stickyIDs.contains(note.id) {
-                                    noteRow(for: note)
-                                }
+                            // dropped here so they don't show twice. They're
+                            // always the leading run of filteredNotes, so this
+                            // is an O(1) slice, no copy — and, crucially, the
+                            // body is unconditional: one view per item. An
+                            // `if` inside the ForEach (the previous approach)
+                            // made every child a maybe-empty conditional, so
+                            // SwiftUI could not count rows without evaluating
+                            // each one, and ScrollViewProxy.scrollTo — which
+                            // locates its target by walking the ForEach —
+                            // then built every row up to the target on every
+                            // selection change: the dominant main-thread cost
+                            // at a few thousand notes (measured with `sample`).
+                            ForEach(filteredNotes.dropFirst(stickyPinnedNotes.count)) { note in
+                                noteRow(for: note)
                             }
                         }
                     }
                     .padding(.horizontal, 4)
                 }
                 .onChange(of: selectedID) { _, newValue in
+                    // A row the user just clicked is on screen by definition,
+                    // so scrolling to it is pure cost — and not a small one:
+                    // scrollTo locates its target by walking the ForEach from
+                    // the top. Only selections made elsewhere (interlinks,
+                    // arrow keys, search) need the list to follow.
+                    if suppressNextSelectionScroll {
+                        suppressNextSelectionScroll = false
+                        return
+                    }
                     if let newValue {
                         proxy.scrollTo(newValue)
                     }
@@ -344,13 +357,6 @@ extension ContentView {
         return Array(filteredNotes.prefix(while: { isPinned($0) }).prefix(3))
     }
 
-    /// The ids of the pins shown in the sticky strip, so the scroll list can
-    /// skip them without copying the array. At most three, so building and
-    /// probing this Set is trivial.
-    var stickyPinnedIDs: Set<String> {
-        Set(stickyPinnedNotes.map(\.id))
-    }
-
     /// The always-visible pinned block: the same rows the scroll list uses,
     /// lifted into the fixed chrome with a quiet "Pinned" label and a divider
     /// so it reads as its own zone rather than three rows that happen to stick.
@@ -382,11 +388,19 @@ extension ContentView {
             ))
             .contentShape(Rectangle())
             .onTapGesture {
+                // The clicked row is visible, so the list needn't scroll to it
+                // (see the selectedID onChange in listPaneBody). Only armed
+                // when the primary selection will actually change — otherwise
+                // onChange never fires to consume the flag and it would
+                // swallow the next real jump. ⌘-click can demote the primary
+                // to some other selected row, so it keeps the scroll.
                 if NSEvent.modifierFlags.contains(.shift) {
+                    suppressNextSelectionScroll = selectedID != note.id
                     selectRange(to: note)
                 } else if NSEvent.modifierFlags.contains(.command) {
                     toggleMultiSelect(note)
                 } else {
+                    suppressNextSelectionScroll = selectedID != note.id
                     selectSingle(note)
                 }
             }
