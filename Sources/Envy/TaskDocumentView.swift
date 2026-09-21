@@ -89,18 +89,7 @@ struct TaskDocumentView: View {
                 .foregroundStyle(.secondary)
             Spacer(minLength: Spacing.m)
             modeButton("By note", grouping: .byNote)
-            modeButton("By due", grouping: .byDue)
-            if grouping == .byDue {
-                Button {
-                    dueAscending.toggle()
-                } label: {
-                    Image(systemName: dueAscending ? "chevron.up" : "chevron.down")
-                        .font(.system(size: 9 * interfaceFontScale, weight: .bold))
-                        .foregroundStyle(.secondary)
-                }
-                .buttonStyle(.plain)
-                .help(dueAscending ? "Soonest first" : "Latest first")
-            }
+            dueButton
         }
         .padding(.horizontal, Spacing.l)
         .padding(.top, Spacing.l)
@@ -114,6 +103,29 @@ struct TaskDocumentView: View {
                 .foregroundStyle(grouping == value ? Color.primary : Color.secondary)
         }
         .buttonStyle(.plain)
+        .padding(.leading, Spacing.s)
+    }
+
+    /// Clicking "By due" switches into due order; clicking it again flips the
+    /// direction (soonest ↔ latest), so one control both selects and sorts.
+    private var dueButton: some View {
+        Button {
+            if grouping == .byDue { dueAscending.toggle() } else { grouping = .byDue }
+        } label: {
+            HStack(spacing: 3) {
+                Text("By due")
+                if grouping == .byDue {
+                    Image(systemName: dueAscending ? "chevron.up" : "chevron.down")
+                        .font(.system(size: 9 * interfaceFontScale, weight: .bold))
+                }
+            }
+            .font(.system(size: 11 * interfaceFontScale, weight: .semibold))
+            .foregroundStyle(grouping == .byDue ? Color.primary : Color.secondary)
+        }
+        .buttonStyle(.plain)
+        .help(grouping == .byDue
+              ? (dueAscending ? "Soonest first — click to flip" : "Latest first — click to flip")
+              : "Sort by due date")
         .padding(.leading, Spacing.s)
     }
 
