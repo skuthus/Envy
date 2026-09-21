@@ -1189,6 +1189,26 @@ extension ContentView {
         store.rewriteTaskLine(noteID: noteID, originalLine: line, occurrence: occurrence, with: done)
     }
 
+    /// Add an empty subtask into the note, one level indented, right after the
+    /// selected task line, and focus it. It appears on the next rebuild.
+    func addSubtask(noteID: String, afterLine: String, occurrence: Int) {
+        let child = TaskPage.subtaskLine(under: afterLine)
+        if store.insertTaskLine(noteID: noteID, afterLine: afterLine, occurrence: occurrence, newLine: child) {
+            taskFocusNoteID = noteID
+            taskFocusLine = child
+        }
+    }
+
+    /// Add an empty task at the same level, right after the selected task line,
+    /// and focus it — a sibling, not a child.
+    func addTaskBelow(noteID: String, afterLine: String, occurrence: Int) {
+        let sibling = TaskPage.siblingLine(of: afterLine)
+        if store.insertTaskLine(noteID: noteID, afterLine: afterLine, occurrence: occurrence, newLine: sibling) {
+            taskFocusNoteID = noteID
+            taskFocusLine = sibling
+        }
+    }
+
     /// Leave the task page and open the note the line came from, on that line.
     func openTaskSource(_ noteID: String, line: String) {
         taskRevealNoteID = noteID
@@ -1212,7 +1232,12 @@ extension ContentView {
                 onCommit: commitTaskLine,
                 onComplete: completeTaskLine,
                 onOpenNote: openTaskSource,
-                onAddTask: { _ = store.appendTaskLine($0) }
+                onAddTask: { _ = store.appendTaskLine($0) },
+                onAddSubtask: addSubtask,
+                onAddTaskBelow: addTaskBelow,
+                focusNoteID: taskFocusNoteID,
+                focusLine: taskFocusLine,
+                onFocusConsumed: { taskFocusNoteID = nil; taskFocusLine = nil }
             )
         }
         // The task lines are computed by the search pipeline, whose trigger

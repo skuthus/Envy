@@ -313,6 +313,10 @@ struct ContentView: View {
     /// The note and line a task click should land on. Cleared by opening anything else.
     @State var taskRevealNoteID: String?
     @State var taskRevealLine: String?
+    /// A task line just created via the row menu, to drop straight into edit
+    /// mode when it appears. Cleared by the row that consumes it.
+    @State var taskFocusNoteID: String?
+    @State var taskFocusLine: String?
 
     var filteredNotes: [Note] { filteredNotesCache }
 

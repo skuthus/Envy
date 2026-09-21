@@ -2380,6 +2380,20 @@ struct SelfCheck {
             check("task page: checking a box writes [x] over the first [ ]",
                   TaskPage.completedLine("- [ ] Call the dentist") == "- [x] Call the dentist")
 
+            check("task page: a subtask nests 4 spaces under a top-level parent",
+                  TaskPage.subtaskLine(under: "- [ ] Parent") == "    - [ ] ")
+            check("task page: a subtask nests one level under an indented parent",
+                  TaskPage.subtaskLine(under: "    * [ ] Child") == "        * [ ] ")
+            check("task page: a sibling task keeps the parent's level and bullet",
+                  TaskPage.siblingLine(of: "    * [ ] Child") == "    * [ ] ")
+            let inserted = TaskPage.insertingLine(after: "- [ ] Call the dentist", occurrence: 0, newLine: "    - [ ] Ask about mornings", in: home.content)
+            check("task page: a subtask lands on the line after its parent",
+                  inserted?.contains("- [ ] Call the dentist\n    - [ ] Ask about mornings\n") == true)
+            let insertedSecond = TaskPage.insertingLine(after: "- [ ] Call the dentist", occurrence: 1, newLine: "    - [ ] second", in: home.content)
+            check("task page: the chosen occurrence is the one a subtask follows",
+                  (insertedSecond?.hasSuffix("- [ ] Call the dentist\n    - [ ] second") == true)
+                  || (insertedSecond?.contains("- [ ] Call the dentist\n    - [ ] second\n") == true))
+
             let store = await makeTempStore()
             var note = store.create(title: "Chores")
             note.content = "- [ ] one\n- [ ] one\n"
@@ -2410,6 +2424,11 @@ struct SelfCheck {
             let after = store.note(withID: note.id)?.content ?? ""
             check("task page: rewrite checks only the second copy",
                   wrote && after == "- [ ] one\n- [x] one\n")
+
+            let insertedOK = store.insertTaskLine(noteID: note.id, afterLine: "- [ ] one", occurrence: 0, newLine: "    - [ ] child")
+            let afterInsert = store.note(withID: note.id)?.content ?? ""
+            check("task page: insertTaskLine nests a child under the first copy",
+                  insertedOK && afterInsert == "- [ ] one\n    - [ ] child\n- [x] one\n")
         }
 
         print("")

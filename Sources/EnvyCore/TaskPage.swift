@@ -219,6 +219,76 @@ public enum TaskPage {
         return copy
     }
 
+    /// The leading whitespace and bullet ("- ", "* ", "+ ", or "") of a task
+    /// line, so a new sibling or child can copy them.
+    private static func leadAndBullet(of line: String) -> (lead: String, bullet: String) {
+        let ns = line as NSString
+        var i = 0
+        while i < ns.length {
+            let c = ns.character(at: i)
+            if c == 32 || c == 9 { i += 1 } else { break }   // space or tab
+        }
+        let lead = ns.substring(to: i)
+        var bullet = ""
+        if i < ns.length {
+            let c = ns.character(at: i)
+            if c == 45 || c == 42 || c == 43 { bullet = String(UnicodeScalar(c)!) + " " }  // - * +
+        }
+        return (lead, bullet)
+    }
+
+    /// The empty child task line to add under `parent`: one 4-space level
+    /// deeper (the editor's own list-indent unit), carrying the parent's bullet
+    /// style. Body is left empty for the caller to fill in.
+    public static func subtaskLine(under parent: String) -> String {
+        let p = leadAndBullet(of: parent)
+        return p.lead + "    " + p.bullet + "[ ] "
+    }
+
+    /// The empty sibling task line to add beside `sibling`: same indentation
+    /// and bullet, empty body.
+    public static func siblingLine(of sibling: String) -> String {
+        let p = leadAndBullet(of: sibling)
+        return p.lead + p.bullet + "[ ] "
+    }
+
+    /// Insert `newLine` as its own line immediately after the `occurrence`-th
+    /// line equal to `original`. Returns nil when that line isn't there.
+    public static func insertingLine(
+        after original: String,
+        occurrence: Int,
+        newLine: String,
+        in content: String
+    ) -> String? {
+        let ns = content as NSString
+        var location = 0
+        var seen = 0
+        while location < ns.length {
+            let lineRange = ns.lineRange(for: NSRange(location: location, length: 0))
+            var stripped = ns.substring(with: lineRange)
+            let ending: String
+            if stripped.hasSuffix("\r\n") { ending = "\r\n"; stripped.removeLast(2) }
+            else if stripped.hasSuffix("\n") { ending = "\n"; stripped.removeLast() }
+            else if stripped.hasSuffix("\r") { ending = "\r"; stripped.removeLast() }
+            else { ending = "" }
+            if stripped == original {
+                if seen == occurrence {
+                    let insertAt = NSMaxRange(lineRange)
+                    // If the parent is the final line with no newline, terminate
+                    // it before adding the child; otherwise slot the child in
+                    // right after the parent's own line ending.
+                    let insertion = ending.isEmpty ? "\n" + newLine + "\n" : newLine + ending
+                    return ns.replacingCharacters(in: NSRange(location: insertAt, length: 0), with: insertion)
+                }
+                seen += 1
+            }
+            let next = NSMaxRange(lineRange)
+            if next <= location { return nil }
+            location = next
+        }
+        return nil
+    }
+
     private static func dueDate(on line: String) -> Date? {
         guard (line as NSString).range(of: "@").location != NSNotFound else { return nil }
         for token in MarkdownSemantics.dueTokenRanges(in: line) where !token.isCrossedOut {

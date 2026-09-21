@@ -19,6 +19,14 @@ struct TaskDocumentView: View {
     let onComplete: (String, String, Int) -> Void
     let onOpenNote: (String, String) -> Void
     let onAddTask: (String) -> Void
+    /// (noteID, the line to nest under, occurrence).
+    let onAddSubtask: (String, String, Int) -> Void
+    /// (noteID, the line to sit below, occurrence) — a sibling, not a child.
+    let onAddTaskBelow: (String, String, Int) -> Void
+    /// A just-created line to open in edit mode when its row appears.
+    let focusNoteID: String?
+    let focusLine: String?
+    let onFocusConsumed: () -> Void
 
     @Environment(\.interfaceFontScale) private var interfaceFontScale
     @State private var newTaskText = ""
@@ -198,7 +206,11 @@ struct TaskDocumentView: View {
             showSource: showSource,
             onCommit: onCommit,
             onComplete: onComplete,
-            onOpenNote: onOpenNote
+            onOpenNote: onOpenNote,
+            onAddSubtask: onAddSubtask,
+            onAddTaskBelow: onAddTaskBelow,
+            autoFocus: task.noteID == focusNoteID && task.sourceLine == focusLine,
+            onFocusConsumed: onFocusConsumed
         )
     }
 
@@ -260,6 +272,11 @@ private struct TaskLineRow: View {
     let onCommit: (String, String, Int, String) -> Void
     let onComplete: (String, String, Int) -> Void
     let onOpenNote: (String, String) -> Void
+    let onAddSubtask: (String, String, Int) -> Void
+    let onAddTaskBelow: (String, String, Int) -> Void
+    /// True for a just-created row that should open in edit mode on appear.
+    let autoFocus: Bool
+    let onFocusConsumed: () -> Void
 
     @State private var draft: String
     /// The line as it currently stands in the note, and which copy it is — the
@@ -283,7 +300,11 @@ private struct TaskLineRow: View {
         showSource: Bool,
         onCommit: @escaping (String, String, Int, String) -> Void,
         onComplete: @escaping (String, String, Int) -> Void,
-        onOpenNote: @escaping (String, String) -> Void
+        onOpenNote: @escaping (String, String) -> Void,
+        onAddSubtask: @escaping (String, String, Int) -> Void,
+        onAddTaskBelow: @escaping (String, String, Int) -> Void,
+        autoFocus: Bool,
+        onFocusConsumed: @escaping () -> Void
     ) {
         self.task = task
         self.theme = theme
@@ -294,6 +315,10 @@ private struct TaskLineRow: View {
         self.onCommit = onCommit
         self.onComplete = onComplete
         self.onOpenNote = onOpenNote
+        self.onAddSubtask = onAddSubtask
+        self.onAddTaskBelow = onAddTaskBelow
+        self.autoFocus = autoFocus
+        self.onFocusConsumed = onFocusConsumed
         _draft = State(initialValue: task.body)
         _liveLine = State(initialValue: task.sourceLine)
         _liveOccurrence = State(initialValue: task.occurrence)
@@ -335,9 +360,15 @@ private struct TaskLineRow: View {
                     Button {
                         editing = true
                     } label: {
-                        styledBody
+                        // A placeholder keeps an empty (just-added) task tall
+                        // enough to click; contentShape makes the whole width a
+                        // hit target rather than just the glyphs.
+                        (task.body.isEmpty
+                            ? Text("New task").foregroundColor(.secondary).font(.system(size: max(13, theme.resolvedFont.pointSize) * scale))
+                            : styledBody)
                             .lineLimit(1)
                             .frame(maxWidth: .infinity, alignment: .leading)
+                            .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
                 }
@@ -365,6 +396,19 @@ private struct TaskLineRow: View {
         .padding(.vertical, Spacing.s)
         .overlay(alignment: .bottom) {
             Divider().padding(.leading, leadingInset)
+        }
+        .contextMenu {
+            Button("Add Task Below") { onAddTaskBelow(task.noteID, liveLine, liveOccurrence) }
+            Button("Add Subtask") { onAddSubtask(task.noteID, liveLine, liveOccurrence) }
+            Divider()
+            Button("Open Source Note") { onOpenNote(task.noteID, liveLine) }
+        }
+        .onAppear {
+            // A row just created by the menu drops straight into edit mode.
+            if autoFocus, !editing {
+                editing = true
+                onFocusConsumed()
+            }
         }
         .onChange(of: draft) { _, _ in
             guard editing else { return }

@@ -731,6 +731,18 @@ public final class NoteStore: ObservableObject {
         return true
     }
 
+    /// Insert a new task line into `noteID` right after the `occurrence`-th
+    /// line equal to `afterLine`. Returns false when that line is gone.
+    @discardableResult
+    public func insertTaskLine(noteID: String, afterLine: String, occurrence: Int, newLine: String) -> Bool {
+        guard var note = note(withID: noteID),
+              let updated = TaskPage.insertingLine(after: afterLine, occurrence: occurrence, newLine: newLine, in: note.content),
+              updated != note.content else { return false }
+        note.content = updated
+        save(note)
+        return true
+    }
+
     public func save(_ note: Note) {
         var target = note
         if self.note(withID: note.id) == nil {
