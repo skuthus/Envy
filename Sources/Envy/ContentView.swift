@@ -307,6 +307,12 @@ struct ContentView: View {
     // .onChange hooks below that cover everything the pipeline actually
     // depends on.
     @State var filteredNotesCache: [Note] = []
+    /// Open task lines for a `tasklist:` query. Built with the search result,
+    /// off the main thread, so the editor page does not rescan on every redraw.
+    @State var taskDocumentLinesCache: [OpenTask] = []
+    /// The note and line a task click should land on. Cleared by opening anything else.
+    @State var taskRevealNoteID: String?
+    @State var taskRevealLine: String?
 
     var filteredNotes: [Note] { filteredNotesCache }
 
@@ -414,14 +420,17 @@ struct ContentView: View {
         let foldImageText = searchImageText
         let inbox = inboxEnabled
         let result = await Task.detached(priority: .userInitiated) {
-            Self.computeSearch(notes: notesSnapshot, query: querySnapshot, pinnedIDs: pinnedSnapshot, sortField: field, sortAscending: ascending, showInbox: showInbox, inboxDirectory: inboxDirectory, imageText: imageText, foldImageText: foldImageText, inboxEnabled: inbox)
+            let search = Self.computeSearch(notes: notesSnapshot, query: querySnapshot, pinnedIDs: pinnedSnapshot, sortField: field, sortAscending: ascending, showInbox: showInbox, inboxDirectory: inboxDirectory, imageText: imageText, foldImageText: foldImageText, inboxEnabled: inbox)
+            let tasks = TaskPage.isTaskQuery(querySnapshot) ? TaskPage.lines(in: search.notes, query: querySnapshot) : []
+            return (search: search, tasks: tasks)
         }.value
         guard generation == searchComputeGeneration else { return }
-        filteredNotesCache = result.notes
-        suggestionNoteCache = result.suggestion
-        queryHasExactTitleMatch = result.hasExactTitleMatch
-        fleetingCountCache = result.fleetingCount
-        inboxNoteIDsCache = result.inboxNoteIDs
+        filteredNotesCache = result.search.notes
+        taskDocumentLinesCache = result.tasks
+        suggestionNoteCache = result.search.suggestion
+        queryHasExactTitleMatch = result.search.hasExactTitleMatch
+        fleetingCountCache = result.search.fleetingCount
+        inboxNoteIDsCache = result.search.inboxNoteIDs
     }
 
     /// Synchronous, main-actor recompute of the results caches — for a
@@ -445,6 +454,7 @@ struct ContentView: View {
         queryHasExactTitleMatch = result.hasExactTitleMatch
         fleetingCountCache = result.fleetingCount
         inboxNoteIDsCache = result.inboxNoteIDs
+        taskDocumentLinesCache = TaskPage.isTaskQuery(query) ? TaskPage.lines(in: result.notes, query: query) : []
     }
 
     /// Titles of every note, newest-edited first — feeds the editors'

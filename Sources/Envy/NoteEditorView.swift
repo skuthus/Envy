@@ -28,6 +28,8 @@ struct NoteEditorView: View {
     var theme: Theme
     var requireModifierForLinkClick: Bool
     var searchQuery: String
+    /// A task line to scroll to when this note opens. Nil for an ordinary open.
+    var revealLine: String? = nil
     var showTagsInTitleBar: Bool
     var showFolderInTitleBar: Bool = true
     /// Read here (rather than threaded in) so a recolor from anywhere —
@@ -114,6 +116,7 @@ struct NoteEditorView: View {
         theme: Theme,
         requireModifierForLinkClick: Bool,
         searchQuery: String,
+        revealLine: String? = nil,
         showTagsInTitleBar: Bool,
         showFolderInTitleBar: Bool = true,
         showDuePill: Bool,
@@ -139,6 +142,7 @@ struct NoteEditorView: View {
         self.theme = theme
         self.requireModifierForLinkClick = requireModifierForLinkClick
         self.searchQuery = searchQuery
+        self.revealLine = revealLine
         self.showTagsInTitleBar = showTagsInTitleBar
         self.showFolderInTitleBar = showFolderInTitleBar
         self.showDuePill = showDuePill
@@ -198,6 +202,7 @@ struct NoteEditorView: View {
                 externalReloadToken: externalReloadToken,
                 highlightRange: pendingHighlightRange,
                 highlightTrigger: highlightTrigger,
+                revealLine: revealLine,
                 protectAISignature: protectAISignature
             )
             .focusable()

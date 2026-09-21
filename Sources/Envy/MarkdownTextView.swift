@@ -77,6 +77,9 @@ struct MarkdownTextView: NSViewRepresentable {
     /// later updateNSView calls, only at creation, same as everything else
     /// in makeNSView that only makes sense to do once per note.
     var initialSelectedRange: NSRange?
+    /// When set, opening this note scrolls to the first line equal to this
+    /// string. Used by the task page so a clicked line is the one on screen.
+    var revealLine: String? = nil
     /// Fires on every cursor/selection change — used by callers that want
     /// to remember the cursor position across a full teardown/recreation of
     /// this view (e.g. the pinned note popup, which reloads fresh from disk
@@ -102,6 +105,28 @@ struct MarkdownTextView: NSViewRepresentable {
 
     func makeCoordinator() -> Coordinator {
         Coordinator(self)
+    }
+
+    /// The range of the first line whose text equals `line`, ignoring the line break.
+    static func rangeOfLine(_ line: String, in text: String) -> NSRange? {
+        let ns = text as NSString
+        var location = 0
+        while location < ns.length {
+            let lineRange = ns.lineRange(for: NSRange(location: location, length: 0))
+            var stripped = ns.substring(with: lineRange)
+            if stripped.hasSuffix("\r\n") {
+                stripped.removeLast(2)
+            } else if stripped.hasSuffix("\n") || stripped.hasSuffix("\r") {
+                stripped.removeLast()
+            }
+            if stripped == line {
+                return NSRange(location: lineRange.location, length: (stripped as NSString).length)
+            }
+            let next = NSMaxRange(lineRange)
+            if next <= location { return nil }
+            location = next
+        }
+        return nil
     }
 
     func makeNSView(context: Context) -> NSScrollView {
@@ -134,7 +159,9 @@ struct MarkdownTextView: NSViewRepresentable {
         // frame at all (SwiftUI hasn't inserted the view this function
         // returns into the window yet), so scrollRangeToVisible here would
         // have nothing meaningful to scroll within.
-        if let initialSelectedRange, initialSelectedRange.location <= (text as NSString).length {
+        if let revealLine, let range = Self.rangeOfLine(revealLine, in: text) {
+            textView.setSelectedRange(NSRange(location: range.location, length: 0))
+        } else if let initialSelectedRange, initialSelectedRange.location <= (text as NSString).length {
             textView.setSelectedRange(initialSelectedRange)
         }
 
@@ -214,7 +241,11 @@ struct MarkdownTextView: NSViewRepresentable {
         // the checkbox overlay positioning above — scrollRangeToVisible
         // needs the scroll view to already know its real size, which isn't
         // true yet at the point makeNSView runs.
-        if let initialSelectedRange, initialSelectedRange.location <= (text as NSString).length {
+        if let revealLine, let range = Self.rangeOfLine(revealLine, in: text) {
+            DispatchQueue.main.async { [weak textView] in
+                textView?.scrollRangeToVisible(range)
+            }
+        } else if let initialSelectedRange, initialSelectedRange.location <= (text as NSString).length {
             DispatchQueue.main.async { [weak textView] in
                 textView?.scrollRangeToVisible(initialSelectedRange)
             }
@@ -290,6 +321,7 @@ struct MarkdownTextView: NSViewRepresentable {
                 context.coordinator.embedHeights.removeAll()
                 context.coordinator.imageHeights.removeAll()
                 textView.scroll(NSPoint(x: 0, y: 0))
+                context.coordinator.lastAppliedReveal = nil
             } else {
                 let clampedLocation = min(cursor.location, (text as NSString).length)
                 textView.setSelectedRange(NSRange(location: clampedLocation, length: 0))
@@ -340,9 +372,11 @@ struct MarkdownTextView: NSViewRepresentable {
         // plain typing in the editor — the query is unchanged there, so this
         // doesn't fire and the caret keeps the scroll position it earns
         // normally.
-        if searchQueryChanged || didSwitchNote {
+        let revealPending = revealLine != nil && context.coordinator.lastAppliedReveal != revealLine
+        if !revealPending && (searchQueryChanged || didSwitchNote) {
             context.coordinator.jumpToFirstSearchMatch(query: searchQuery, in: textView)
         }
+        context.coordinator.revealLineIfNeeded(in: textView)
 
         if context.coordinator.lastHighlightTrigger != highlightTrigger {
             context.coordinator.lastHighlightTrigger = highlightTrigger

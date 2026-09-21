@@ -9,7 +9,7 @@ extension ContentView {
     /// True when a search operator has taken over the editor pane (template,
     /// trash, or a tag/folder browse), where a split doesn't apply.
     var isEditorQueryMode: Bool {
-        isTemplateQuery || isTrashQuery || isTagBrowseQuery || isFolderBrowseQuery
+        isTemplateQuery || isTrashQuery || isTagBrowseQuery || isFolderBrowseQuery || isTaskDocumentQuery
     }
 
     /// Whether the two panes stack (divider horizontal) rather than sit side by

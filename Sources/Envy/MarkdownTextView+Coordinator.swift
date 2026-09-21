@@ -112,6 +112,22 @@ extension MarkdownTextView {
         /// change). Set in makeNSView to the first note; only the main editor
         /// ever changes it, since preview/embed views each show one fixed note.
         var lastNoteID: String?
+        /// The task line already scrolled into view, so a later redraw does not jump again.
+        var lastAppliedReveal: String?
+
+        /// Scroll to `revealLine` once per distinct request. A nil request clears
+        /// the memory so the next click can land on a line again.
+        func revealLineIfNeeded(in textView: NSTextView) {
+            let line = parent.revealLine
+            guard line != lastAppliedReveal else { return }
+            lastAppliedReveal = line
+            guard let line, let range = MarkdownTextView.rangeOfLine(line, in: textView.string) else { return }
+            textView.setSelectedRange(NSRange(location: range.location, length: 0))
+            let target = range
+            DispatchQueue.main.async { [weak textView] in
+                textView?.scrollRangeToVisible(target)
+            }
+        }
         private var highlightFadeTask: Task<Void, Never>?
         /// Makes the newest scroll-to-match request win when several land in
         /// the same runloop turn — a note switch and a query change can both

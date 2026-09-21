@@ -26,7 +26,7 @@ extension ContentView {
             // Sits directly above the footer bar (rather than the bar
             // growing to contain it) so expanding the list grows the panel
             // upward into the editor instead of pushing the footer down.
-            if backlinksExpanded && hasAnyInterlinks && !isTemplateQuery {
+            if backlinksExpanded && hasAnyInterlinks && !isTemplateQuery && !isTaskDocumentQuery {
                 interlinksExpandedList
                 Divider()
             }
@@ -151,6 +151,16 @@ extension ContentView {
                 } else if isFolderBrowseQuery {
                     ContentUnavailableView("Browsing Folders", systemImage: "folder", description: Text("Pick a folder to see its notes."))
 
+                } else if isTaskDocumentQuery {
+                    TaskDocumentView(
+                        lines: taskDocumentLines,
+                        theme: theme,
+                        onCommit: commitTaskLine,
+                        onComplete: completeTaskLine,
+                        onOpenNote: openTaskSource,
+                        onAddTask: { _ = store.appendTaskLine($0) }
+                    )
+
                 } else if let selectedID, store.note(withID: selectedID) != nil {
                     noteEditorContent(noteID: selectedID, isActive: true)
                 } else {
@@ -209,6 +219,7 @@ extension ContentView {
             theme: theme,
             requireModifierForLinkClick: requireModifierForLinkClick,
             searchQuery: editorSearchQuery,
+            revealLine: taskRevealNoteID == noteID ? taskRevealLine : nil,
             showTagsInTitleBar: showTagsInTitleBar,
             showFolderInTitleBar: showFolderInTitleBar,
             showDuePill: showDuePill,
@@ -304,7 +315,7 @@ extension ContentView {
                         }
                         .transition(.opacity)
                     }
-                    if selectedID != nil, showBacklinks, hasAnyInterlinks {
+                    if selectedID != nil, showBacklinks, hasAnyInterlinks, !isTaskDocumentQuery {
                         Button {
                             withAnimation(.easeInOut(duration: 0.15)) { backlinksExpanded.toggle() }
                         } label: {
@@ -325,13 +336,17 @@ extension ContentView {
                 }
                 Spacer()
                 HStack(spacing: 10) {
-                    if selectedID != nil {
+                    if isTaskDocumentQuery {
+                        Text("\(taskDocumentLines.count) open task\(taskDocumentLines.count == 1 ? "" : "s")")
+                            .foregroundStyle(.secondary)
+                            .font(.system(size: 10 * interfaceFontScale))
+                    } else if selectedID != nil {
                         Text("\(editorWordCount) words, \(editorCharacterCount) characters")
                             .foregroundStyle(.secondary)
                             .font(.system(size: 10 * interfaceFontScale))
                     }
                     if showFooterVaultCounts {
-                        if selectedID != nil {
+                        if selectedID != nil || isTaskDocumentQuery {
                             Rectangle()
                                 // The same color and 1pt thickness as the
                                 // horizontal rule above the bar, so the two

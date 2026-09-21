@@ -1070,7 +1070,7 @@ extension ContentView {
     /// chain). Split prefix-matched from whole-word because that difference
     /// is load-bearing: "todo:xyz" is not an operator, "tag:xyz" is.
     private static let operatorPrefixes = ["tag:", "title:", "date:", "due:", "link:", "interlink:", "folder:", "stale:", "-link:", "-interlink:", "-folder:", "-tag:", "-title:"]
-    private static let operatorWords = ["orphan:", "linked:", "todo:", "img:", "embed:", "ghost:"]
+    private static let operatorWords = ["orphan:", "linked:", "todo:", "tasklist:", "img:", "embed:", "ghost:"]
 
     /// Whether one lowercased query word reads as an operator.
     /// `browsePrefixes` exists because the two call sites deliberately
@@ -1154,6 +1154,42 @@ extension ContentView {
     /// folder catalog to pick from, same bare-operator pattern.
     var isFolderBrowseQuery: Bool {
         query.trimmingCharacters(in: .whitespaces).lowercased() == "folder:"
+    }
+
+    /// `tasklist:` takes over the editor with one row per open task line.
+    /// `todo:` stays the note filter it was. The list stays those notes.
+    var isTaskDocumentQuery: Bool {
+        TaskPage.isTaskQuery(query)
+    }
+
+    var taskDocumentLines: [OpenTask] { taskDocumentLinesCache }
+
+    /// Save the words of one open line back into its note.
+    /// The line is found again at save time, so a check that landed a moment
+    /// earlier is not overwritten by a late keystroke.
+    func commitTaskLine(noteID: String, ordinal: Int, body: String) {
+        guard let note = store.note(withID: noteID),
+              let task = TaskPage.openTasks(in: note).first(where: { $0.ordinal == ordinal }) else { return }
+        let cleaned = body.replacingOccurrences(of: "\n", with: " ")
+        let newLine = task.marker + cleaned
+        guard newLine != task.sourceLine else { return }
+        store.rewriteTaskLine(noteID: noteID, originalLine: task.sourceLine, occurrence: task.occurrence, with: newLine)
+    }
+
+    /// Check the box on one open line. The line then leaves this page.
+    func completeTaskLine(noteID: String, ordinal: Int) {
+        guard let note = store.note(withID: noteID),
+              let task = TaskPage.openTasks(in: note).first(where: { $0.ordinal == ordinal }),
+              let done = TaskPage.completedLine(task.sourceLine) else { return }
+        store.rewriteTaskLine(noteID: noteID, originalLine: task.sourceLine, occurrence: task.occurrence, with: done)
+    }
+
+    /// Leave the task page and open the note the line came from, on that line.
+    func openTaskSource(_ noteID: String, line: String) {
+        taskRevealNoteID = noteID
+        taskRevealLine = line
+        query = TaskPage.queryByDroppingTaskOperator(query)
+        selectedID = noteID
     }
 
     /// Note count per folder as a drill-in counts them: the folder's own

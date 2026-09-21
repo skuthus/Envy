@@ -684,6 +684,53 @@ public final class NoteStore: ObservableObject {
         return note(withID: current) != nil ? current : nil
     }
 
+    /// The note the task page appends to. Created at the Index root on first use.
+    public static let tasksNoteTitle = "Tasks"
+
+    /// Append one open task to the root note titled Tasks, creating it if needed.
+    /// A blank line is ignored. Returns false when nothing was written.
+    @discardableResult
+    public func appendTaskLine(_ body: String) -> Bool {
+        let cleaned = body
+            .replacingOccurrences(of: "\n", with: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleaned.isEmpty else { return false }
+        let line = "- [ ] " + cleaned
+        let root = noteDirectory.standardizedFileURL
+        let target: Note
+        if let existing = notes.first(where: {
+            $0.lowercasedTitle == Self.tasksNoteTitle.lowercased()
+                && $0.url.deletingLastPathComponent().standardizedFileURL == root
+        }) {
+            target = existing
+        } else {
+            target = create(title: Self.tasksNoteTitle)
+        }
+        var note = target
+        if note.content.isEmpty {
+            note.content = line + "\n"
+        } else if note.content.hasSuffix("\n") {
+            note.content += line + "\n"
+        } else {
+            note.content += "\n" + line + "\n"
+        }
+        save(note)
+        return true
+    }
+
+    /// Write one task line back into the note that owns it.
+    /// `occurrence` picks which copy, when the note repeats the same line.
+    /// Returns false when the line is no longer there to replace.
+    @discardableResult
+    public func rewriteTaskLine(noteID: String, originalLine: String, occurrence: Int, with newLine: String) -> Bool {
+        guard var note = note(withID: noteID),
+              let updated = TaskPage.replacingLine(occurrence: occurrence, of: originalLine, with: newLine, in: note.content),
+              updated != note.content else { return false }
+        note.content = updated
+        save(note)
+        return true
+    }
+
     public func save(_ note: Note) {
         var target = note
         if self.note(withID: note.id) == nil {
@@ -1966,6 +2013,10 @@ public final class NoteStore: ObservableObject {
                 isTodoExcluded = true
             } else if token == "todo:" {
                 isTodoOnly = true
+            } else if token == TaskPage.queryToken {
+                // Switches the editor to the task page. Not a note filter:
+                // `todo:` still means "notes with an open checkbox." Consumed
+                // here so the word is not searched for as plain text.
             } else if token == "-img:" {
                 isImageExcluded = true
             } else if token.hasPrefix("img:") {
@@ -2486,6 +2537,25 @@ public final class NoteStore: ObservableObject {
         if value == "future" { return .future }
         if let range = Self.dueRange(for: value) { return .range(start: range.start, end: range.end) }
         return nil
+    }
+
+    /// Whether one task line's due date satisfies a `due:` argument.
+    /// An argument this app does not understand matches every line, same as
+    /// a typo in note search shows every note instead of an empty list.
+    nonisolated public static func taskDueMatches(_ date: Date?, filter raw: String, now: Date = Date()) -> Bool {
+        let value = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard let condition = dueCondition(for: value) else { return true }
+        let overdueThreshold = Calendar.current.startOfDay(for: now)
+        switch condition {
+        case .any:
+            return date != nil
+        case .overdue:
+            return date.map { $0 < overdueThreshold } ?? false
+        case .future:
+            return date.map { $0 >= overdueThreshold } ?? false
+        case .range(let start, let end):
+            return date.map { $0 >= start && $0 < end } ?? false
+        }
     }
 
     nonisolated private static func dueConditionMatches(_ condition: DueCondition, note: Note, overdueThreshold: Date) -> Bool {

@@ -2310,6 +2310,98 @@ struct SelfCheck {
                   withTail?.hasSuffix("\n") == true)
         }
 
+        // taskPageReadsOpenLinesAndWritesThemBack
+        do {
+            let fence = """
+            - [ ] Call the dentist
+            - [x] Buy soap
+                - [ ] Water the plants
+
+            ```
+            - [ ] not a real task
+            ```
+            - [ ] Call the dentist
+            """
+            let home = Note(
+                id: "/tmp/Home.md",
+                url: URL(fileURLWithPath: "/tmp/Home.md"),
+                content: fence,
+                modifiedDate: Date()
+            )
+            let tasks = TaskPage.openTasks(in: home)
+            check("task page: three open lines, checked and fenced lines stay out", tasks.count == 3)
+            check("task page: the body drops the checkbox marker", tasks[0].body == "Call the dentist")
+            check("task page: a nested line keeps its indent in the marker", tasks[1].marker.hasPrefix("    - [ ]"))
+            check("task page: two identical lines get occurrence 0 then 1",
+                  tasks[0].occurrence == 0 && tasks[2].occurrence == 1)
+            check("task page: marker plus body rebuilds the source line",
+                  tasks.allSatisfy { $0.marker + $0.body == $0.sourceLine })
+
+            let calendar = Calendar.current
+            let now = Date()
+            func token(daysFromNow: Int) -> String {
+                let date = calendar.date(byAdding: .day, value: daysFromNow, to: now) ?? now
+                let comps = calendar.dateComponents([.year, .month, .day], from: date)
+                return String(format: "@%04d-%02d-%02d", comps.year!, comps.month!, comps.day!)
+            }
+            let work = Note(
+                id: "/tmp/Work.md",
+                url: URL(fileURLWithPath: "/tmp/Work.md"),
+                content: "- [ ] Ship the report \(token(daysFromNow: -1))\n- [ ] Read the spec \(token(daysFromNow: 0))\n- [ ] Someday\n- [ ] Skip ~~\(token(daysFromNow: -3))~~",
+                modifiedDate: Date()
+            )
+            let page = TaskPage.lines(in: [home, work], query: "tasklist:")
+            check("task page: the overdue line sorts first", page.first?.body.hasPrefix("Ship") == true)
+            check("task page: a line with no date sorts last", page.last?.due == nil)
+            let todayLines = TaskPage.lines(in: [work], query: "due:today tasklist:")
+            check("task page: due:today keeps the line due today",
+                  todayLines.count == 1 && todayLines[0].body.hasPrefix("Read the spec"))
+            let dentist = TaskPage.lines(in: [home, work], query: "tasklist: dentist")
+            check("task page: a word matches the line, not the whole note",
+                  dentist.count == 2 && dentist.allSatisfy { $0.body.contains("dentist") })
+            check("task page: todo: is not the task page", !TaskPage.isTaskQuery("todo:"))
+            check("task page: tag:work tasklist: is the task page", TaskPage.isTaskQuery("tag:work tasklist:"))
+            check("task page: dropping tasklist: keeps the other filter",
+                  TaskPage.queryByDroppingTaskOperator("tag:work tasklist:") == "tag:work")
+
+            let replaced = TaskPage.replacingLine(occurrence: 1, of: "- [ ] Call the dentist", with: "- [ ] Call tomorrow", in: home.content)
+            check("task page: the second identical line is the one replaced",
+                  replaced?.contains("- [ ] Call the dentist\n") == true && replaced?.contains("- [ ] Call tomorrow") == true)
+            check("task page: checking a box writes [x] over the first [ ]",
+                  TaskPage.completedLine("- [ ] Call the dentist") == "- [x] Call the dentist")
+
+            let store = await makeTempStore()
+            var note = store.create(title: "Chores")
+            note.content = "- [ ] one\n- [ ] one\n"
+            store.save(note)
+            var plain = store.create(title: "Plain")
+            plain.content = "No checkbox here."
+            store.save(plain)
+            let todoNotes = store.filtered(query: "todo:")
+            check("todo: still lists only notes with an open checkbox",
+                  todoNotes.contains { $0.id == note.id } && !todoNotes.contains { $0.id == plain.id })
+            let tasklistNotes = store.filtered(query: "tasklist:")
+            check("tasklist: does not filter the note list",
+                  tasklistNotes.contains { $0.id == note.id } && tasklistNotes.contains { $0.id == plain.id })
+            check("task page: a blank new task is ignored", !store.appendTaskLine("   "))
+            check("task page: the first new task creates Tasks",
+                  store.appendTaskLine("Call the dentist")
+                  && store.notes.contains { $0.title == "Tasks" && $0.content == "- [ ] Call the dentist\n" })
+            check("task page: the next new task appends to Tasks",
+                  store.appendTaskLine("Buy milk")
+                  && store.notes.contains { $0.title == "Tasks" && $0.content == "- [ ] Call the dentist\n- [ ] Buy milk\n" })
+            let open = TaskPage.openTasks(in: store.note(withID: note.id)!)
+            let wrote = store.rewriteTaskLine(
+                noteID: note.id,
+                originalLine: open[1].sourceLine,
+                occurrence: open[1].occurrence,
+                with: "- [x] one"
+            )
+            let after = store.note(withID: note.id)?.content ?? ""
+            check("task page: rewrite checks only the second copy",
+                  wrote && after == "- [ ] one\n- [x] one\n")
+        }
+
         print("")
         if failures.isEmpty {
             print("All checks passed.")
