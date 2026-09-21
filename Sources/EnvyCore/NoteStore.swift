@@ -2014,9 +2014,9 @@ public final class NoteStore: ObservableObject {
             } else if token == "todo:" {
                 isTodoOnly = true
             } else if token == TaskPage.queryToken {
-                // Switches the editor to the task page. Not a note filter:
-                // `todo:` still means "notes with an open checkbox." Consumed
-                // here so the word is not searched for as plain text.
+                // `tasks:` switches the editor to the task page. Not a note
+                // filter: `todo:` still means "notes with an open checkbox."
+                // Consumed here so the word is not searched for as plain text.
             } else if token == "-img:" {
                 isImageExcluded = true
             } else if token.hasPrefix("img:") {

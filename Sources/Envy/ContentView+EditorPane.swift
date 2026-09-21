@@ -26,7 +26,7 @@ extension ContentView {
             // Sits directly above the footer bar (rather than the bar
             // growing to contain it) so expanding the list grows the panel
             // upward into the editor instead of pushing the footer down.
-            if backlinksExpanded && hasAnyInterlinks && !isTemplateQuery && !isTaskDocumentQuery {
+            if backlinksExpanded && hasAnyInterlinks && !isTemplateQuery {
                 interlinksExpandedList
                 Divider()
             }
@@ -150,16 +150,6 @@ extension ContentView {
 
                 } else if isFolderBrowseQuery {
                     ContentUnavailableView("Browsing Folders", systemImage: "folder", description: Text("Pick a folder to see its notes."))
-
-                } else if isTaskDocumentQuery {
-                    TaskDocumentView(
-                        lines: taskDocumentLines,
-                        theme: theme,
-                        onCommit: commitTaskLine,
-                        onComplete: completeTaskLine,
-                        onOpenNote: openTaskSource,
-                        onAddTask: { _ = store.appendTaskLine($0) }
-                    )
 
                 } else if let selectedID, store.note(withID: selectedID) != nil {
                     noteEditorContent(noteID: selectedID, isActive: true)
@@ -315,7 +305,7 @@ extension ContentView {
                         }
                         .transition(.opacity)
                     }
-                    if selectedID != nil, showBacklinks, hasAnyInterlinks, !isTaskDocumentQuery {
+                    if selectedID != nil, showBacklinks, hasAnyInterlinks {
                         Button {
                             withAnimation(.easeInOut(duration: 0.15)) { backlinksExpanded.toggle() }
                         } label: {
@@ -336,17 +326,13 @@ extension ContentView {
                 }
                 Spacer()
                 HStack(spacing: 10) {
-                    if isTaskDocumentQuery {
-                        Text("\(taskDocumentLines.count) open task\(taskDocumentLines.count == 1 ? "" : "s")")
-                            .foregroundStyle(.secondary)
-                            .font(.system(size: 10 * interfaceFontScale))
-                    } else if selectedID != nil {
+                    if selectedID != nil {
                         Text("\(editorWordCount) words, \(editorCharacterCount) characters")
                             .foregroundStyle(.secondary)
                             .font(.system(size: 10 * interfaceFontScale))
                     }
                     if showFooterVaultCounts {
-                        if selectedID != nil || isTaskDocumentQuery {
+                        if selectedID != nil {
                             Rectangle()
                                 // The same color and 1pt thickness as the
                                 // horizontal rule above the bar, so the two

@@ -492,6 +492,15 @@ extension ContentView {
         }
         .onSubmit { handleEnter() }
         .onChange(of: query) { _, _ in
+            // A pending "open this task's source at that line" is spent the
+            // moment the page is shown again; clearing it here stops a later
+            // ordinary open of that same note from re-scrolling to the line.
+            // Guarded so it never wipes the reveal openTaskSource just set
+            // (that drops the operator, so the new query is not a task query).
+            if TaskPage.isTaskQuery(query) {
+                taskRevealNoteID = nil
+                taskRevealLine = nil
+            }
             // Synchronous and undebounced, unlike the search pipeline below
             // — a fresh list has to be up before the template rows render
             // (createTemplate resets the query and expects its new file
@@ -1070,7 +1079,7 @@ extension ContentView {
     /// chain). Split prefix-matched from whole-word because that difference
     /// is load-bearing: "todo:xyz" is not an operator, "tag:xyz" is.
     private static let operatorPrefixes = ["tag:", "title:", "date:", "due:", "link:", "interlink:", "folder:", "stale:", "-link:", "-interlink:", "-folder:", "-tag:", "-title:"]
-    private static let operatorWords = ["orphan:", "linked:", "todo:", "tasklist:", "img:", "embed:", "ghost:"]
+    private static let operatorWords = ["orphan:", "linked:", "todo:", "tasks:", "img:", "embed:", "ghost:"]
 
     /// Whether one lowercased query word reads as an operator.
     /// `browsePrefixes` exists because the two call sites deliberately
@@ -1156,7 +1165,7 @@ extension ContentView {
         query.trimmingCharacters(in: .whitespaces).lowercased() == "folder:"
     }
 
-    /// `tasklist:` takes over the editor with one row per open task line.
+    /// `tasks:` takes over the editor with one row per open task line.
     /// `todo:` stays the note filter it was. The list stays those notes.
     var isTaskDocumentQuery: Bool {
         TaskPage.isTaskQuery(query)
@@ -1164,24 +1173,20 @@ extension ContentView {
 
     var taskDocumentLines: [OpenTask] { taskDocumentLinesCache }
 
-    /// Save the words of one open line back into its note.
-    /// The line is found again at save time, so a check that landed a moment
-    /// earlier is not overwritten by a late keystroke.
-    func commitTaskLine(noteID: String, ordinal: Int, body: String) {
-        guard let note = store.note(withID: noteID),
-              let task = TaskPage.openTasks(in: note).first(where: { $0.ordinal == ordinal }) else { return }
-        let cleaned = body.replacingOccurrences(of: "\n", with: " ")
-        let newLine = task.marker + cleaned
-        guard newLine != task.sourceLine else { return }
-        store.rewriteTaskLine(noteID: noteID, originalLine: task.sourceLine, occurrence: task.occurrence, with: newLine)
+    /// Write one open line's words back into its note, matched by the exact
+    /// line text and occurrence the row carries — never by position. So a
+    /// check that reordered the list a moment earlier can't send this write to
+    /// the wrong line, and no rescan is needed to locate it.
+    func commitTaskLine(noteID: String, originalLine: String, occurrence: Int, newLine: String) {
+        guard newLine != originalLine else { return }
+        store.rewriteTaskLine(noteID: noteID, originalLine: originalLine, occurrence: occurrence, with: newLine)
     }
 
-    /// Check the box on one open line. The line then leaves this page.
-    func completeTaskLine(noteID: String, ordinal: Int) {
-        guard let note = store.note(withID: noteID),
-              let task = TaskPage.openTasks(in: note).first(where: { $0.ordinal == ordinal }),
-              let done = TaskPage.completedLine(task.sourceLine) else { return }
-        store.rewriteTaskLine(noteID: noteID, originalLine: task.sourceLine, occurrence: task.occurrence, with: done)
+    /// Check the box on one open line, matched the same way. The line then
+    /// leaves this page on the next rebuild.
+    func completeTaskLine(noteID: String, line: String, occurrence: Int) {
+        guard let done = TaskPage.completedLine(line) else { return }
+        store.rewriteTaskLine(noteID: noteID, originalLine: line, occurrence: occurrence, with: done)
     }
 
     /// Leave the task page and open the note the line came from, on that line.
@@ -1190,6 +1195,35 @@ extension ContentView {
         taskRevealLine = line
         query = TaskPage.queryByDroppingTaskOperator(query)
         selectedID = noteID
+    }
+
+    /// The full-width `tasks:` surface: the omnibar kept on top so the query
+    /// stays visible and clearable, and the transcluded task list filling the
+    /// rest of the window in place of both the note list and the editor.
+    var taskFullWidthPane: some View {
+        VStack(spacing: 0) {
+            VStack(spacing: 0) { searchRow }
+                .padding(.bottom, Spacing.s)
+                .chromeHeaderPanel(glassify)
+            Divider()
+            TaskDocumentView(
+                lines: taskDocumentLines,
+                theme: theme,
+                onCommit: commitTaskLine,
+                onComplete: completeTaskLine,
+                onOpenNote: openTaskSource,
+                onAddTask: { _ = store.appendTaskLine($0) }
+            )
+        }
+        // The task lines are computed by the search pipeline, whose trigger
+        // lives on the note list's search field. Entering `tasks:` unmounts
+        // that list in the same update the query reaches "tasks:", so its
+        // onChange never fires for that keystroke and the cache stays empty.
+        // This pane owns its own recompute: it runs the moment the pane
+        // appears (entering task mode) and on any further query edit while
+        // here, so the list being gone can't strand it. No debounce — this
+        // only fires in task mode, and .task(id:) supersedes an in-flight run.
+        .task(id: query) { await recomputeFilteredNotes() }
     }
 
     /// Note count per folder as a drill-in counts them: the folder's own

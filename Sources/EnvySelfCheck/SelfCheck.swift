@@ -2329,9 +2329,19 @@ struct SelfCheck {
                 modifiedDate: Date()
             )
             let tasks = TaskPage.openTasks(in: home)
+            let noOpen = Note(
+                id: "/tmp/None.md",
+                url: URL(fileURLWithPath: "/tmp/None.md"),
+                content: "- [x] done\nordinary text\n### heading\n",
+                modifiedDate: Date()
+            )
+            check("task page: a note with no open checkbox yields nothing (fast path)",
+                  TaskPage.openTasks(in: noOpen).isEmpty)
             check("task page: three open lines, checked and fenced lines stay out", tasks.count == 3)
             check("task page: the body drops the checkbox marker", tasks[0].body == "Call the dentist")
             check("task page: a nested line keeps its indent in the marker", tasks[1].marker.hasPrefix("    - [ ]"))
+            check("task page: a top-level line has indent 0", tasks[0].indent == 0)
+            check("task page: a 4-space nested line has indent 4", tasks[1].indent == 4)
             check("task page: two identical lines get occurrence 0 then 1",
                   tasks[0].occurrence == 0 && tasks[2].occurrence == 1)
             check("task page: marker plus body rebuilds the source line",
@@ -2350,19 +2360,19 @@ struct SelfCheck {
                 content: "- [ ] Ship the report \(token(daysFromNow: -1))\n- [ ] Read the spec \(token(daysFromNow: 0))\n- [ ] Someday\n- [ ] Skip ~~\(token(daysFromNow: -3))~~",
                 modifiedDate: Date()
             )
-            let page = TaskPage.lines(in: [home, work], query: "tasklist:")
+            let page = TaskPage.lines(in: [home, work], query: "tasks:")
             check("task page: the overdue line sorts first", page.first?.body.hasPrefix("Ship") == true)
             check("task page: a line with no date sorts last", page.last?.due == nil)
-            let todayLines = TaskPage.lines(in: [work], query: "due:today tasklist:")
+            let todayLines = TaskPage.lines(in: [work], query: "due:today tasks:")
             check("task page: due:today keeps the line due today",
                   todayLines.count == 1 && todayLines[0].body.hasPrefix("Read the spec"))
-            let dentist = TaskPage.lines(in: [home, work], query: "tasklist: dentist")
+            let dentist = TaskPage.lines(in: [home, work], query: "tasks: dentist")
             check("task page: a word matches the line, not the whole note",
                   dentist.count == 2 && dentist.allSatisfy { $0.body.contains("dentist") })
             check("task page: todo: is not the task page", !TaskPage.isTaskQuery("todo:"))
-            check("task page: tag:work tasklist: is the task page", TaskPage.isTaskQuery("tag:work tasklist:"))
-            check("task page: dropping tasklist: keeps the other filter",
-                  TaskPage.queryByDroppingTaskOperator("tag:work tasklist:") == "tag:work")
+            check("task page: tag:work tasks: is the task page", TaskPage.isTaskQuery("tag:work tasks:"))
+            check("task page: dropping tasks: keeps the other filter",
+                  TaskPage.queryByDroppingTaskOperator("tag:work tasks:") == "tag:work")
 
             let replaced = TaskPage.replacingLine(occurrence: 1, of: "- [ ] Call the dentist", with: "- [ ] Call tomorrow", in: home.content)
             check("task page: the second identical line is the one replaced",
@@ -2380,9 +2390,9 @@ struct SelfCheck {
             let todoNotes = store.filtered(query: "todo:")
             check("todo: still lists only notes with an open checkbox",
                   todoNotes.contains { $0.id == note.id } && !todoNotes.contains { $0.id == plain.id })
-            let tasklistNotes = store.filtered(query: "tasklist:")
-            check("tasklist: does not filter the note list",
-                  tasklistNotes.contains { $0.id == note.id } && tasklistNotes.contains { $0.id == plain.id })
+            let tasksNotes = store.filtered(query: "tasks:")
+            check("tasks: does not filter the note list",
+                  tasksNotes.contains { $0.id == note.id } && tasksNotes.contains { $0.id == plain.id })
             check("task page: a blank new task is ignored", !store.appendTaskLine("   "))
             check("task page: the first new task creates Tasks",
                   store.appendTaskLine("Call the dentist")

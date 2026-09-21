@@ -307,7 +307,7 @@ struct ContentView: View {
     // .onChange hooks below that cover everything the pipeline actually
     // depends on.
     @State var filteredNotesCache: [Note] = []
-    /// Open task lines for a `tasklist:` query. Built with the search result,
+    /// Open task lines for a `tasks:` query. Built with the search result,
     /// off the main thread, so the editor page does not rescan on every redraw.
     @State var taskDocumentLinesCache: [OpenTask] = []
     /// The note and line a task click should land on. Cleared by opening anything else.
@@ -617,7 +617,12 @@ struct ContentView: View {
     // tipped it back over the threshold.
     private var layoutSwitch: some View {
         Group {
-            if listCollapsed {
+            if isTaskDocumentQuery {
+                // `tasks:` is its own place: the transcluded task list fills the
+                // whole content area (search chrome kept on top), no note list
+                // or editor beside it — see taskFullWidthPane.
+                taskFullWidthPane
+            } else if listCollapsed {
                 // List hidden — just the editor, filling the window.
                 editorPane
             } else {
