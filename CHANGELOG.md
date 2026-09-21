@@ -2,6 +2,14 @@
 
 Also published at [envynote.app/changelog.html](https://envynote.app/changelog.html).
 
+## 1.11.5 — September 20, 2026
+
+Envy stays quick at thousands of notes, and there's a guide you can hand to an AI agent.
+
+- **Switching notes is fast on a large library.** Opening a note — from the list, an interlink, or a search — used to lag as the library grew, and the further down the list the note sat, the worse it got. At a few thousand notes it's now instant: the list no longer rebuilds every row to find the one you picked, and a theme comparison that ran on every row on every click is gone. The Interlinks panel's Suggested section keeps up too.
+- **Install an agent guide for your notes.** File → **Install Agent Guide…** writes an `AGENTS.md` into your vault that tells any AI agent how Envy's notes work — plain `.md` files, `[[links]]`, `#tags`, due dates, the Inbox — so you can point one at your notes and ask it to capture, find, or update. It also installs a Claude Code skill (`~/.claude/skills/envy-notes`) so Claude Code picks it up on its own. The guide is hidden from your note list; it isn't a note.
+- **Smoother window resizing on long notes.** Dragging the window edge used to stutter on a long, markup-heavy note. The editor now waits until the drag settles to redo its layout work, so resizing stays fluid.
+
 ## 1.11.4 — September 19, 2026
 
 - **Nested folders read as a trail in the title bar.** A note filed in a folder inside a folder now shows its location in the editor's title bar as "projects › work" rather than "projects/work", so the nesting is easier to read at a glance. Clicking it still opens that folder's notes exactly as before.

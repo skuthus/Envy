@@ -19,24 +19,12 @@ struct WhatsNewView: View {
     }
 
     private let newFeatures: [Feature] = [
-        Feature(title: "Nested folders show properly", details: [
-            "debated over this one for a while but its dead useful."
-        ]),
-        Feature(title: "Make a subfolder while moving a note", details: [
-            "if you right click a note in a list, you can navigate notes from there, and make new subfolders."
-        ]),
-        Feature(title: "Cleaner tag: list (plain text, not green)", details: [
-            "I removed colors from tags in the file list to improve readability"
-        ])
+        Feature(title: "Fast note switching on a large library", details: []),
+        Feature(title: "Install an agent guide for your notes (File → Install Agent Guide…)", details: [])
     ]
 
     private let bugFixes: [Feature] = [
-        Feature(title: "Image embeds no longer count as note links", details: [
-            "this is both a security fix and QOL fix."
-        ]),
-        Feature(title: "Other under the hood improvements.", details: [
-            "*closes car hood*"
-        ])
+        Feature(title: "Smoother window resizing on long notes", details: [])
     ]
 
     private func section(_ heading: String, _ items: [Feature]) -> some View {
@@ -70,7 +58,7 @@ struct WhatsNewView: View {
                 Text("What's New in Envy")
                     .font(.title.bold())
                 if !versionText.isEmpty {
-                    Text("Version \(versionText)")
+                    Text("Version \(versionText) · Agent Guide and Optimizations")
                         .font(.callout)
                         .foregroundStyle(.secondary)
                 }
@@ -78,7 +66,7 @@ struct WhatsNewView: View {
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
-                    section("New Features", newFeatures)
+                    section("Changes", newFeatures)
                     Divider()
                     section("Bug Fixes", bugFixes)
                 }
