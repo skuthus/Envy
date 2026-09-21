@@ -230,7 +230,7 @@ extension AppDelegate {
     @MainActor
     @objc private func performBlink() {
         defer { scheduleNextBlink() }
-        guard mainWindow?.isVisible == true || pinnedNotePanel?.isVisible == true else { return }
+        guard mainWindow?.isVisible == true || pinnedNotePanel?.isVisible == true || pinnedTaskPanel?.isVisible == true else { return }
         closeEyeBriefly()
         // A real eye occasionally double-blinks — about 1 in 4 here. Timed
         // as its own independent asyncAfter (0.2s close + 0.14s gap) rather
@@ -274,7 +274,7 @@ extension AppDelegate {
     func updateStatusItemIcon() {
         if mainWindow?.isVisible == true {
             applyStatusIcon(.open)
-        } else if pinnedNotePanel?.isVisible == true {
+        } else if pinnedNotePanel?.isVisible == true || pinnedTaskPanel?.isVisible == true {
             applyStatusIcon(.squint)
         } else {
             applyStatusIcon(.closed)
@@ -312,6 +312,8 @@ extension AppDelegate {
         guard let event = NSApp.currentEvent else { return }
         if event.type == .rightMouseUp {
             showStatusMenu()
+        } else if taskListPinned {
+            togglePinnedTaskPanel()
         } else if let pinnedNoteURL {
             togglePinnedNotePanel(for: pinnedNoteURL)
         } else if let window = resolveMainWindow(), window.isVisible,
@@ -349,6 +351,13 @@ extension AppDelegate {
         unpinNote.target = self
         unpinNote.isEnabled = pinnedNoteURL != nil
         menu.addItem(unpinNote)
+
+        // Pins the task list to the icon: while checked, a click opens the
+        // full task view instead of toggling the window or a pinned note.
+        let pinTaskList = NSMenuItem(title: "Pin Task List", action: #selector(togglePinTaskListFromStatusMenu), keyEquivalent: "")
+        pinTaskList.target = self
+        pinTaskList.state = taskListPinned ? .on : .off
+        menu.addItem(pinTaskList)
 
         menu.addItem(.separator())
 
@@ -454,6 +463,18 @@ extension AppDelegate {
     private func pinToMenuBarAndShow(_ note: Note) {
         UserDefaults.standard.set(note.id, forKey: "menuBarPinnedNotePath")
         showPinnedNotePanel(for: note.url)
+    }
+
+    /// Whether the menu bar icon opens the task list on click.
+    var taskListPinned: Bool { UserDefaults.standard.bool(forKey: "taskListPinned") }
+
+    @MainActor
+    @objc private func togglePinTaskListFromStatusMenu() {
+        let now = !taskListPinned
+        UserDefaults.standard.set(now, forKey: "taskListPinned")
+        // Pinning it also opens it, so there's no extra click between "pin"
+        // and "see it" — same as New Pinned Note. Unpinning closes it.
+        if now { showPinnedTaskPanel() } else { pinnedTaskPanel?.close() }
     }
 
     @objc private func openSettingsFromStatusMenu() {

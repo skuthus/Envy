@@ -12,6 +12,9 @@ import AppKit
 private let pinnedPanelWidthKey = "menuBarPopoverWidth"
 private let pinnedPanelHeightKey = "menuBarPopoverHeight"
 private let defaultPinnedPanelSize = NSSize(width: 320, height: 400)
+private let pinnedTaskPanelWidthKey = "menuBarTaskPanelWidth"
+private let pinnedTaskPanelHeightKey = "menuBarTaskPanelHeight"
+private let defaultPinnedTaskPanelSize = NSSize(width: 380, height: 520)
 
 extension AppDelegate {
     /// nil if nothing's pinned, or if the pinned path no longer exists on
@@ -119,13 +122,82 @@ extension AppDelegate {
         updateStatusItemIcon()
     }
 
+    /// The task-list twin of togglePinnedNotePanel: a menu-bar click with the
+    /// task list pinned opens the miniature panel, or closes it if it's open.
+    @MainActor
+    func togglePinnedTaskPanel() {
+        if let panel = pinnedTaskPanel, panel.isVisible {
+            panel.close()
+            return
+        }
+        showPinnedTaskPanel()
+    }
+
+    /// The miniature floating task list, sharing the main window's live store
+    /// (see AppDelegate.contentStore) so it needs no vault load of its own and
+    /// stays in sync. Falls back to opening the app if the store isn't up yet.
+    @MainActor
+    func showPinnedTaskPanel() {
+        pinnedTaskPanel?.close()
+        guard let store = contentStore else {
+            activateAndShowWindow()
+            return
+        }
+        guard let button = statusItem?.button, let buttonWindow = button.window else { return }
+
+        let width = UserDefaults.standard.double(forKey: pinnedTaskPanelWidthKey)
+        let height = UserDefaults.standard.double(forKey: pinnedTaskPanelHeightKey)
+        let size = NSSize(
+            width: width > 0 ? width : defaultPinnedTaskPanelSize.width,
+            height: height > 0 ? height : defaultPinnedTaskPanelSize.height
+        )
+
+        let panel = NSPanel(
+            contentRect: NSRect(origin: .zero, size: size),
+            styleMask: [.titled, .resizable, .nonactivatingPanel, .fullSizeContentView],
+            backing: .buffered,
+            defer: false
+        )
+        panel.titlebarAppearsTransparent = true
+        panel.titleVisibility = .hidden
+        panel.standardWindowButton(.closeButton)?.isHidden = true
+        panel.standardWindowButton(.miniaturizeButton)?.isHidden = true
+        panel.standardWindowButton(.zoomButton)?.isHidden = true
+        panel.isFloatingPanel = true
+        panel.level = .envyFloatingNote
+        panel.hidesOnDeactivate = false
+        panel.isReleasedWhenClosed = false
+        panel.delegate = self
+        panel.minSize = NSSize(width: 260, height: 200)
+        panel.contentViewController = NSHostingController(rootView: TaskListPanelView(
+            store: store,
+            onOpenNote: { [weak self] url in
+                self?.pinnedTaskPanel?.close()
+                self?.activateAndShowWindow()
+                NotificationCenter.default.post(name: .externalNoteOpenRequested, object: url)
+            }
+        ))
+
+        let buttonFrameOnScreen = buttonWindow.convertToScreen(button.convert(button.bounds, to: nil))
+        var origin = NSPoint(x: buttonFrameOnScreen.midX - size.width / 2, y: buttonFrameOnScreen.minY - size.height - 4)
+        if let screenFrame = buttonWindow.screen?.visibleFrame {
+            origin.x = min(max(origin.x, screenFrame.minX), screenFrame.maxX - size.width)
+            origin.y = max(origin.y, screenFrame.minY)
+        }
+        panel.setFrame(NSRect(origin: origin, size: size), display: true)
+        panel.makeKeyAndOrderFront(nil)
+        pinnedTaskPanel = panel
+        updateStatusItemIcon()
+    }
+
     /// Catches every way the pinned note panel can close — the explicit
     /// toggle-closed path, the outside-click auto-dismiss in
     /// windowDidResignKey, and the "open in app" button's close() — in one
     /// place, rather than remembering to call updateStatusItemIcon()
     /// separately at each call site.
     func windowWillClose(_ notification: Notification) {
-        guard let window = notification.object as? NSWindow, window === pinnedNotePanel else { return }
+        guard let window = notification.object as? NSWindow,
+              window === pinnedNotePanel || window === pinnedTaskPanel else { return }
         // Not a plain updateStatusItemIcon() call — windowWillClose fires
         // before the panel actually finishes closing, so its own isVisible
         // still reads true at this exact moment, which meant the squint
@@ -145,7 +217,12 @@ extension AppDelegate {
     /// the moment focus moves elsewhere. Still closeable any time by
     /// clicking the menu bar icon again, pinned or not.
     func windowDidResignKey(_ notification: Notification) {
-        guard let window = notification.object as? NSWindow, window === pinnedNotePanel else { return }
+        guard let window = notification.object as? NSWindow else { return }
+        if window === pinnedTaskPanel {
+            window.close()
+            return
+        }
+        guard window === pinnedNotePanel else { return }
         guard !UserDefaults.standard.bool(forKey: "menuBarPopoverPinnedOpen") else { return }
         window.close()
     }
@@ -157,7 +234,13 @@ extension AppDelegate {
     /// during the drag) — no reason to hit UserDefaults dozens of times for
     /// one resize gesture.
     func windowDidEndLiveResize(_ notification: Notification) {
-        guard let window = notification.object as? NSWindow, window === pinnedNotePanel else { return }
+        guard let window = notification.object as? NSWindow else { return }
+        if window === pinnedTaskPanel {
+            UserDefaults.standard.set(window.frame.width, forKey: pinnedTaskPanelWidthKey)
+            UserDefaults.standard.set(window.frame.height, forKey: pinnedTaskPanelHeightKey)
+            return
+        }
+        guard window === pinnedNotePanel else { return }
         UserDefaults.standard.set(window.frame.width, forKey: pinnedPanelWidthKey)
         UserDefaults.standard.set(window.frame.height, forKey: pinnedPanelHeightKey)
     }

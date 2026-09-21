@@ -6,6 +6,19 @@ import EnvyCore
 // The SwiftUI entry point: scenes and the menu bar commands. The AppKit
 // side (window lifecycle, hotkeys, status item, pinned-note panel) lives in
 // AppDelegate.swift and its extensions.
+private struct AppDelegateKey: EnvironmentKey {
+    static let defaultValue: AppDelegate? = nil
+}
+extension EnvironmentValues {
+    /// The app's single AppDelegate, injected into ContentView so it can hand
+    /// its live NoteStore to the menu-bar task panel. Passed explicitly rather
+    /// than read off NSApp.delegate, which isn't reliably cast-able at onAppear.
+    var appDelegate: AppDelegate? {
+        get { self[AppDelegateKey.self] }
+        set { self[AppDelegateKey.self] = newValue }
+    }
+}
+
 @main
 struct EnvyApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
@@ -83,6 +96,7 @@ struct EnvyApp: App {
         // the deferred window-style changes below run.
         WindowGroup("Envy") {
             ContentView()
+                .environment(\.appDelegate, appDelegate)
         }
         .commands {
             CommandGroup(replacing: .appInfo) {

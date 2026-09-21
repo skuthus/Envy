@@ -44,6 +44,7 @@ enum NoteSortField: String {
 // top-level body; everything else lives with its pane/concern.
 struct ContentView: View {
     @Environment(\.openSettings) var openSettings
+    @Environment(\.appDelegate) private var envAppDelegate
     @Environment(\.openWindow) var openWindow
     @StateObject var store = NoteStore(
         directory: IndexPreference.load(),
@@ -772,6 +773,7 @@ struct ContentView: View {
         // pairing lives one level up, where the appearance is known.
         .onChange(of: colorScheme) { _, _ in syncAdaptiveTheme() }
         .onAppear {
+            envAppDelegate?.contentStore = store
             seedDefaultThemeIfNeeded()
             syncAdaptiveTheme()
             Task { await recomputeFilteredNotes() }

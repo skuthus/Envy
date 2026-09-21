@@ -34,6 +34,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var appliedVisibility: AppVisibility?
     private var windowStateObservers: [Any] = []
     var pinnedNotePanel: NSPanel?
+    /// The miniature floating task-list panel (menu bar "Pin Task List").
+    var pinnedTaskPanel: NSPanel?
+    /// The main window's live NoteStore, handed over by ContentView so the
+    /// task panel can share it — no second vault load, always in sync.
+    weak var contentStore: NoteStore?
     // Whatever app was frontmost right before we summoned Envy over the top
     // of it, so hiding Envy can hand focus straight back to it rather than
     // letting AppKit pick an arbitrary "next" window — see
