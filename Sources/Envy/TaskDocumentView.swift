@@ -35,6 +35,9 @@ struct TaskDocumentView: View {
     /// Whether checked tasks are shown too (they're scanned upstream only when
     /// this is on). The header's toggle drives it; the container recomputes.
     @Binding var showCompleted: Bool
+    /// Single-note mode's bottom "+" — append an empty task to the note and
+    /// focus it. Unused elsewhere (they use the top New task field).
+    var onAddEmptyTask: () -> Void = {}
 
     @Environment(\.interfaceFontScale) private var interfaceFontScale
     @State private var newTaskText = ""
@@ -62,10 +65,12 @@ struct TaskDocumentView: View {
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 0) {
-                if !singleNote { header }
-                newTaskField
+                if !singleNote {
+                    header
+                    newTaskField
+                }
                 if lines.isEmpty {
-                    emptyState
+                    if !singleNote { emptyState }
                 } else if singleNote {
                     // Already in document order from openTasks; subtasks indent
                     // by their own depth, no group header or source chip.
@@ -81,6 +86,7 @@ struct TaskDocumentView: View {
                         row(task, showSource: true)
                     }
                 }
+                if singleNote { addButton }
             }
             .padding(.bottom, Spacing.l)
         }
@@ -165,6 +171,21 @@ struct TaskDocumentView: View {
         .padding(.horizontal, Spacing.l)
         .padding(.vertical, Spacing.s)
         .overlay(alignment: .bottom) { Divider() }
+    }
+
+    /// The single-note panel's add control: a plain "+" at the bottom that
+    /// appends an empty task and drops into editing it.
+    private var addButton: some View {
+        Button(action: onAddEmptyTask) {
+            Image(systemName: "plus")
+                .font(.system(size: 12 * interfaceFontScale, weight: .semibold))
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, Spacing.l)
+                .padding(.vertical, Spacing.s)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help("Add a task")
     }
 
     private var emptyState: some View {

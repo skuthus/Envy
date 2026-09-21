@@ -79,8 +79,13 @@ struct NoteTaskPanelView: View {
                 focusLine: focusLine,
                 onFocusConsumed: { focusNoteID = nil; focusLine = nil },
                 singleNote: true,
-                addTaskHint: "Adding to this note",
-                showCompleted: $showCompleted
+                showCompleted: $showCompleted,
+                onAddEmptyTask: {
+                    if let line = store.appendEmptyTask(toNoteID: noteID) {
+                        focusNoteID = noteID
+                        focusLine = line
+                    }
+                }
             )
             .environment(\.interfaceFontScale, scale)
         }

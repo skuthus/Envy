@@ -731,6 +731,24 @@ public final class NoteStore: ObservableObject {
         return true
     }
 
+    /// Append an empty open task ("- [ ] ") to the end of a note and return the
+    /// line, so the caller can drop straight into editing it. nil if the note
+    /// is gone.
+    @discardableResult
+    public func appendEmptyTask(toNoteID noteID: String) -> String? {
+        guard var note = note(withID: noteID) else { return nil }
+        let line = "- [ ] "
+        if note.content.isEmpty {
+            note.content = line + "\n"
+        } else if note.content.hasSuffix("\n") {
+            note.content += line + "\n"
+        } else {
+            note.content += "\n" + line + "\n"
+        }
+        save(note)
+        return line
+    }
+
     /// Append a new open task to the end of a specific note (the per-note
     /// task panel's "New task"), rather than the root Tasks note.
     @discardableResult
