@@ -46,10 +46,28 @@ Never add a `Co-Authored-By:` trailer or any generated-with footer to a commit.
 | Sparkle feed | `assets/updates/appcast.xml`, served at `https://envynote.app/assets/updates/appcast.xml` |
 | Download button target | `assets/downloads/Envy.dmg` |
 
-Netlify is **not** connected to the git repo: `build_settings.repo_url` is
-`null`, there is no build command. `git push` does not deploy anything.
 Publishing is `netlify deploy --prod`, which uploads the publish root wholesale.
 Anything sitting in that folder goes live, which is why drafts live outside it.
+
+**DANGER — the site repo IS git-connected to Netlify** (`build_settings.repo_url`
+= `github.com/skuthus/Envy-website`, auto-publish on), despite an earlier note here
+claiming otherwise. There is no build command, so a git push just republishes the
+repo's own files — and `*.dmg` / `*.delta` are **gitignored**. So pushing the site
+repo triggers a Netlify build that drops every DMG and delta from production, 404ing
+them: Sparkle then finds neither a delta nor a full update and the in-app updater
+fails. This clobbers the `netlify deploy --prod` upload that carried the binaries and
+has broken updates on multiple past releases.
+
+Two ways to stay safe, do at least one:
+1. **Make `netlify deploy --prod` the very last action of the release** — after both
+   `git push`es (§6). If a site push already fired a clobbering build, this re-uploads
+   the binaries and republishes over it. Verify the served DMG *and* a delta return
+   200 (`curl -sI https://envynote.app/assets/updates/Envy-X.Y.Z.dmg` and one
+   `Envy…delta`) as the final check, not just the appcast.
+2. **Better, permanent:** turn off Netlify auto-publish for this site (Site config →
+   Build & deploy → **Stop builds**, i.e. `build_settings.stop_builds = true`). CLI
+   `netlify deploy --prod` still publishes; a site git push no longer can. Then the
+   ordering in step 1 stops mattering.
 
 `make-dmg.sh` resolves the site as `$ROOT_DIR/../EnvyWebsite`. Keep the two repos
 as siblings under `~/Documents/Claude/` or the appcast step silently skips.
