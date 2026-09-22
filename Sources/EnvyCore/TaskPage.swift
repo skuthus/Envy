@@ -252,6 +252,33 @@ public enum TaskPage {
         }
     }
 
+    /// `lines` after a write that reshaped one note (a line deleted or moved):
+    /// that note's rows are re-read and matched to what's on screen by their
+    /// text rather than their position, since positions shifted. A matched row
+    /// keeps its slot; a row the note no longer has drops out; a row whose text
+    /// is new (a moved block that took a new indent) goes after the note's last
+    /// row — views that show a note's rows in document order sort by ordinal.
+    public static func restructured(_ lines: [OpenTask], from note: Note, includeCompleted: Bool) -> [OpenTask] {
+        let key = NoteKey(note.id)
+        let fresh = scanTasks(in: note).filter { includeCompleted || !$0.isCompleted }
+        var byText: [String: OpenTask] = [:]
+        for task in fresh { byText[task.sourceLine + "\u{1}" + String(task.occurrence)] = task }
+        var used = Set<TaskID>()
+        var result: [OpenTask] = []
+        result.reserveCapacity(lines.count)
+        var noteEnd: Int?
+        for line in lines {
+            guard line.noteKey == key else { result.append(line); continue }
+            if let match = byText[line.sourceLine + "\u{1}" + String(line.occurrence)], used.insert(match.id).inserted {
+                result.append(match)
+            }
+            noteEnd = result.count
+        }
+        let leftover = fresh.filter { !used.contains($0.id) }
+        result.insert(contentsOf: leftover, at: noteEnd ?? result.count)
+        return result
+    }
+
     /// `fresh` (a rescan) in the order `previous` (what's on screen) already
     /// shows, so a rescan never moves rows under the cursor. A check or an edit
     /// saves the note, and the new edited date alone would float an undated
@@ -391,6 +418,95 @@ public enum TaskPage {
     public static func siblingLine(of sibling: String) -> String {
         let p = leadAndBullet(of: sibling)
         return p.lead + p.bullet + "[ ] "
+    }
+
+    /// Whether `line` is a task with no words — the only kind the page lets
+    /// Backspace delete outright.
+    public static func isEmptyTask(_ line: String) -> Bool {
+        let ns = line as NSString
+        guard let match = openTaskRegex.firstMatch(in: line, range: NSRange(location: 0, length: ns.length)) else { return false }
+        return ns.substring(with: match.range(at: 3)).trimmingCharacters(in: .whitespaces).isEmpty
+    }
+
+    /// `content` without the `occurrence`-th whole line equal to `line` (and
+    /// its line break). Returns nil when that line isn't there.
+    public static func removingLine(occurrence: Int, of line: String, in content: String) -> String? {
+        let ns = content as NSString
+        var location = 0
+        var seen = 0
+        while location < ns.length {
+            let lineRange = ns.lineRange(for: NSRange(location: location, length: 0))
+            var stripped = ns.substring(with: lineRange)
+            while stripped.hasSuffix("\n") || stripped.hasSuffix("\r") { stripped.removeLast() }
+            if stripped == line {
+                if seen == occurrence { return ns.replacingCharacters(in: lineRange, with: "") }
+                seen += 1
+            }
+            location = NSMaxRange(lineRange)
+        }
+        return nil
+    }
+
+    /// `content` with the task `line` (its `occurrence`-th copy) moved beside
+    /// `target` — just before it, or just after the target's own block — and
+    /// its subtasks moving with it. The moved block takes the target's
+    /// indentation, so it lands as the target's sibling: a subtask dropped
+    /// among top-level tasks becomes one, and vice versa. nil when either line
+    /// is gone, or the target sits inside the block being moved.
+    public static func movingLine(
+        _ line: String,
+        occurrence: Int,
+        beside target: String,
+        targetOccurrence: Int,
+        after: Bool,
+        in content: String
+    ) -> String? {
+        var lines = content.components(separatedBy: "\n")
+        guard let from = lineIndex(of: line, occurrence: occurrence, in: lines),
+              let to = lineIndex(of: target, occurrence: targetOccurrence, in: lines) else { return nil }
+        let fromEnd = blockEnd(startingAt: from, in: lines)
+        guard !(from..<fromEnd).contains(to) else { return nil }
+        var block = Array(lines[from..<fromEnd])
+        lines.removeSubrange(from..<fromEnd)
+        let targetIndex = to > from ? to - block.count : to
+        let insertAt = after ? blockEnd(startingAt: targetIndex, in: lines) : targetIndex
+        let oldLead = leadingWhitespace(block[0])
+        let newLead = leadingWhitespace(lines[targetIndex])
+        block = block.map { $0.hasPrefix(oldLead) ? newLead + $0.dropFirst(oldLead.count) : $0 }
+        lines.insert(contentsOf: block, at: insertAt)
+        return lines.joined(separator: "\n")
+    }
+
+    private static func lineIndex(of line: String, occurrence: Int, in lines: [String]) -> Int? {
+        var seen = 0
+        for (i, raw) in lines.enumerated() where (raw.hasSuffix("\r") ? String(raw.dropLast()) : raw) == line {
+            if seen == occurrence { return i }
+            seen += 1
+        }
+        return nil
+    }
+
+    /// One past the last line of the block `lines[start]` heads: every
+    /// following line indented deeper than it, up to a blank line or the next
+    /// line at its level or shallower.
+    private static func blockEnd(startingAt start: Int, in lines: [String]) -> Int {
+        let rootIndent = indentColumns(lines[start])
+        var end = start + 1
+        while end < lines.count {
+            let line = lines[end]
+            if line.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { break }
+            if indentColumns(line) <= rootIndent { break }
+            end += 1
+        }
+        return end
+    }
+
+    private static func leadingWhitespace(_ line: String) -> String {
+        String(line.prefix { $0 == " " || $0 == "\t" })
+    }
+
+    private static func indentColumns(_ line: String) -> Int {
+        leadingWhitespace(line).reduce(0) { $0 + ($1 == "\t" ? 4 : 1) }
     }
 
     /// Insert `newLine` as its own line immediately after the `occurrence`-th

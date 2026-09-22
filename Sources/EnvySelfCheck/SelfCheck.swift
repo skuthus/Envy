@@ -2447,6 +2447,37 @@ struct SelfCheck {
                   stable[1].isCompleted && stable.count == rescan.count)
             check("task page: a stabilized rescan of an unchanged page is the page",
                   TaskPage.stabilized(onScreen, toOrderOf: onScreen) == onScreen)
+            // Rearranging and deleting lines.
+            let outline = "# Plan\n- [ ] A\n    - [ ] A1\n    - [ ] A2\n- [ ] B\n- [ ] C\n    - [ ] C1\n\nafter\n"
+            check("task move: a task moves before another with its subtasks",
+                  TaskPage.movingLine("- [ ] C", occurrence: 0, beside: "- [ ] A", targetOccurrence: 0, after: false, in: outline)
+                  == "# Plan\n- [ ] C\n    - [ ] C1\n- [ ] A\n    - [ ] A1\n    - [ ] A2\n- [ ] B\n\nafter\n")
+            check("task move: dropping after a task lands after its whole block",
+                  TaskPage.movingLine("- [ ] B", occurrence: 0, beside: "- [ ] C", targetOccurrence: 0, after: true, in: outline)
+                  == "# Plan\n- [ ] A\n    - [ ] A1\n    - [ ] A2\n- [ ] C\n    - [ ] C1\n- [ ] B\n\nafter\n")
+            check("task move: a subtask dropped beside a top-level task becomes top-level",
+                  TaskPage.movingLine("    - [ ] A2", occurrence: 0, beside: "- [ ] B", targetOccurrence: 0, after: true, in: outline)
+                  == "# Plan\n- [ ] A\n    - [ ] A1\n- [ ] B\n- [ ] A2\n- [ ] C\n    - [ ] C1\n\nafter\n")
+            check("task move: a task dropped beside a subtask becomes a subtask, children nesting deeper",
+                  TaskPage.movingLine("- [ ] C", occurrence: 0, beside: "    - [ ] A1", targetOccurrence: 0, after: false, in: outline)
+                  == "# Plan\n- [ ] A\n    - [ ] C\n        - [ ] C1\n    - [ ] A1\n    - [ ] A2\n- [ ] B\n\nafter\n")
+            check("task move: a task can't be dropped into its own subtasks",
+                  TaskPage.movingLine("- [ ] A", occurrence: 0, beside: "    - [ ] A1", targetOccurrence: 0, after: true, in: outline) == nil)
+            check("task delete: an empty task is empty, a worded one isn't",
+                  TaskPage.isEmptyTask("- [ ] ") && TaskPage.isEmptyTask("    * [ ]  ") && !TaskPage.isEmptyTask("- [ ] x") && !TaskPage.isEmptyTask("plain"))
+            check("task delete: the chosen empty line is removed, nothing else",
+                  TaskPage.removingLine(occurrence: 1, of: "- [ ] ", in: "- [ ] \n- [ ] a\n- [ ] \n- [ ] b\n") == "- [ ] \n- [ ] a\n- [ ] b\n")
+            let planNote = Note(id: "/tmp/Plan.md", url: URL(fileURLWithPath: "/tmp/Plan.md"), content: outline, modifiedDate: Date())
+            let planRows = TaskPage.lines(in: [planNote, work], query: "tasks:")
+            let moved = Note(id: planNote.id, url: planNote.url,
+                             content: TaskPage.movingLine("- [ ] C", occurrence: 0, beside: "    - [ ] A1", targetOccurrence: 0, after: false, in: outline)!,
+                             modifiedDate: Date())
+            let reshaped = TaskPage.restructured(planRows, from: moved, includeCompleted: false)
+            check("task restructure: every row of the note survives a move, other notes untouched",
+                  reshaped.filter { $0.noteID == planNote.id }.count == 6
+                  && reshaped.filter { $0.noteID != planNote.id } == planRows.filter { $0.noteID != planNote.id })
+            check("task restructure: in document order the moved block sits where it was dropped",
+                  reshaped.filter { $0.noteID == planNote.id }.sorted { $0.ordinal < $1.ordinal }.map(\.body) == ["A", "C", "C1", "A1", "A2", "B"])
             let emDash = "/tmp/Idea — plan.md"
             check("task page: a note key matches the same path from separate strings, and only that path",
                   NoteKey(emDash) == NoteKey(String(decoding: Array(emDash.utf8), as: UTF8.self))

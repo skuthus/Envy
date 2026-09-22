@@ -731,6 +731,32 @@ public final class NoteStore: ObservableObject {
         return true
     }
 
+    /// Delete a task line that has no words (Backspace on an empty task).
+    /// Refuses anything else, so a stale row can never delete real text.
+    @discardableResult
+    public func deleteEmptyTaskLine(noteID: String, line: String, occurrence: Int) -> Bool {
+        guard TaskPage.isEmptyTask(line),
+              var note = note(withID: noteID),
+              let updated = TaskPage.removingLine(occurrence: occurrence, of: line, in: note.content) else { return false }
+        note.content = updated
+        save(note)
+        return true
+    }
+
+    /// Move a task line, with its subtasks, beside another line of the same
+    /// note (see TaskPage.movingLine).
+    @discardableResult
+    public func moveTaskLine(noteID: String, line: String, occurrence: Int,
+                             beside target: String, targetOccurrence: Int, after: Bool) -> Bool {
+        guard var note = note(withID: noteID),
+              let updated = TaskPage.movingLine(line, occurrence: occurrence, beside: target,
+                                                targetOccurrence: targetOccurrence, after: after, in: note.content),
+              updated != note.content else { return false }
+        note.content = updated
+        save(note)
+        return true
+    }
+
     /// Append an empty open task ("- [ ] ") to the end of a note and return the
     /// line, so the caller can drop straight into editing it. nil if the note
     /// is gone.

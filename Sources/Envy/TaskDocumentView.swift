@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 import EnvyCore
 
 /// The full-width `tasks:` page — a transcluded view of every open task line
@@ -40,6 +41,13 @@ struct TaskDocumentView: View {
     /// Single-note mode's bottom "+" — append an empty task to the note and
     /// focus it. Unused elsewhere (they use the top New task field).
     var onAddEmptyTask: () -> Void = {}
+    /// (noteID, the empty line, occurrence) — Backspace in a task with no
+    /// words. Returns whether the note took it.
+    var onDeleteEmpty: (String, String, Int) -> Bool = { _, _, _ in false }
+    /// (noteID, the dragged line, its occurrence, the line it was dropped on,
+    /// that line's occurrence, below it?) — rearranging within one note.
+    /// Returns whether the note took it.
+    var onMoveTask: (String, String, Int, String, Int, Bool) -> Bool = { _, _, _, _, _, _ in false }
 
     @Environment(\.interfaceFontScale) private var interfaceFontScale
     @State private var newTaskText = ""
@@ -63,6 +71,9 @@ struct TaskDocumentView: View {
     /// changes, so an ordinary redraw pays nothing.
     @State private var groups: [Group] = []
     @State private var flat: [OpenTask] = []
+    /// The row being dragged to rearrange, and where it would land.
+    @State private var dragging: OpenTask?
+    @State private var dropSpot: DropSpot?
 
     var body: some View {
         ScrollView {
@@ -74,9 +85,9 @@ struct TaskDocumentView: View {
                 if lines.isEmpty {
                     if !singleNote { emptyState }
                 } else if singleNote {
-                    // Already in document order from openTasks; subtasks indent
-                    // by their own depth, no group header or source chip.
-                    ForEach(lines) { task in
+                    // Document order; subtasks indent by their own depth, no
+                    // group header or source chip.
+                    ForEach(flat) { task in
                         row(task, showSource: false)
                     }
                 } else if grouping == .byNote {
@@ -268,15 +279,27 @@ struct TaskDocumentView: View {
             onOpenNote: onOpenNote,
             onAddSubtask: onAddSubtask,
             onAddTaskBelow: onAddTaskBelow,
+            onDeleteEmpty: onDeleteEmpty,
             autoFocus: task.noteID == focusNoteID && task.sourceLine == focusLine,
             onFocusConsumed: onFocusConsumed
         )
+        // Rearranging follows the note's own order, so it's offered where rows
+        // show in it — a note's section, or the one-note panel — not By due.
+        .modifier(Reorderable(task: task, enabled: singleNote || grouping == .byNote,
+                              dragging: $dragging, dropSpot: $dropSpot) { dragged, target, below in
+            onMoveTask(dragged.noteID, dragged.sourceLine, dragged.occurrence,
+                       target.sourceLine, target.occurrence, below)
+        })
     }
 
     // MARK: Arrangement (off the redraw path)
 
     private func rebuild() {
-        if grouping == .byNote {
+        if singleNote {
+            // One note: its document order. (A rearrange re-reads the note
+            // before the rescan lands, and ordinal is the order it wrote.)
+            flat = lines.sorted { $0.ordinal < $1.ordinal }
+        } else if grouping == .byNote {
             // Iterate the already due-sorted lines: the order notes first
             // appear is the order of their soonest task, which is exactly the
             // section order we want. Tasks within a note go back to document
@@ -334,6 +357,7 @@ private struct TaskLineRow: View {
     let onOpenNote: (String, String) -> Void
     let onAddSubtask: (String, String, Int) -> Void
     let onAddTaskBelow: (String, String, Int) -> Void
+    let onDeleteEmpty: (String, String, Int) -> Bool
     /// True for a just-created row that should open in edit mode on appear.
     let autoFocus: Bool
     let onFocusConsumed: () -> Void
@@ -346,6 +370,7 @@ private struct TaskLineRow: View {
     @State private var liveOccurrence: Int
     @State private var editing = false
     @State private var saveTask: Task<Void, Never>?
+    @State private var backspaceMonitor: Any?
     @FocusState private var focused: Bool
 
     init(
@@ -360,6 +385,7 @@ private struct TaskLineRow: View {
         onOpenNote: @escaping (String, String) -> Void,
         onAddSubtask: @escaping (String, String, Int) -> Void,
         onAddTaskBelow: @escaping (String, String, Int) -> Void,
+        onDeleteEmpty: @escaping (String, String, Int) -> Bool,
         autoFocus: Bool,
         onFocusConsumed: @escaping () -> Void
     ) {
@@ -374,6 +400,7 @@ private struct TaskLineRow: View {
         self.onOpenNote = onOpenNote
         self.onAddSubtask = onAddSubtask
         self.onAddTaskBelow = onAddTaskBelow
+        self.onDeleteEmpty = onDeleteEmpty
         self.autoFocus = autoFocus
         self.onFocusConsumed = onFocusConsumed
         _draft = State(initialValue: task.body)
@@ -492,6 +519,12 @@ private struct TaskLineRow: View {
             guard editing else { return }
             saveTask = DebouncedSave.schedule(replacing: saveTask) { commitNow() }
         }
+        // Backspace in a task with no words removes it, the way an empty list
+        // item goes in any outline. Watched only while this row is editing.
+        .onChange(of: editing) { _, isEditing in
+            if isEditing { watchBackspace() } else { stopWatchingBackspace() }
+        }
+        .onDisappear { stopWatchingBackspace() }
         .onChange(of: focused) { _, isFocused in
             if editing, !isFocused { endEditing() }
         }
@@ -532,6 +565,35 @@ private struct TaskLineRow: View {
         // Still editing: the list's refresh won't resync a row mid-edit, so
         // carry the flipped box into the chained key ourselves.
         liveLine = toggled
+    }
+
+    /// A local key monitor rather than onKeyPress: the text field's editor
+    /// takes Backspace before SwiftUI's key handlers ever see it. Acts only
+    /// when this row's field has the keyboard and holds no words; any other
+    /// Backspace passes through untouched.
+    private func watchBackspace() {
+        guard backspaceMonitor == nil else { return }
+        backspaceMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask).subtracting([.capsLock, .numericPad, .function])
+            guard event.keyCode == 51, modifiers.isEmpty, editing, focused, draft.isEmpty else { return event }
+            deleteEmpty()
+            return nil
+        }
+    }
+
+    private func stopWatchingBackspace() {
+        if let backspaceMonitor { NSEvent.removeMonitor(backspaceMonitor) }
+        backspaceMonitor = nil
+    }
+
+    /// Take this empty task out of its note. The pending save lands first so
+    /// the note holds exactly the empty line being removed.
+    private func deleteEmpty() {
+        saveTask?.cancel()
+        commitNow()
+        let key = writeKey
+        editing = false
+        _ = onDeleteEmpty(task.noteID, key.line, key.occurrence)
     }
 
     private func endEditing() {
@@ -620,4 +682,95 @@ private struct TaskLineRow: View {
         }
         return Color(nsColor: ns)
     }
+}
+
+/// Where a dragged task row would land: just above or just below `id`.
+private struct DropSpot: Equatable {
+    let id: TaskID
+    let below: Bool
+}
+
+/// Drag-to-rearrange for one task row: the row can be picked up, and a task
+/// from the same note dropped on it lands above or below it (by which half the
+/// pointer is over), shown by an insertion line.
+private struct Reorderable: ViewModifier {
+    let task: OpenTask
+    let enabled: Bool
+    @Binding var dragging: OpenTask?
+    @Binding var dropSpot: DropSpot?
+    let onDrop: (OpenTask, OpenTask, Bool) -> Bool
+    @State private var height: CGFloat = 1
+
+    func body(content: Content) -> some View {
+        if enabled {
+            content
+                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height = $0 }
+                .overlay(alignment: dropSpot?.below == true ? .bottom : .top) {
+                    if dropSpot?.id == task.id {
+                        Rectangle()
+                            .fill(Color.accentColor)
+                            .frame(height: 2)
+                            .allowsHitTesting(false)
+                    }
+                }
+                .onDrag {
+                    dragging = task
+                    // An in-app-only type: nothing dragged in from elsewhere
+                    // (or from another window's text) can land as a task move.
+                    let provider = NSItemProvider()
+                    provider.registerDataRepresentation(forTypeIdentifier: UTType.envyTaskRow.identifier,
+                                                        visibility: .ownProcess) { done in
+                        done(Data(), nil)
+                        return nil
+                    }
+                    return provider
+                }
+                .onDrop(of: [.envyTaskRow], delegate: RowDrop(target: task, height: height,
+                                                       dragging: $dragging, spot: $dropSpot, onDrop: onDrop))
+        } else {
+            content
+        }
+    }
+}
+
+private struct RowDrop: DropDelegate {
+    let target: OpenTask
+    let height: CGFloat
+    @Binding var dragging: OpenTask?
+    @Binding var spot: DropSpot?
+    let onDrop: (OpenTask, OpenTask, Bool) -> Bool
+
+    /// The dragged row, when it can land here: same note, not itself.
+    private var movable: OpenTask? {
+        guard let dragged = dragging, dragged.noteKey == target.noteKey, dragged.id != target.id else { return nil }
+        return dragged
+    }
+
+    private func below(_ info: DropInfo) -> Bool { info.location.y > height / 2 }
+
+    func validateDrop(info: DropInfo) -> Bool { movable != nil }
+
+    func dropUpdated(info: DropInfo) -> DropProposal? {
+        guard movable != nil else { return DropProposal(operation: .forbidden) }
+        let here = DropSpot(id: target.id, below: below(info))
+        if spot != here { spot = here }
+        return DropProposal(operation: .move)
+    }
+
+    func dropExited(info: DropInfo) {
+        if spot?.id == target.id { spot = nil }
+    }
+
+    func performDrop(info: DropInfo) -> Bool {
+        spot = nil
+        defer { dragging = nil }
+        guard let dragged = movable else { return false }
+        return onDrop(dragged, target, below(info))
+    }
+}
+
+private extension UTType {
+    /// A task row being dragged to rearrange it — carries nothing, only marks
+    /// the drag as ours.
+    static let envyTaskRow = UTType(exportedAs: "com.skylerschoos.envy.task-row")
 }

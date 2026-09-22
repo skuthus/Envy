@@ -1215,14 +1215,32 @@ extension ContentView {
     /// write, so it's superseded rather than left to land stale over it. A
     /// write that misses (the page was behind the note) shows nothing and
     /// rebuilds instead — the page never claims a change the file doesn't have.
-    private func applyTaskWrite(noteID: String, _ write: () -> Bool) -> Bool {
+    private func applyTaskWrite(noteID: String, restructure: Bool = false, _ write: () -> Bool) -> Bool {
         searchComputeGeneration += 1
         guard write(), let note = store.note(withID: noteID) else {
             Task { await recomputeFilteredNotes() }
             return false
         }
-        taskDocumentLinesCache = TaskPage.refreshing(taskDocumentLinesCache, from: note, includeCompleted: showCompletedTasks)
+        taskDocumentLinesCache = restructure
+            ? TaskPage.restructured(taskDocumentLinesCache, from: note, includeCompleted: showCompletedTasks)
+            : TaskPage.refreshing(taskDocumentLinesCache, from: note, includeCompleted: showCompletedTasks)
         return true
+    }
+
+    /// Backspace in an empty task: remove that line from its note.
+    func deleteEmptyTaskLine(noteID: String, line: String, occurrence: Int) -> Bool {
+        applyTaskWrite(noteID: noteID, restructure: true) {
+            store.deleteEmptyTaskLine(noteID: noteID, line: line, occurrence: occurrence)
+        }
+    }
+
+    /// A task dragged onto another in the same note: move it (and its
+    /// subtasks) there.
+    func moveTaskLine(noteID: String, line: String, occurrence: Int, target: String, targetOccurrence: Int, below: Bool) -> Bool {
+        applyTaskWrite(noteID: noteID, restructure: true) {
+            store.moveTaskLine(noteID: noteID, line: line, occurrence: occurrence,
+                               beside: target, targetOccurrence: targetOccurrence, after: below)
+        }
     }
 
     /// Add an empty subtask into the note, one level indented, right after the
@@ -1285,7 +1303,9 @@ extension ContentView {
                 focusNoteID: taskFocusNoteID,
                 focusLine: taskFocusLine,
                 onFocusConsumed: { taskFocusNoteID = nil; taskFocusLine = nil },
-                showCompleted: $showCompletedTasks
+                showCompleted: $showCompletedTasks,
+                onDeleteEmpty: deleteEmptyTaskLine,
+                onMoveTask: moveTaskLine
             )
         }
         // The task lines are computed by the search pipeline, whose trigger

@@ -28,5 +28,18 @@
 	<true/>
 	<key>NSHumanReadableCopyright</key>
 	<string>© 2026 Skyler Schoos</string>
+	<key>UTExportedTypeDeclarations</key>
+	<array>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>com.skylerschoos.envy.task-row</string>
+			<key>UTTypeDescription</key>
+			<string>Envy task row</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+			</array>
+		</dict>
+	</array>
 </dict>
 </plist>

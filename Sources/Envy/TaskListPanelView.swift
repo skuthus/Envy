@@ -54,7 +54,16 @@ struct TaskListPanelView: View {
             focusNoteID: focusNoteID,
             focusLine: focusLine,
             onFocusConsumed: { focusNoteID = nil; focusLine = nil },
-            showCompleted: $showCompleted
+            showCompleted: $showCompleted,
+            onDeleteEmpty: { nid, line, occ in
+                write(nid, restructure: true) { store.deleteEmptyTaskLine(noteID: nid, line: line, occurrence: occ) }
+            },
+            onMoveTask: { nid, line, occ, target, targetOcc, below in
+                write(nid, restructure: true) {
+                    store.moveTaskLine(noteID: nid, line: line, occurrence: occ,
+                                       beside: target, targetOccurrence: targetOcc, after: below)
+                }
+            }
         )
         .environment(\.interfaceFontScale, scale)
         .background(Color(nsColor: theme.resolvedBackgroundColor))
@@ -77,13 +86,15 @@ struct TaskListPanelView: View {
     /// any rescan already in flight — snapshotted before this write — is
     /// superseded so it can't land stale over it. A missed write shows nothing
     /// and rebuilds instead.
-    private func write(_ noteID: String, _ op: () -> Bool) -> Bool {
+    private func write(_ noteID: String, restructure: Bool = false, _ op: () -> Bool) -> Bool {
         generation += 1
         guard op(), let note = store.note(withID: noteID) else {
             recompute()
             return false
         }
-        lines = TaskPage.refreshing(lines, from: note, includeCompleted: showCompleted)
+        lines = restructure
+            ? TaskPage.restructured(lines, from: note, includeCompleted: showCompleted)
+            : TaskPage.refreshing(lines, from: note, includeCompleted: showCompleted)
         return true
     }
 
