@@ -59,6 +59,13 @@ struct NoteTaskPanelView: View {
                 onComplete: { nid, line, occ in
                     if let toggled = TaskPage.toggledLine(line) {
                         store.rewriteTaskLine(noteID: nid, originalLine: line, occurrence: occ, with: toggled)
+                        if let idx = lines.firstIndex(where: { $0.noteID == nid && $0.sourceLine == line && $0.occurrence == occ }) {
+                            if showCompleted {
+                                if let flipped = lines[idx].togglingCompletion() { lines[idx] = flipped }
+                            } else {
+                                lines.remove(at: idx)
+                            }
+                        }
                     }
                 },
                 onOpenNote: { nid, _ in onOpenNote(URL(fileURLWithPath: nid)) },

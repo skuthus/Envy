@@ -54,6 +54,20 @@ public struct OpenTask: Equatable, Sendable, Identifiable {
         self.isCompleted = isCompleted
         self.edited = edited
     }
+
+    /// A copy with its checkbox flipped — for the optimistic in-place update
+    /// when "Show completed" is on, so a checked task reads struck-through at
+    /// once instead of waiting for the rescan. nil if there's no box to flip.
+    public func togglingCompletion() -> OpenTask? {
+        guard let newSource = TaskPage.toggledLine(sourceLine),
+              let newMarker = TaskPage.toggledLine(marker) else { return nil }
+        return OpenTask(
+            id: noteID + "\u{1}" + String(occurrence) + "\u{1}" + newSource,
+            noteID: noteID, noteTitle: noteTitle, ordinal: ordinal, occurrence: occurrence,
+            sourceLine: newSource, indent: indent, marker: newMarker, body: body,
+            due: due, isCompleted: !isCompleted, edited: edited
+        )
+    }
 }
 
 /// The `tasks:` page: open task lines pulled out of notes the search already matched.

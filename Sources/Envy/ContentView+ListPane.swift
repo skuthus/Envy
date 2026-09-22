@@ -1187,6 +1187,21 @@ extension ContentView {
     func completeTaskLine(noteID: String, line: String, occurrence: Int) {
         guard let toggled = TaskPage.toggledLine(line) else { return }
         store.rewriteTaskLine(noteID: noteID, originalLine: line, occurrence: occurrence, with: toggled)
+        // Instant feedback: drop the just-checked line from the shown list now,
+        // rather than waiting for the whole-vault rescan to land. The rescan
+        // then reconciles authoritatively. (When completed tasks are shown, the
+        // rescan flips it to checked instead.)
+        if let idx = taskDocumentLinesCache.firstIndex(where: {
+            $0.noteID == noteID && $0.sourceLine == line && $0.occurrence == occurrence
+        }) {
+            if showCompletedTasks {
+                if let flipped = taskDocumentLinesCache[idx].togglingCompletion() {
+                    taskDocumentLinesCache[idx] = flipped
+                }
+            } else {
+                taskDocumentLinesCache.remove(at: idx)
+            }
+        }
     }
 
     /// Add an empty subtask into the note, one level indented, right after the
