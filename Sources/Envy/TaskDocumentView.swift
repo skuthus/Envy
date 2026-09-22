@@ -180,11 +180,14 @@ struct TaskDocumentView: View {
             Image(systemName: "plus")
                 .font(.system(size: 12 * interfaceFontScale, weight: .semibold))
                 .foregroundStyle(.secondary)
-                .padding(.horizontal, Spacing.l)
-                .padding(.vertical, Spacing.s)
+                // Same leading + 22-wide box as a task row's checkbox, so the
+                // "+" sits directly under the checkbox column.
+                .frame(width: 22, height: 18, alignment: .center)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .padding(.leading, Spacing.xl)
+        .padding(.vertical, Spacing.s)
         .help("Add a task")
     }
 
