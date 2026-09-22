@@ -148,22 +148,6 @@ public enum TaskPage {
         }.joined(separator: ", ")
     }
 
-    /// Fenced-code ranges for the paragraph holding `location`, reusing a
-    /// per-note set computed once — the whole-note fenced scan used to rerun
-    /// for every task line, which was O(lines x content) on a note that mixes
-    /// many checkboxes with a code block.
-    private static func insideInlineCode(_ location: Int, ns: NSString) -> Bool {
-        let clamped = min(location, ns.length)
-        let paraRange = ns.paragraphRange(for: NSRange(location: clamped, length: 0))
-        let para = ns.substring(with: paraRange)
-        let paraFull = NSRange(location: 0, length: (para as NSString).length)
-        for m in MarkdownSemantics.inlineCodeRegex.matches(in: para, range: paraFull) {
-            let doc = NSRange(location: paraRange.location + m.range.location, length: m.range.length)
-            if clamped >= doc.location && clamped <= NSMaxRange(doc) { return true }
-        }
-        return false
-    }
-
     /// Every task line in the note — open and checked — in document order.
     private static func scanTasks(in note: Note) -> [OpenTask] {
         let content = note.content
@@ -181,9 +165,6 @@ public enum TaskPage {
         let fenced: [NSRange] = ns.range(of: "```").location == NSNotFound
             ? []
             : MarkdownSemantics.fencedCodeBlockRegex.matches(in: content, range: full).map(\.range)
-        // Inline `code` can only hide a checkbox in a note that has a backtick
-        // at all, which most don't — skip the per-line paragraph scan otherwise.
-        let hasBacktick = ns.range(of: "`").location != NSNotFound
         var tasks: [OpenTask] = []
         var seenLine: [String: Int] = [:]
         let key = NoteKey(note.id)
@@ -191,12 +172,17 @@ public enum TaskPage {
         title.makeContiguousUTF8()
         for match in openTaskRegex.matches(in: content, range: full) {
             let loc = match.range.location
-            if fenced.contains(where: { loc >= $0.location && loc <= NSMaxRange($0) }) { continue }
-            if hasBacktick, insideInlineCode(loc, ns: ns) { continue }
             let lineRange = ns.lineRange(for: match.range)
             var sourceLine = ns.substring(with: lineRange)
             if sourceLine.hasSuffix("\n") { sourceLine.removeLast() }
             if sourceLine.hasSuffix("\r") { sourceLine.removeLast() }
+            // Count every copy of this text — a sample inside a code block
+            // too — before skipping those: the writers (replacingLine and the
+            // rest) find "the Nth copy" among all the note's lines, so the
+            // numbering has to agree or a write lands on the code sample.
+            let occurrence = seenLine[sourceLine, default: 0]
+            seenLine[sourceLine, default: 0] += 1
+            if fenced.contains(where: { loc >= $0.location && loc <= NSMaxRange($0) }) { continue }
             // Native UTF-8, so the page's byte compares of it stay fast.
             sourceLine.makeContiguousUTF8()
 
@@ -213,8 +199,6 @@ public enum TaskPage {
             let body = String(rest.dropFirst(leadCount))
             let box = ns.substring(with: match.range(at: 2))
             let marker = ns.substring(with: match.range(at: 1)) + box + lead
-            let occurrence = seenLine[sourceLine, default: 0]
-            seenLine[sourceLine, default: 0] += 1
             let ordinal = tasks.count
             tasks.append(OpenTask(
                 id: TaskID(note: key, ordinal: ordinal),
@@ -265,28 +249,57 @@ public enum TaskPage {
     /// appear along with them.
     public static func restructured(_ lines: [OpenTask], from note: Note, before: Note?, includeCompleted: Bool) -> [OpenTask] {
         let key = NoteKey(note.id)
-        let fresh = scanTasks(in: note).filter { includeCompleted || !$0.isCompleted }
-        let hadBefore = Set((before.map(scanTasks) ?? []).map { $0.sourceLine + "\u{1}" + String($0.occurrence) })
-        var byText: [String: OpenTask] = [:]
-        for task in fresh { byText[task.sourceLine + "\u{1}" + String(task.occurrence)] = task }
+        let all = scanTasks(in: note)
+        let fresh = all.filter { includeCompleted || !$0.isCompleted }
+        func exact(_ t: OpenTask) -> String { t.sourceLine + "\u{1}" + String(t.occurrence) }
+        func unindented(_ t: OpenTask) -> String { String(t.sourceLine.drop { $0 == " " || $0 == "\t" }) }
+        var byExact: [String: OpenTask] = [:]
+        for task in fresh { byExact[exact(task)] = task }
         var used = Set<TaskID>()
-        var result: [OpenTask] = []
-        result.reserveCapacity(lines.count)
+
+        // 1. A row whose line is unchanged keeps its slot.
+        var slots: [OpenTask?] = []
+        slots.reserveCapacity(lines.count)
+        var unmatched: [(slot: Int, row: OpenTask)] = []
         for line in lines {
-            guard line.noteKey == key else { result.append(line); continue }
-            if let match = byText[line.sourceLine + "\u{1}" + String(line.occurrence)], used.insert(match.id).inserted {
-                result.append(match)
+            guard line.noteKey == key else { slots.append(line); continue }
+            if let match = byExact[exact(line)], used.insert(match.id).inserted {
+                slots.append(match)
+            } else {
+                unmatched.append((slots.count, line))
+                slots.append(nil)
             }
         }
-        // In document order, so a run of new rows chains one under the next.
-        for task in fresh where !used.contains(task.id) && !hadBefore.contains(task.sourceLine + "\u{1}" + String(task.occurrence)) {
+        // 2. A row whose line only moved or took a new indent (a drag) is found
+        //    by its words and box, indentation aside.
+        var byUnindented: [String: [OpenTask]] = [:]
+        for task in fresh where !used.contains(task.id) { byUnindented[unindented(task), default: []].append(task) }
+        for (slot, row) in unmatched {
+            if let match = byUnindented[unindented(row)]?.first(where: { !used.contains($0.id) }) {
+                used.insert(match.id)
+                slots[slot] = match
+            }
+        }
+        var result = slots.compactMap { $0 }
+
+        // 3. Genuinely new lines — only as many copies of a text as the note
+        //    gained, so rows a filtered page never showed (a dragged task's
+        //    hidden subtasks) don't appear with them. In document order, so a
+        //    run of new rows chains one under the next.
+        var gained: [String: Int] = [:]
+        for task in all { gained[unindented(task), default: 0] += 1 }
+        for task in before.map(scanTasks) ?? [] { gained[unindented(task), default: 0] -= 1 }
+        for task in fresh where !used.contains(task.id) {
+            let text = unindented(task)
+            guard gained[text, default: 0] > 0 else { continue }
+            gained[text, default: 0] -= 1
             // The note's line just above it (highest ordinal below it), wherever
             // that row sits in the list — not the last one in list order.
-            let before = result.indices
+            let above = result.indices
                 .filter { result[$0].noteKey == key && result[$0].id.ordinal < task.id.ordinal }
                 .max { result[$0].id.ordinal < result[$1].id.ordinal }
             let firstOfNote = result.firstIndex { $0.noteKey == key }
-            result.insert(task, at: before.map { $0 + 1 } ?? firstOfNote ?? result.count)
+            result.insert(task, at: above.map { $0 + 1 } ?? firstOfNote ?? result.count)
         }
         return result
     }
@@ -426,14 +439,6 @@ public enum TaskPage {
             location = next
         }
         return nil
-    }
-
-    /// The same line with its first `[ ]` changed to `[x]`.
-    public static func completedLine(_ sourceLine: String) -> String? {
-        guard let range = sourceLine.range(of: "[ ]") else { return nil }
-        var copy = sourceLine
-        copy.replaceSubrange(range, with: "[x]")
-        return copy
     }
 
     /// The leading whitespace and bullet ("- ", "* ", "+ ", or "") of a task
@@ -597,6 +602,17 @@ public enum TaskPage {
             for i in at..<end { lines[i] = unit + lines[i] }
         }
         return (lines.joined(separator: "\n"), stripped(lines[at]))
+    }
+
+    /// Which copy of `newLine` the `occurrence`-th `original` becomes once it's
+    /// rewritten to that text in place (an edit, a check, a Tab): the copies of
+    /// that text above it, counted the way the writers count. Lets a row keep
+    /// an exact write key right after its own write, with identical lines
+    /// elsewhere in the note. nil when `original` is gone.
+    public static func occurrenceAfterRewrite(of original: String, occurrence: Int, to newLine: String, in content: String) -> Int? {
+        let lines = content.components(separatedBy: "\n")
+        guard let at = lineIndex(of: original, occurrence: occurrence, in: lines) else { return nil }
+        return lines[0..<at].reduce(0) { $0 + (stripped($1) == newLine ? 1 : 0) }
     }
 
     private static func outdentedOnce(_ line: String) -> String {

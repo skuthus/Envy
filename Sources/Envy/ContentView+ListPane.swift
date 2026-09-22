@@ -1189,22 +1189,28 @@ extension ContentView {
     var taskDocumentLines: [OpenTask] { taskDocumentLinesCache }
 
     /// Write one open line's words back into its note, matched by the exact
-    /// line text and occurrence the row carries — never by position.
+    /// line text and occurrence the row carries — never by position. Returns
+    /// which copy of its text the line now is (nil: the note didn't take it).
     @discardableResult
-    func commitTaskLine(noteID: String, originalLine: String, occurrence: Int, newLine: String) -> Bool {
-        guard newLine != originalLine else { return true }
-        return applyTaskWrite(noteID: noteID) {
-            store.rewriteTaskLine(noteID: noteID, originalLine: originalLine, occurrence: occurrence, with: newLine)
-        }
+    func commitTaskLine(noteID: String, originalLine: String, occurrence: Int, newLine: String) -> Int? {
+        guard newLine != originalLine else { return occurrence }
+        return rewriteTask(noteID: noteID, line: originalLine, occurrence: occurrence, to: newLine)
     }
 
     /// Flip the box on one line ([ ] ↔ [x]), matched the same way.
     @discardableResult
-    func completeTaskLine(noteID: String, line: String, occurrence: Int) -> Bool {
-        guard let toggled = TaskPage.toggledLine(line) else { return false }
-        return applyTaskWrite(noteID: noteID) {
-            store.rewriteTaskLine(noteID: noteID, originalLine: line, occurrence: occurrence, with: toggled)
-        }
+    func completeTaskLine(noteID: String, line: String, occurrence: Int) -> Int? {
+        guard let toggled = TaskPage.toggledLine(line) else { return nil }
+        return rewriteTask(noteID: noteID, line: line, occurrence: occurrence, to: toggled)
+    }
+
+    private func rewriteTask(noteID: String, line: String, occurrence: Int, to newLine: String) -> Int? {
+        guard let content = store.note(withID: noteID)?.content,
+              let newOccurrence = TaskPage.occurrenceAfterRewrite(of: line, occurrence: occurrence, to: newLine, in: content),
+              applyTaskWrite(noteID: noteID, {
+                  store.rewriteTaskLine(noteID: noteID, originalLine: line, occurrence: occurrence, with: newLine)
+              }) else { return nil }
+        return newOccurrence
     }
 
     /// One write from the task page, shown the instant it lands: the written
@@ -1237,13 +1243,16 @@ extension ContentView {
 
     /// Tab / Shift-Tab in a task: shift it and its subtasks a level. Returns
     /// the line as it now reads.
-    func shiftTaskLine(noteID: String, line: String, occurrence: Int, outward: Bool) -> String? {
+    func shiftTaskLine(noteID: String, line: String, occurrence: Int, outward: Bool) -> (line: String, occurrence: Int)? {
+        guard let content = store.note(withID: noteID)?.content else { return nil }
         var shifted: String?
         let ok = applyTaskWrite(noteID: noteID) {
             shifted = store.shiftTaskLine(noteID: noteID, line: line, occurrence: occurrence, outward: outward)
             return shifted != nil
         }
-        return ok ? shifted : nil
+        guard ok, let shifted,
+              let newOccurrence = TaskPage.occurrenceAfterRewrite(of: line, occurrence: occurrence, to: shifted, in: content) else { return nil }
+        return (shifted, newOccurrence)
     }
 
     /// A task dragged onto another in the same note: move it (and its

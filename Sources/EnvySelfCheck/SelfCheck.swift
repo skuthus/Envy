@@ -2378,7 +2378,7 @@ struct SelfCheck {
             check("task page: the second identical line is the one replaced",
                   replaced?.contains("- [ ] Call the dentist\n") == true && replaced?.contains("- [ ] Call tomorrow") == true)
             check("task page: checking a box writes [x] over the first [ ]",
-                  TaskPage.completedLine("- [ ] Call the dentist") == "- [x] Call the dentist")
+                  TaskPage.toggledLine("- [ ] Call the dentist") == "- [x] Call the dentist")
 
             check("task page: a subtask nests 4 spaces under a top-level parent",
                   TaskPage.subtaskLine(under: "- [ ] Parent") == "    - [ ] ")
@@ -2527,6 +2527,30 @@ struct SelfCheck {
             check("task marker: indent, bullet, box and spacing — body excluded",
                   TaskPage.marker(of: "    * [x]  done it") == "    * [x]  " && TaskPage.marker(of: "- [ ] ") == "- [ ] "
                   && TaskPage.marker(of: "plain") == nil)
+            // A task whose text also appears in a code block above it.
+            let fencedDup = Note(id: "/tmp/Fenced.md", url: URL(fileURLWithPath: "/tmp/Fenced.md"),
+                                 content: "```\n- [ ] buy milk\n```\n- [ ] buy milk\n", modifiedDate: Date())
+            let realMilk = TaskPage.openTasks(in: fencedDup)
+            check("task fence: only the real task is listed", realMilk.count == 1)
+            check("task fence: checking it changes the real line, not the code sample",
+                  TaskPage.replacingLine(occurrence: realMilk[0].occurrence, of: realMilk[0].sourceLine,
+                                         with: TaskPage.toggledLine(realMilk[0].sourceLine)!, in: fencedDup.content)
+                  == "```\n- [ ] buy milk\n```\n- [x] buy milk\n")
+            // A drag on a filtered page doesn't bring in rows the filter hid.
+            let dragNote = Note(id: "/tmp/Drag.md", url: URL(fileURLWithPath: "/tmp/Drag.md"),
+                                content: "- [ ] foo one\n- [ ] foo two\n    - [ ] bar hidden\n", modifiedDate: Date())
+            let fooPage = TaskPage.lines(in: [dragNote], query: "tasks: foo")
+            let dragged = Note(id: dragNote.id, url: dragNote.url,
+                               content: TaskPage.movingLine("- [ ] foo two", occurrence: 0, beside: "- [ ] foo one", targetOccurrence: 0,
+                                                            after: false, in: dragNote.content)!, modifiedDate: Date())
+            let afterDrag = TaskPage.restructured(fooPage, from: dragged, before: dragNote, includeCompleted: false)
+            check("task filter: after a drag, the page shows its own rows only (not the hidden subtask)",
+                  afterDrag.map(\.body).sorted() == ["foo one", "foo two"])
+            check("task filter: …in their new document order",
+                  afterDrag.sorted { $0.ordinal < $1.ordinal }.map(\.body) == ["foo two", "foo one"])
+            check("task write key: a rewrite reports which copy of its text the line becomes",
+                  TaskPage.occurrenceAfterRewrite(of: "- [ ] egg", occurrence: 0, to: "- [ ] milk", in: "- [ ] milk\n- [ ] egg\n") == 1
+                  && TaskPage.occurrenceAfterRewrite(of: "- [ ] milk", occurrence: 0, to: "- [x] milk", in: "- [ ] milk\n- [ ] egg\n") == 0)
             // Tab / Shift-Tab.
             let tabNote = "- [ ] A\n    - [ ] A1\n- [ ] B\n    - [ ] B1\n- [ ] \n\n- [ ] after gap\n"
             check("task tab: a task nests under the task above, its subtasks moving with it",

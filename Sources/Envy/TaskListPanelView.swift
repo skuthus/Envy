@@ -30,11 +30,10 @@ struct TaskListPanelView: View {
             lines: lines,
             theme: theme,
             onCommit: { noteID, line, occ, newLine in
-                write(noteID) { store.rewriteTaskLine(noteID: noteID, originalLine: line, occurrence: occ, with: newLine) }
+                newLine == line ? occ : rewrite(noteID, line, occ, to: newLine)
             },
             onComplete: { noteID, line, occ in
-                guard let toggled = TaskPage.toggledLine(line) else { return false }
-                return write(noteID) { store.rewriteTaskLine(noteID: noteID, originalLine: line, occurrence: occ, with: toggled) }
+                TaskPage.toggledLine(line).flatMap { rewrite(noteID, line, occ, to: $0) }
             },
             onOpenNote: { noteID, _ in onOpenNote(URL(fileURLWithPath: noteID)) },
             onAddTask: { _ = store.appendTaskLine($0) },
@@ -60,12 +59,15 @@ struct TaskListPanelView: View {
                 }
             },
             onShiftTask: { nid, line, occ, outward in
+                guard let content = store.note(withID: nid)?.content else { return nil }
                 var shifted: String?
                 let ok = write(nid) {
                     shifted = store.shiftTaskLine(noteID: nid, line: line, occurrence: occ, outward: outward)
                     return shifted != nil
                 }
-                return ok ? shifted : nil
+                guard ok, let shifted,
+                      let newOcc = TaskPage.occurrenceAfterRewrite(of: line, occurrence: occ, to: shifted, in: content) else { return nil }
+                return (shifted, newOcc)
             },
             focusOccurrence: focusOccurrence
         )
@@ -89,6 +91,17 @@ struct TaskListPanelView: View {
         focusNoteID = noteID
         focusLine = new.line
         focusOccurrence = new.occurrence
+    }
+
+    /// Rewrite one task line in place (an edit or a check) and show it at
+    /// once. Returns which copy of its text the line now is, or nil.
+    private func rewrite(_ noteID: String, _ line: String, _ occurrence: Int, to newLine: String) -> Int? {
+        guard let content = store.note(withID: noteID)?.content,
+              let newOccurrence = TaskPage.occurrenceAfterRewrite(of: line, occurrence: occurrence, to: newLine, in: content),
+              write(noteID, {
+                  store.rewriteTaskLine(noteID: noteID, originalLine: line, occurrence: occurrence, with: newLine)
+              }) else { return nil }
+        return newOccurrence
     }
 
     /// One write from the panel, shown the instant it lands: the written

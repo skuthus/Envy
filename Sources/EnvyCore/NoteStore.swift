@@ -130,6 +130,14 @@ public final class NoteStore: ObservableObject {
     // nothing else can be concurrently touching it.
     nonisolated(unsafe) private var eventStream: FSEventStreamRef?
     private var suppressReloadUntil: Date = .distantPast
+    /// Notes this store just saved itself, by path, with the modification date
+    /// each save left on the file (and when it was recorded, for pruning).
+    /// The file watcher ignores only its own saves this way — a change from
+    /// anywhere else, even a moment after a save, still reloads. The blanket
+    /// `suppressReloadUntil` window used to cover saves too, and silently
+    /// dropped any outside change (sync, another editor) that landed within
+    /// half a second of one; Envy's next save then wrote over it.
+    private var ownSaves: [String: (modified: Date?, at: Date)] = [:]
     private var reloadGeneration = 0
     private var reloadDebounceTask: Task<Void, Never>?
 
@@ -440,7 +448,7 @@ public final class NoteStore: ObservableObject {
         )
         guard let stream = FSEventStreamCreate(
             kCFAllocatorDefault,
-            { _, info, numEvents, _, eventFlags, _ in
+            { _, info, numEvents, eventPaths, eventFlags, _ in
                 guard let info else { return }
                 let store = Unmanaged<NoteStore>.fromOpaque(info).takeUnretainedValue()
 
@@ -458,10 +466,17 @@ public final class NoteStore: ObservableObject {
                         | kFSEventStreamEventFlagItemRenamed | kFSEventStreamEventFlagItemModified
                 )
                 let flags = UnsafeBufferPointer(start: eventFlags, count: numEvents)
-                guard flags.contains(where: { $0 & meaningfulFlags != 0 }) else { return }
+                let paths = unsafeBitCast(eventPaths, to: NSArray.self) as? [String] ?? []
+                let changed: [(path: String, isDirectory: Bool)] = (0..<numEvents).compactMap { i in
+                    guard flags[i] & meaningfulFlags != 0 else { return nil }
+                    return (i < paths.count ? paths[i] : "",
+                            flags[i] & FSEventStreamEventFlags(kFSEventStreamEventFlagItemIsDir) != 0)
+                }
+                guard !changed.isEmpty else { return }
 
                 Task { @MainActor in
                     if Date() < store.suppressReloadUntil { return }
+                    if changed.allSatisfy({ !$0.isDirectory && store.isOwnSave($0.path) }) { return }
                     store.reloadDebounced()
                 }
             },
@@ -469,7 +484,8 @@ public final class NoteStore: ObservableObject {
             paths,
             FSEventStreamEventId(kFSEventStreamEventIdSinceNow),
             0.3,
-            FSEventStreamCreateFlags(kFSEventStreamCreateFlagFileEvents | kFSEventStreamCreateFlagNoDefer)
+            FSEventStreamCreateFlags(kFSEventStreamCreateFlagFileEvents | kFSEventStreamCreateFlagNoDefer
+                                     | kFSEventStreamCreateFlagUseCFTypes)
         ) else { return }
 
         FSEventStreamSetDispatchQueue(stream, .main)
@@ -494,6 +510,30 @@ public final class NoteStore: ObservableObject {
     private func markInternalWrite() {
         suppressReloadUntil = Date().addingTimeInterval(0.5)
         reloadGeneration += 1
+    }
+
+    /// A content save: the write's own file events are recognized by path and
+    /// modification date (isOwnSave) instead of silencing the watcher for a
+    /// moment. Still bumps the reload generation, so a reload already in flight
+    /// can't land afterward with the disk state it read before this write.
+    private func recordOwnSave(at url: URL) {
+        reloadGeneration += 1
+        let now = Date()
+        ownSaves = ownSaves.filter { now.timeIntervalSince($0.value.at) < 30 }
+        ownSaves[url.path] = ((try? FileManager.default.attributesOfItem(atPath: url.path)[.modificationDate]) as? Date, now)
+    }
+
+    /// Whether a file event at `path` is only one of this store's own saves:
+    /// the note it saved, still holding that save's modification date, or the
+    /// temporary file its atomic write created and renamed into place
+    /// ("<note>.sb-…").
+    fileprivate func isOwnSave(_ path: String) -> Bool {
+        if let tempMark = path.range(of: ".sb-", options: .backwards) {
+            return ownSaves[String(path[..<tempMark.lowerBound])] != nil
+        }
+        guard let saved = ownSaves[path], let written = saved.modified else { return false }
+        let current = (try? FileManager.default.attributesOfItem(atPath: path)[.modificationDate]) as? Date
+        return current == written
     }
 
     /// Public wrapper around markInternalWrite(), for callers writing
@@ -787,26 +827,6 @@ public final class NoteStore: ObservableObject {
         return line
     }
 
-    /// Append a new open task to the end of a specific note (the per-note
-    /// task panel's "New task"), rather than the root Tasks note.
-    @discardableResult
-    public func appendTaskLine(toNoteID noteID: String, _ body: String) -> Bool {
-        let cleaned = body
-            .replacingOccurrences(of: "\n", with: " ")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !cleaned.isEmpty, var note = note(withID: noteID) else { return false }
-        let line = "- [ ] " + cleaned
-        if note.content.isEmpty {
-            note.content = line + "\n"
-        } else if note.content.hasSuffix("\n") {
-            note.content += line + "\n"
-        } else {
-            note.content += "\n" + line + "\n"
-        }
-        save(note)
-        return true
-    }
-
     /// Insert a new task line into `noteID` right after the `occurrence`-th
     /// line equal to `afterLine`. Returns false when that line is gone.
     @discardableResult
@@ -838,8 +858,8 @@ public final class NoteStore: ObservableObject {
                 return
             }
         }
-        markInternalWrite()
         try? target.content.write(to: target.url, atomically: true, encoding: .utf8)
+        recordOwnSave(at: target.url)
         if let idx = notes.firstIndex(where: { $0.id == target.id }) {
             notes[idx].content = target.content
             notes[idx].modifiedDate = Date()

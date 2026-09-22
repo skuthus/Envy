@@ -15,13 +15,15 @@ struct TaskDocumentView: View {
     let lines: [OpenTask]
     let theme: Theme
     /// (noteID, the line as it stands in the note, occurrence, the replacement).
-    /// Returns whether the note took the write.
-    let onCommit: (String, String, Int, String) -> Bool
-    /// (noteID, the line as it stands in the note, occurrence). Returns
-    /// whether the note took the write.
-    let onComplete: (String, String, Int) -> Bool
+    /// Returns which copy of its text the line now is, or nil when the note
+    /// didn't take the write.
+    let onCommit: (String, String, Int, String) -> Int?
+    /// (noteID, the line as it stands in the note, occurrence) — flip its box.
+    /// Returns which copy of its text the flipped line is, or nil.
+    let onComplete: (String, String, Int) -> Int?
     let onOpenNote: (String, String) -> Void
-    let onAddTask: (String) -> Void
+    /// The New task field's submit — the field isn't shown for one note.
+    var onAddTask: (String) -> Void = { _ in }
     /// (noteID, the line to nest under, occurrence).
     let onAddSubtask: (String, String, Int) -> Void
     /// (noteID, the line to sit below, occurrence) — a sibling, not a child.
@@ -50,8 +52,8 @@ struct TaskDocumentView: View {
     var onMoveTask: (String, String, Int, String, Int, Bool) -> Bool = { _, _, _, _, _, _ in false }
     /// (noteID, the line, occurrence, outward?) — Tab / Shift-Tab: shift the
     /// task and its subtasks a level in or out. Returns the line as it now
-    /// reads, or nil when it can't move.
-    var onShiftTask: (String, String, Int, Bool) -> String? = { _, _, _, _ in nil }
+    /// reads and which copy of that text it is, or nil when it can't move.
+    var onShiftTask: (String, String, Int, Bool) -> (line: String, occurrence: Int)? = { _, _, _, _ in nil }
     /// Which copy of `focusLine` to open, when the note holds identical lines
     /// (a new empty task beside older empty ones). nil: any copy.
     var focusOccurrence: Int? = nil
@@ -361,13 +363,13 @@ private struct TaskLineRow: View {
     let depth: Int
     /// Show the source-note chip. Off under a header that already names it.
     let showSource: Bool
-    let onCommit: (String, String, Int, String) -> Bool
-    let onComplete: (String, String, Int) -> Bool
+    let onCommit: (String, String, Int, String) -> Int?
+    let onComplete: (String, String, Int) -> Int?
     let onOpenNote: (String, String) -> Void
     let onAddSubtask: (String, String, Int) -> Void
     let onAddTaskBelow: (String, String, Int) -> Void
     let onDeleteEmpty: (String, String, Int) -> Bool
-    let onShiftTask: (String, String, Int, Bool) -> String?
+    let onShiftTask: (String, String, Int, Bool) -> (line: String, occurrence: Int)?
     /// True for a just-created row that should open in edit mode on appear.
     let autoFocus: Bool
     let onFocusConsumed: () -> Void
@@ -381,6 +383,8 @@ private struct TaskLineRow: View {
     @State private var editing = false
     @State private var saveTask: Task<Void, Never>?
     @State private var keyMonitor: Any?
+    /// The window this row is edited in — the monitor acts on its keys only.
+    @State private var keyWindow: NSWindow?
     @FocusState private var focused: Bool
 
     init(
@@ -390,13 +394,13 @@ private struct TaskLineRow: View {
         indented: Bool,
         depth: Int,
         showSource: Bool,
-        onCommit: @escaping (String, String, Int, String) -> Bool,
-        onComplete: @escaping (String, String, Int) -> Bool,
+        onCommit: @escaping (String, String, Int, String) -> Int?,
+        onComplete: @escaping (String, String, Int) -> Int?,
         onOpenNote: @escaping (String, String) -> Void,
         onAddSubtask: @escaping (String, String, Int) -> Void,
         onAddTaskBelow: @escaping (String, String, Int) -> Void,
         onDeleteEmpty: @escaping (String, String, Int) -> Bool,
-        onShiftTask: @escaping (String, String, Int, Bool) -> String?,
+        onShiftTask: @escaping (String, String, Int, Bool) -> (line: String, occurrence: Int)?,
         autoFocus: Bool,
         onFocusConsumed: @escaping () -> Void
     ) {
@@ -572,11 +576,12 @@ private struct TaskLineRow: View {
         saveTask?.cancel()
         if editing { commitNow() }
         let key = writeKey
-        guard onComplete(task.noteID, key.line, key.occurrence),
+        guard let occurrence = onComplete(task.noteID, key.line, key.occurrence),
               let toggled = TaskPage.toggledLine(key.line) else { return }
         // Still editing: the list's refresh won't resync a row mid-edit, so
         // carry the flipped box into the chained key ourselves.
         liveLine = toggled
+        liveOccurrence = occurrence
     }
 
     /// A local key monitor rather than onKeyPress: the text field's editor
@@ -586,8 +591,14 @@ private struct TaskLineRow: View {
     /// task (a Tab that can't nest does nothing).
     private func watchKeys() {
         guard keyMonitor == nil else { return }
+        // Editing starts from a click or a key in this row's window, so it's
+        // the key window now. Keys typed in any other window — another panel,
+        // a sheet, the editor — pass through untouched.
+        keyWindow = NSApp.keyWindow
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
-            guard editing, focused else { return event }
+            guard editing, focused, let window = event.window, window === keyWindow else { return event }
+            // An input method mid-composition owns Backspace and Tab.
+            if (window.firstResponder as? NSTextView)?.hasMarkedText() == true { return event }
             let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask).subtracting([.capsLock, .numericPad, .function])
             switch (event.keyCode, modifiers) {
             case (51, []) where draft.isEmpty:
@@ -606,6 +617,7 @@ private struct TaskLineRow: View {
     private func stopWatchingKeys() {
         if let keyMonitor { NSEvent.removeMonitor(keyMonitor) }
         keyMonitor = nil
+        keyWindow = nil
     }
 
     /// Tab / Shift-Tab: nest this task (and its subtasks) under the task above,
@@ -616,9 +628,8 @@ private struct TaskLineRow: View {
         commitNow()
         let key = writeKey
         guard let shifted = onShiftTask(task.noteID, key.line, key.occurrence, outward) else { return }
-        liveLine = shifted
-        // The list's refresh reports the exact copy once it catches up.
-        liveOccurrence = 0
+        liveLine = shifted.line
+        liveOccurrence = shifted.occurrence
     }
 
     /// Return: keep the words and open a new task on the next line, the way
@@ -663,11 +674,9 @@ private struct TaskLineRow: View {
         guard newLine != key.line else { return }
         // Advance the key only when the note took the write — a missed write
         // must not leave the row keyed to text the note never had.
-        guard onCommit(task.noteID, key.line, key.occurrence, newLine) else { return }
+        guard let occurrence = onCommit(task.noteID, key.line, key.occurrence, newLine) else { return }
         liveLine = newLine
-        // Unique among identical siblings (they still carry the old text)
-        // until the list's refresh reports the exact occurrence.
-        liveOccurrence = 0
+        liveOccurrence = occurrence
     }
 
     /// The line as the note holds it now, for the next write. Out of an edit

@@ -46,6 +46,11 @@ extension ContentView {
                 editorWordCount = 0
                 editorCharacterCount = 0
             }
+            // "Open Source Note" lands once: leaving that note spends it.
+            if newValue != taskRevealNoteID {
+                taskRevealNoteID = nil
+                taskRevealLine = nil
+            }
             recomputeInterlinks()
         }
     }

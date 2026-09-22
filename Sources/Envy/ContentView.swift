@@ -311,10 +311,12 @@ struct ContentView: View {
     /// Open task lines for a `tasks:` query. Built with the search result,
     /// off the main thread, so the editor page does not rescan on every redraw.
     @State var taskDocumentLinesCache: [OpenTask] = []
-    /// The note and line a task click should land on. Cleared by opening anything else.
     /// Whether the task views include completed tasks (the "Completed" toggle).
     /// Persisted so it's remembered across the panels and relaunches.
     @AppStorage("taskShowCompleted") var showCompletedTasks = false
+    /// The note and line "Open Source Note" should land on — spent once that
+    /// note is left for another (see the selectedID onChange), so coming back
+    /// to it later opens it as usual instead of jumping to the task again.
     @State var taskRevealNoteID: String?
     @State var taskRevealLine: String?
     /// A task line just created via the row menu, to drop straight into edit

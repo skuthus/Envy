@@ -136,7 +136,6 @@ extension AppDelegate {
         set { UserDefaults.standard.set(newValue, forKey: "menuBarTaskPin") }
     }
 
-    var taskListPinned: Bool { menuBarTaskPin == "list" }
     func isNoteTasksPinned(_ noteID: String) -> Bool { menuBarTaskPin == noteID }
 
     /// Clears the task pin and closes its panel — both to unpin and to make
@@ -256,6 +255,17 @@ extension AppDelegate {
         // isVisible still reads true here — settle from the main window's state
         // directly instead.
         settleStatusIconAfterPinnedPanelClose()
+        // A closed task panel is kept around (isReleasedWhenClosed is off), and
+        // its view would go on observing the store — rescanning every task in
+        // the vault on each save anywhere in the app. Take its content down and
+        // let it go; the next click on the eye builds a fresh one. Next turn, so
+        // nothing is torn down in the middle of the close itself.
+        if window === pinnedTaskPanel {
+            DispatchQueue.main.async { [weak self] in
+                window.contentViewController = nil
+                if self?.pinnedTaskPanel === window { self?.pinnedTaskPanel = nil }
+            }
+        }
     }
 
     /// Auto-dismisses a pinned panel (note or task) on any outside click — the

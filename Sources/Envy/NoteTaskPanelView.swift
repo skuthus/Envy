@@ -55,14 +55,12 @@ struct NoteTaskPanelView: View {
                 lines: lines,
                 theme: theme,
                 onCommit: { nid, line, occ, newLine in
-                    write(nid) { store.rewriteTaskLine(noteID: nid, originalLine: line, occurrence: occ, with: newLine) }
+                    newLine == line ? occ : rewrite(nid, line, occ, to: newLine)
                 },
                 onComplete: { nid, line, occ in
-                    guard let toggled = TaskPage.toggledLine(line) else { return false }
-                    return write(nid) { store.rewriteTaskLine(noteID: nid, originalLine: line, occurrence: occ, with: toggled) }
+                    TaskPage.toggledLine(line).flatMap { rewrite(nid, line, occ, to: $0) }
                 },
                 onOpenNote: { nid, _ in onOpenNote(URL(fileURLWithPath: nid)) },
-                onAddTask: { _ = store.appendTaskLine(toNoteID: noteID, $0) },
                 onAddSubtask: { nid, line, occ in
                     openNewTask(store.note(withID: nid).flatMap { TaskPage.newSubtask(under: line, occurrence: occ, in: $0.content) },
                                 noteID: nid, after: line, occurrence: occ)
@@ -96,12 +94,15 @@ struct NoteTaskPanelView: View {
                     }
                 },
                 onShiftTask: { nid, line, occ, outward in
+                    guard let content = store.note(withID: nid)?.content else { return nil }
                     var shifted: String?
                     let ok = write(nid) {
                         shifted = store.shiftTaskLine(noteID: nid, line: line, occurrence: occ, outward: outward)
                         return shifted != nil
                     }
-                    return ok ? shifted : nil
+                    guard ok, let shifted,
+                          let newOcc = TaskPage.occurrenceAfterRewrite(of: line, occurrence: occ, to: shifted, in: content) else { return nil }
+                    return (shifted, newOcc)
                 },
                 focusOccurrence: focusOccurrence
             )
@@ -128,6 +129,17 @@ struct NoteTaskPanelView: View {
         focusNoteID = noteID
         focusLine = new.line
         focusOccurrence = new.occurrence
+    }
+
+    /// Rewrite one task line in place (an edit or a check) and show it at
+    /// once. Returns which copy of its text the line now is, or nil.
+    private func rewrite(_ noteID: String, _ line: String, _ occurrence: Int, to newLine: String) -> Int? {
+        guard let content = store.note(withID: noteID)?.content,
+              let newOccurrence = TaskPage.occurrenceAfterRewrite(of: line, occurrence: occurrence, to: newLine, in: content),
+              write(noteID, {
+                  store.rewriteTaskLine(noteID: noteID, originalLine: line, occurrence: occurrence, with: newLine)
+              }) else { return nil }
+        return newOccurrence
     }
 
     /// One write from the panel, shown the instant it lands: the written
