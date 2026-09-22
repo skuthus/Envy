@@ -21,6 +21,7 @@ struct TaskListPanelView: View {
     @State private var shownIncludesCompleted: Bool?
     @State private var focusNoteID: String?
     @State private var focusLine: String?
+    @State private var focusOccurrence: Int?
 
     private var scale: CGFloat { (InterfaceTextSize(rawValue: interfaceTextSizeRaw) ?? .large).scale }
 
@@ -38,22 +39,16 @@ struct TaskListPanelView: View {
             onOpenNote: { noteID, _ in onOpenNote(URL(fileURLWithPath: noteID)) },
             onAddTask: { _ = store.appendTaskLine($0) },
             onAddSubtask: { noteID, line, occ in
-                let child = TaskPage.subtaskLine(under: line)
-                if lineExists(child, in: noteID)
-                    || store.insertTaskLine(noteID: noteID, afterLine: line, occurrence: occ, newLine: child) {
-                    focusNoteID = noteID; focusLine = child
-                }
+                openNewTask(store.note(withID: noteID).flatMap { TaskPage.newSubtask(under: line, occurrence: occ, in: $0.content) },
+                            noteID: noteID, after: line, occurrence: occ)
             },
             onAddTaskBelow: { noteID, line, occ in
-                let sibling = TaskPage.siblingLine(of: line)
-                if lineExists(sibling, in: noteID)
-                    || store.insertTaskLine(noteID: noteID, afterLine: line, occurrence: occ, newLine: sibling) {
-                    focusNoteID = noteID; focusLine = sibling
-                }
+                openNewTask(store.note(withID: noteID).flatMap { TaskPage.newTask(after: line, occurrence: occ, in: $0.content) },
+                            noteID: noteID, after: line, occurrence: occ)
             },
             focusNoteID: focusNoteID,
             focusLine: focusLine,
-            onFocusConsumed: { focusNoteID = nil; focusLine = nil },
+            onFocusConsumed: { focusNoteID = nil; focusLine = nil; focusOccurrence = nil },
             showCompleted: $showCompleted,
             onDeleteEmpty: { nid, line, occ in
                 write(nid, restructure: true) { store.deleteEmptyTaskLine(noteID: nid, line: line, occurrence: occ) }
@@ -63,7 +58,16 @@ struct TaskListPanelView: View {
                     store.moveTaskLine(noteID: nid, line: line, occurrence: occ,
                                        beside: target, targetOccurrence: targetOcc, after: below)
                 }
-            }
+            },
+            onShiftTask: { nid, line, occ, outward in
+                var shifted: String?
+                let ok = write(nid) {
+                    shifted = store.shiftTaskLine(noteID: nid, line: line, occurrence: occ, outward: outward)
+                    return shifted != nil
+                }
+                return ok ? shifted : nil
+            },
+            focusOccurrence: focusOccurrence
         )
         .environment(\.interfaceFontScale, scale)
         .background(Color(nsColor: theme.resolvedBackgroundColor))
@@ -76,9 +80,15 @@ struct TaskListPanelView: View {
         .onChange(of: showCompleted) { _, _ in recompute() }
     }
 
-    private func lineExists(_ line: String, in noteID: String) -> Bool {
-        guard let note = store.note(withID: noteID) else { return false }
-        return TaskPage.openTasks(in: note).contains { $0.sourceLine == line }
+    /// Insert an empty task line, show it at once, and drop into exactly
+    /// that copy — the note may hold other empty tasks.
+    private func openNewTask(_ new: (line: String, occurrence: Int)?, noteID: String, after line: String, occurrence: Int) {
+        guard let new, write(noteID, restructure: true, {
+            store.insertTaskLine(noteID: noteID, afterLine: line, occurrence: occurrence, newLine: new.line)
+        }) else { return }
+        focusNoteID = noteID
+        focusLine = new.line
+        focusOccurrence = new.occurrence
     }
 
     /// One write from the panel, shown the instant it lands: the written
@@ -88,12 +98,13 @@ struct TaskListPanelView: View {
     /// and rebuilds instead.
     private func write(_ noteID: String, restructure: Bool = false, _ op: () -> Bool) -> Bool {
         generation += 1
+        let before = store.note(withID: noteID)
         guard op(), let note = store.note(withID: noteID) else {
             recompute()
             return false
         }
         lines = restructure
-            ? TaskPage.restructured(lines, from: note, includeCompleted: showCompleted)
+            ? TaskPage.restructured(lines, from: note, before: before, includeCompleted: showCompleted)
             : TaskPage.refreshing(lines, from: note, includeCompleted: showCompleted)
         return true
     }

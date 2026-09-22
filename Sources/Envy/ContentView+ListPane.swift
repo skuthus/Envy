@@ -1217,12 +1217,13 @@ extension ContentView {
     /// rebuilds instead — the page never claims a change the file doesn't have.
     private func applyTaskWrite(noteID: String, restructure: Bool = false, _ write: () -> Bool) -> Bool {
         searchComputeGeneration += 1
+        let before = store.note(withID: noteID)
         guard write(), let note = store.note(withID: noteID) else {
             Task { await recomputeFilteredNotes() }
             return false
         }
         taskDocumentLinesCache = restructure
-            ? TaskPage.restructured(taskDocumentLinesCache, from: note, includeCompleted: showCompletedTasks)
+            ? TaskPage.restructured(taskDocumentLinesCache, from: note, before: before, includeCompleted: showCompletedTasks)
             : TaskPage.refreshing(taskDocumentLinesCache, from: note, includeCompleted: showCompletedTasks)
         return true
     }
@@ -1234,6 +1235,17 @@ extension ContentView {
         }
     }
 
+    /// Tab / Shift-Tab in a task: shift it and its subtasks a level. Returns
+    /// the line as it now reads.
+    func shiftTaskLine(noteID: String, line: String, occurrence: Int, outward: Bool) -> String? {
+        var shifted: String?
+        let ok = applyTaskWrite(noteID: noteID) {
+            shifted = store.shiftTaskLine(noteID: noteID, line: line, occurrence: occurrence, outward: outward)
+            return shifted != nil
+        }
+        return ok ? shifted : nil
+    }
+
     /// A task dragged onto another in the same note: move it (and its
     /// subtasks) there.
     func moveTaskLine(noteID: String, line: String, occurrence: Int, target: String, targetOccurrence: Int, below: Bool) -> Bool {
@@ -1243,35 +1255,30 @@ extension ContentView {
         }
     }
 
-    /// Add an empty subtask into the note, one level indented, right after the
-    /// selected task line, and focus it. It appears on the next rebuild.
+    /// Add an empty subtask right under the task, and drop into it.
     func addSubtask(noteID: String, afterLine: String, occurrence: Int) {
-        let child = TaskPage.subtaskLine(under: afterLine)
-        // Don't create a second identical empty line — inserting one shifts the
-        // row ordinals and scrambles which row is being edited. If that exact
-        // empty task already exists, just focus it.
-        if taskLineExists(child, inNoteID: noteID)
-            || store.insertTaskLine(noteID: noteID, afterLine: afterLine, occurrence: occurrence, newLine: child) {
-            taskFocusNoteID = noteID
-            taskFocusLine = child
-        }
+        guard let note = store.note(withID: noteID),
+              let new = TaskPage.newSubtask(under: afterLine, occurrence: occurrence, in: note.content) else { return }
+        openNewTask(new, noteID: noteID, after: afterLine, occurrence: occurrence)
     }
 
-    /// Whether the note already has an open task whose exact source line is `line`.
-    private func taskLineExists(_ line: String, inNoteID noteID: String) -> Bool {
-        guard let note = store.note(withID: noteID) else { return false }
-        return TaskPage.openTasks(in: note).contains { $0.sourceLine == line }
-    }
-
-    /// Add an empty task at the same level, right after the selected task line,
-    /// and focus it — a sibling, not a child.
+    /// Return in a task, or Add Task Below: an empty task on the next line
+    /// (see TaskPage.newTask), and drop into it.
     func addTaskBelow(noteID: String, afterLine: String, occurrence: Int) {
-        let sibling = TaskPage.siblingLine(of: afterLine)
-        if taskLineExists(sibling, inNoteID: noteID)
-            || store.insertTaskLine(noteID: noteID, afterLine: afterLine, occurrence: occurrence, newLine: sibling) {
-            taskFocusNoteID = noteID
-            taskFocusLine = sibling
-        }
+        guard let note = store.note(withID: noteID),
+              let new = TaskPage.newTask(after: afterLine, occurrence: occurrence, in: note.content) else { return }
+        openNewTask(new, noteID: noteID, after: afterLine, occurrence: occurrence)
+    }
+
+    /// Insert the empty line, show it at once (not after the rescan), and
+    /// focus exactly that copy — the note may hold other empty tasks.
+    private func openNewTask(_ new: (line: String, occurrence: Int), noteID: String, after line: String, occurrence: Int) {
+        guard applyTaskWrite(noteID: noteID, restructure: true, {
+            store.insertTaskLine(noteID: noteID, afterLine: line, occurrence: occurrence, newLine: new.line)
+        }) else { return }
+        taskFocusNoteID = noteID
+        taskFocusLine = new.line
+        taskFocusOccurrence = new.occurrence
     }
 
     /// Leave the task page and open the note the line came from, on that line.
@@ -1302,10 +1309,12 @@ extension ContentView {
                 onAddTaskBelow: addTaskBelow,
                 focusNoteID: taskFocusNoteID,
                 focusLine: taskFocusLine,
-                onFocusConsumed: { taskFocusNoteID = nil; taskFocusLine = nil },
+                onFocusConsumed: { taskFocusNoteID = nil; taskFocusLine = nil; taskFocusOccurrence = nil },
                 showCompleted: $showCompletedTasks,
                 onDeleteEmpty: deleteEmptyTaskLine,
-                onMoveTask: moveTaskLine
+                onMoveTask: moveTaskLine,
+                onShiftTask: shiftTaskLine,
+                focusOccurrence: taskFocusOccurrence
             )
         }
         // The task lines are computed by the search pipeline, whose trigger

@@ -256,26 +256,38 @@ public enum TaskPage {
     /// that note's rows are re-read and matched to what's on screen by their
     /// text rather than their position, since positions shifted. A matched row
     /// keeps its slot; a row the note no longer has drops out; a row whose text
-    /// is new (a moved block that took a new indent) goes after the note's last
-    /// row — views that show a note's rows in document order sort by ordinal.
-    public static func restructured(_ lines: [OpenTask], from note: Note, includeCompleted: Bool) -> [OpenTask] {
+    /// is new (a task just opened with Return, a moved block that took a new
+    /// indent) goes right after the row before it in the note — the task
+    /// Return was pressed in — so it shows directly under it in any arrangement.
+    ///
+    /// `before` is the note as it was just before the write: only lines it
+    /// didn't have count as new, so rows a filtered page never showed don't
+    /// appear along with them.
+    public static func restructured(_ lines: [OpenTask], from note: Note, before: Note?, includeCompleted: Bool) -> [OpenTask] {
         let key = NoteKey(note.id)
         let fresh = scanTasks(in: note).filter { includeCompleted || !$0.isCompleted }
+        let hadBefore = Set((before.map(scanTasks) ?? []).map { $0.sourceLine + "\u{1}" + String($0.occurrence) })
         var byText: [String: OpenTask] = [:]
         for task in fresh { byText[task.sourceLine + "\u{1}" + String(task.occurrence)] = task }
         var used = Set<TaskID>()
         var result: [OpenTask] = []
         result.reserveCapacity(lines.count)
-        var noteEnd: Int?
         for line in lines {
             guard line.noteKey == key else { result.append(line); continue }
             if let match = byText[line.sourceLine + "\u{1}" + String(line.occurrence)], used.insert(match.id).inserted {
                 result.append(match)
             }
-            noteEnd = result.count
         }
-        let leftover = fresh.filter { !used.contains($0.id) }
-        result.insert(contentsOf: leftover, at: noteEnd ?? result.count)
+        // In document order, so a run of new rows chains one under the next.
+        for task in fresh where !used.contains(task.id) && !hadBefore.contains(task.sourceLine + "\u{1}" + String(task.occurrence)) {
+            // The note's line just above it (highest ordinal below it), wherever
+            // that row sits in the list — not the last one in list order.
+            let before = result.indices
+                .filter { result[$0].noteKey == key && result[$0].id.ordinal < task.id.ordinal }
+                .max { result[$0].id.ordinal < result[$1].id.ordinal }
+            let firstOfNote = result.firstIndex { $0.noteKey == key }
+            result.insert(task, at: before.map { $0 + 1 } ?? firstOfNote ?? result.count)
+        }
         return result
     }
 
@@ -286,8 +298,22 @@ public enum TaskPage {
     /// after the row before it in `fresh` that was already on screen — its own
     /// note's previous line, for a new subtask or an appended task. Rows gone
     /// since drop out.
-    public static func stabilized(_ fresh: [OpenTask], toOrderOf previous: [OpenTask]) -> [OpenTask] {
-        guard !previous.isEmpty, !fresh.isEmpty else { return fresh }
+    ///
+    /// With `keepingFrom`, a row already on screen also stays when the query's
+    /// words no longer match it — a blank task just opened with Return, a task
+    /// being retyped — as long as its note still has it (and it isn't a checked
+    /// row with completed hidden). A filter applies on arriving at the page, not
+    /// to rows mid-edit.
+    public static func stabilized(
+        _ fresh: [OpenTask],
+        toOrderOf previous: [OpenTask],
+        keepingFrom notes: [Note]? = nil,
+        includeCompleted: Bool = false
+    ) -> [OpenTask] {
+        guard !previous.isEmpty else { return fresh }
+        var fresh = fresh
+        if let notes { fresh += stillThere(previous, missingFrom: fresh, in: notes, includeCompleted: includeCompleted) }
+        guard !fresh.isEmpty else { return fresh }
         var rank: [TaskID: Int] = [:]
         rank.reserveCapacity(previous.count)
         for (i, task) in previous.enumerated() { rank[task.id] = i }
@@ -304,6 +330,29 @@ public enum TaskPage {
         return fresh.indices
             .sorted { key[$0] != key[$1] ? key[$0] < key[$1] : $0 < $1 }
             .map { fresh[$0] }
+    }
+
+    /// Rows of `previous` that `fresh` left out but whose note still has them,
+    /// re-read from the note.
+    private static func stillThere(_ previous: [OpenTask], missingFrom fresh: [OpenTask],
+                                   in notes: [Note], includeCompleted: Bool) -> [OpenTask] {
+        let present = Set(fresh.map(\.id))
+        let missing = previous.filter { !present.contains($0.id) }
+        guard !missing.isEmpty else { return [] }
+        let wanted = Set(missing.map(\.noteID))
+        // Found again by text, not position: lines added or removed above a
+        // row shift its ordinal onto some other line.
+        var byText: [String: OpenTask] = [:]
+        for note in notes where wanted.contains(note.id) {
+            for task in scanTasks(in: note) { byText[note.id + "\u{1}" + task.sourceLine + "\u{1}" + String(task.occurrence)] = task }
+        }
+        var kept = present
+        return missing.compactMap { row in
+            guard let current = byText[row.noteID + "\u{1}" + row.sourceLine + "\u{1}" + String(row.occurrence)],
+                  includeCompleted || !current.isCompleted,
+                  kept.insert(current.id).inserted else { return nil }
+            return current
+        }
     }
 
     /// Only the open ([ ]) task lines — the default the page shows and what the
@@ -420,6 +469,55 @@ public enum TaskPage {
         return p.lead + p.bullet + "[ ] "
     }
 
+    /// The empty task to open on the line right after `line` (Enter, or Add
+    /// Task Below): its sibling — unless something sits indented directly
+    /// under it, in which case a first subtask at that level, so the new line
+    /// never splits a task from its subtasks. Also returns which copy of that
+    /// text the new line will be once inserted, since a note can already hold
+    /// identical empty lines and focus must land on the new one. nil when
+    /// `line` is gone.
+    public static func newTask(after line: String, occurrence: Int, in content: String) -> (line: String, occurrence: Int)? {
+        let lines = content.components(separatedBy: "\n")
+        guard let at = lineIndex(of: line, occurrence: occurrence, in: lines) else { return nil }
+        var newLine = siblingLine(of: line)
+        if at + 1 < lines.count {
+            let next = lines[at + 1].hasSuffix("\r") ? String(lines[at + 1].dropLast()) : lines[at + 1]
+            if !next.trimmingCharacters(in: .whitespaces).isEmpty, indentColumns(next) > indentColumns(line) {
+                newLine = isTaskLine(next) ? siblingLine(of: next) : subtaskLine(under: line)
+            }
+        }
+        return (newLine, copiesBefore(newLine, through: at, in: lines))
+    }
+
+    /// The empty subtask to open right under `line` (Add Subtask), and which
+    /// copy of that text it will be once inserted. nil when `line` is gone.
+    public static func newSubtask(under line: String, occurrence: Int, in content: String) -> (line: String, occurrence: Int)? {
+        let lines = content.components(separatedBy: "\n")
+        guard let at = lineIndex(of: line, occurrence: occurrence, in: lines) else { return nil }
+        let newLine = subtaskLine(under: line)
+        return (newLine, copiesBefore(newLine, through: at, in: lines))
+    }
+
+    private static func isTaskLine(_ line: String) -> Bool {
+        openTaskRegex.firstMatch(in: line, range: NSRange(location: 0, length: (line as NSString).length)) != nil
+    }
+
+    /// How many lines equal to `text` sit at or above `lines[index]` — the
+    /// occurrence a copy inserted right after that line will have.
+    private static func copiesBefore(_ text: String, through index: Int, in lines: [String]) -> Int {
+        lines[0...index].reduce(0) { $0 + (($1.hasSuffix("\r") ? String($1.dropLast()) : $1) == text ? 1 : 0) }
+    }
+
+    /// The indent, bullet, and box that start a task `line` — what its words
+    /// sit behind. nil when it isn't a task line.
+    public static func marker(of line: String) -> String? {
+        let ns = line as NSString
+        guard let match = openTaskRegex.firstMatch(in: line, range: NSRange(location: 0, length: ns.length)) else { return nil }
+        let rest = ns.substring(with: match.range(at: 3))
+        return ns.substring(with: match.range(at: 1)) + ns.substring(with: match.range(at: 2))
+            + String(rest.prefix { $0 == " " || $0 == "\t" })
+    }
+
     /// Whether `line` is a task with no words — the only kind the page lets
     /// Backspace delete outright.
     public static func isEmptyTask(_ line: String) -> Bool {
@@ -475,6 +573,39 @@ public enum TaskPage {
         block = block.map { $0.hasPrefix(oldLead) ? newLead + $0.dropFirst(oldLead.count) : $0 }
         lines.insert(contentsOf: block, at: insertAt)
         return lines.joined(separator: "\n")
+    }
+
+    /// `content` with the task `line` (its `occurrence`-th copy) and its
+    /// subtasks shifted one level in — a subtask of the task above — or out
+    /// (Tab / Shift-Tab), plus the line as it now reads. Indenting needs a
+    /// task directly above at the same level to nest under (its own subtasks
+    /// may sit between); outdenting needs some indentation. nil when it can't.
+    public static func shiftingLine(_ line: String, occurrence: Int, outward: Bool, in content: String) -> (content: String, line: String)? {
+        var lines = content.components(separatedBy: "\n")
+        guard let at = lineIndex(of: line, occurrence: occurrence, in: lines) else { return nil }
+        let end = blockEnd(startingAt: at, in: lines)
+        if outward {
+            guard !leadingWhitespace(lines[at]).isEmpty else { return nil }
+            for i in at..<end { lines[i] = outdentedOnce(lines[i]) }
+        } else {
+            let level = indentColumns(lines[at])
+            var above = at - 1
+            while above >= 0, !lines[above].trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                  indentColumns(lines[above]) > level { above -= 1 }
+            guard above >= 0, indentColumns(lines[above]) == level, isTaskLine(stripped(lines[above])) else { return nil }
+            let unit = (leadingWhitespace(lines[at]) + leadingWhitespace(lines[above])).contains("\t") ? "\t" : "    "
+            for i in at..<end { lines[i] = unit + lines[i] }
+        }
+        return (lines.joined(separator: "\n"), stripped(lines[at]))
+    }
+
+    private static func outdentedOnce(_ line: String) -> String {
+        if line.hasPrefix("\t") { return String(line.dropFirst()) }
+        return String(line.dropFirst(min(4, line.prefix { $0 == " " }.count)))
+    }
+
+    private static func stripped(_ line: String) -> String {
+        line.hasSuffix("\r") ? String(line.dropLast()) : line
     }
 
     private static func lineIndex(of line: String, occurrence: Int, in lines: [String]) -> Int? {

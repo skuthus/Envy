@@ -743,6 +743,18 @@ public final class NoteStore: ObservableObject {
         return true
     }
 
+    /// Shift a task line and its subtasks one level in or out (Tab /
+    /// Shift-Tab). Returns the line as it now reads, or nil when it can't move
+    /// (see TaskPage.shiftingLine).
+    @discardableResult
+    public func shiftTaskLine(noteID: String, line: String, occurrence: Int, outward: Bool) -> String? {
+        guard var note = note(withID: noteID),
+              let shifted = TaskPage.shiftingLine(line, occurrence: occurrence, outward: outward, in: note.content) else { return nil }
+        note.content = shifted.content
+        save(note)
+        return shifted.line
+    }
+
     /// Move a task line, with its subtasks, beside another line of the same
     /// note (see TaskPage.movingLine).
     @discardableResult

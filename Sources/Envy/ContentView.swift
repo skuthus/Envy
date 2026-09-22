@@ -321,6 +321,7 @@ struct ContentView: View {
     /// mode when it appears. Cleared by the row that consumes it.
     @State var taskFocusNoteID: String?
     @State var taskFocusLine: String?
+    @State var taskFocusOccurrence: Int?
 
     var filteredNotes: [Note] { filteredNotesCache }
 
@@ -445,7 +446,9 @@ struct ContentView: View {
         let result = await Task.detached(priority: .userInitiated) {
             let search = Self.computeSearch(notes: notesSnapshot, query: querySnapshot, pinnedIDs: pinnedSnapshot, sortField: field, sortAscending: ascending, showInbox: showInbox, inboxDirectory: inboxDirectory, imageText: imageText, foldImageText: foldImageText, inboxEnabled: inbox)
             var tasks = TaskPage.isTaskQuery(querySnapshot) ? TaskPage.lines(in: search.notes, query: querySnapshot, includeCompleted: inclCompleted) : []
-            if samePage { tasks = TaskPage.stabilized(tasks, toOrderOf: shownTasks) }
+            if samePage {
+                tasks = TaskPage.stabilized(tasks, toOrderOf: shownTasks, keepingFrom: notesSnapshot, includeCompleted: inclCompleted)
+            }
             return (search: search, tasks: tasks, tasksUnchanged: tasks == shownTasks)
         }.value
         guard generation == searchComputeGeneration else { return }

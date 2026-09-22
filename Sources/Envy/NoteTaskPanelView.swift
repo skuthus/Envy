@@ -18,6 +18,7 @@ struct NoteTaskPanelView: View {
     @State private var generation = 0
     @State private var focusNoteID: String?
     @State private var focusLine: String?
+    @State private var focusOccurrence: Int?
 
     private var scale: CGFloat { (InterfaceTextSize(rawValue: interfaceTextSizeRaw) ?? .large).scale }
     private var noteTitle: String { store.note(withID: noteID)?.title ?? "Note" }
@@ -63,29 +64,26 @@ struct NoteTaskPanelView: View {
                 onOpenNote: { nid, _ in onOpenNote(URL(fileURLWithPath: nid)) },
                 onAddTask: { _ = store.appendTaskLine(toNoteID: noteID, $0) },
                 onAddSubtask: { nid, line, occ in
-                    let child = TaskPage.subtaskLine(under: line)
-                    if lineExists(child) || store.insertTaskLine(noteID: nid, afterLine: line, occurrence: occ, newLine: child) {
-                        focusNoteID = nid; focusLine = child
-                    }
+                    openNewTask(store.note(withID: nid).flatMap { TaskPage.newSubtask(under: line, occurrence: occ, in: $0.content) },
+                                noteID: nid, after: line, occurrence: occ)
                 },
                 onAddTaskBelow: { nid, line, occ in
-                    let sibling = TaskPage.siblingLine(of: line)
-                    if lineExists(sibling) || store.insertTaskLine(noteID: nid, afterLine: line, occurrence: occ, newLine: sibling) {
-                        focusNoteID = nid; focusLine = sibling
-                    }
+                    openNewTask(store.note(withID: nid).flatMap { TaskPage.newTask(after: line, occurrence: occ, in: $0.content) },
+                                noteID: nid, after: line, occurrence: occ)
                 },
                 focusNoteID: focusNoteID,
                 focusLine: focusLine,
-                onFocusConsumed: { focusNoteID = nil; focusLine = nil },
+                onFocusConsumed: { focusNoteID = nil; focusLine = nil; focusOccurrence = nil },
                 singleNote: true,
                 showCompleted: $showCompleted,
                 onAddEmptyTask: {
-                    // Reuse an existing empty task rather than stacking blanks.
+                    // Reuse an existing empty task rather than stacking blanks;
+                    // either way it's the first (only fresh) copy of that line.
                     let empty = "- [ ] "
                     if lineExists(empty) {
-                        focusNoteID = noteID; focusLine = empty
+                        focusNoteID = noteID; focusLine = empty; focusOccurrence = 0
                     } else if let line = store.appendEmptyTask(toNoteID: noteID) {
-                        focusNoteID = noteID; focusLine = line
+                        focusNoteID = noteID; focusLine = line; focusOccurrence = 0
                     }
                 },
                 onDeleteEmpty: { nid, line, occ in
@@ -96,7 +94,16 @@ struct NoteTaskPanelView: View {
                         store.moveTaskLine(noteID: nid, line: line, occurrence: occ,
                                            beside: target, targetOccurrence: targetOcc, after: below)
                     }
-                }
+                },
+                onShiftTask: { nid, line, occ, outward in
+                    var shifted: String?
+                    let ok = write(nid) {
+                        shifted = store.shiftTaskLine(noteID: nid, line: line, occurrence: occ, outward: outward)
+                        return shifted != nil
+                    }
+                    return ok ? shifted : nil
+                },
+                focusOccurrence: focusOccurrence
             )
             .environment(\.interfaceFontScale, scale)
         }
@@ -112,6 +119,17 @@ struct NoteTaskPanelView: View {
         return TaskPage.openTasks(in: note).contains { $0.sourceLine == line }
     }
 
+    /// Insert an empty task line, show it at once, and drop into exactly
+    /// that copy — the note may hold other empty tasks.
+    private func openNewTask(_ new: (line: String, occurrence: Int)?, noteID: String, after line: String, occurrence: Int) {
+        guard let new, write(noteID, restructure: true, {
+            store.insertTaskLine(noteID: noteID, afterLine: line, occurrence: occurrence, newLine: new.line)
+        }) else { return }
+        focusNoteID = noteID
+        focusLine = new.line
+        focusOccurrence = new.occurrence
+    }
+
     /// One write from the panel, shown the instant it lands: the written
     /// note's rows are re-read from its new text (exact, nothing guessed), and
     /// any rescan already in flight — snapshotted before this write — is
@@ -119,12 +137,13 @@ struct NoteTaskPanelView: View {
     /// and rebuilds instead.
     private func write(_ noteID: String, restructure: Bool = false, _ op: () -> Bool) -> Bool {
         generation += 1
+        let before = store.note(withID: noteID)
         guard op(), let note = store.note(withID: noteID) else {
             recompute()
             return false
         }
         lines = restructure
-            ? TaskPage.restructured(lines, from: note, includeCompleted: showCompleted)
+            ? TaskPage.restructured(lines, from: note, before: before, includeCompleted: showCompleted)
             : TaskPage.refreshing(lines, from: note, includeCompleted: showCompleted)
         return true
     }

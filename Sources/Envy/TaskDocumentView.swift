@@ -48,6 +48,13 @@ struct TaskDocumentView: View {
     /// that line's occurrence, below it?) — rearranging within one note.
     /// Returns whether the note took it.
     var onMoveTask: (String, String, Int, String, Int, Bool) -> Bool = { _, _, _, _, _, _ in false }
+    /// (noteID, the line, occurrence, outward?) — Tab / Shift-Tab: shift the
+    /// task and its subtasks a level in or out. Returns the line as it now
+    /// reads, or nil when it can't move.
+    var onShiftTask: (String, String, Int, Bool) -> String? = { _, _, _, _ in nil }
+    /// Which copy of `focusLine` to open, when the note holds identical lines
+    /// (a new empty task beside older empty ones). nil: any copy.
+    var focusOccurrence: Int? = nil
 
     @Environment(\.interfaceFontScale) private var interfaceFontScale
     @State private var newTaskText = ""
@@ -280,7 +287,9 @@ struct TaskDocumentView: View {
             onAddSubtask: onAddSubtask,
             onAddTaskBelow: onAddTaskBelow,
             onDeleteEmpty: onDeleteEmpty,
-            autoFocus: task.noteID == focusNoteID && task.sourceLine == focusLine,
+            onShiftTask: onShiftTask,
+            autoFocus: task.noteID == focusNoteID && task.sourceLine == focusLine
+                && (focusOccurrence == nil || task.occurrence == focusOccurrence),
             onFocusConsumed: onFocusConsumed
         )
         // Rearranging follows the note's own order, so it's offered where rows
@@ -358,6 +367,7 @@ private struct TaskLineRow: View {
     let onAddSubtask: (String, String, Int) -> Void
     let onAddTaskBelow: (String, String, Int) -> Void
     let onDeleteEmpty: (String, String, Int) -> Bool
+    let onShiftTask: (String, String, Int, Bool) -> String?
     /// True for a just-created row that should open in edit mode on appear.
     let autoFocus: Bool
     let onFocusConsumed: () -> Void
@@ -370,7 +380,7 @@ private struct TaskLineRow: View {
     @State private var liveOccurrence: Int
     @State private var editing = false
     @State private var saveTask: Task<Void, Never>?
-    @State private var backspaceMonitor: Any?
+    @State private var keyMonitor: Any?
     @FocusState private var focused: Bool
 
     init(
@@ -386,6 +396,7 @@ private struct TaskLineRow: View {
         onAddSubtask: @escaping (String, String, Int) -> Void,
         onAddTaskBelow: @escaping (String, String, Int) -> Void,
         onDeleteEmpty: @escaping (String, String, Int) -> Bool,
+        onShiftTask: @escaping (String, String, Int, Bool) -> String?,
         autoFocus: Bool,
         onFocusConsumed: @escaping () -> Void
     ) {
@@ -401,6 +412,7 @@ private struct TaskLineRow: View {
         self.onAddSubtask = onAddSubtask
         self.onAddTaskBelow = onAddTaskBelow
         self.onDeleteEmpty = onDeleteEmpty
+        self.onShiftTask = onShiftTask
         self.autoFocus = autoFocus
         self.onFocusConsumed = onFocusConsumed
         _draft = State(initialValue: task.body)
@@ -452,7 +464,7 @@ private struct TaskLineRow: View {
                         // just reached by typing tasks:) that request is dropped
                         // — the field shows but typing goes nowhere.
                         .onAppear { DispatchQueue.main.async { focused = true } }
-                        .onSubmit(endEditing)
+                        .onSubmit(submit)
                 } else {
                     Button {
                         editing = true
@@ -519,12 +531,12 @@ private struct TaskLineRow: View {
             guard editing else { return }
             saveTask = DebouncedSave.schedule(replacing: saveTask) { commitNow() }
         }
-        // Backspace in a task with no words removes it, the way an empty list
-        // item goes in any outline. Watched only while this row is editing.
+        // Outline keys while this row is editing: Backspace in an empty task
+        // removes it, Tab / Shift-Tab nest it or bring it back out.
         .onChange(of: editing) { _, isEditing in
-            if isEditing { watchBackspace() } else { stopWatchingBackspace() }
+            if isEditing { watchKeys() } else { stopWatchingKeys() }
         }
-        .onDisappear { stopWatchingBackspace() }
+        .onDisappear { stopWatchingKeys() }
         .onChange(of: focused) { _, isFocused in
             if editing, !isFocused { endEditing() }
         }
@@ -568,22 +580,60 @@ private struct TaskLineRow: View {
     }
 
     /// A local key monitor rather than onKeyPress: the text field's editor
-    /// takes Backspace before SwiftUI's key handlers ever see it. Acts only
-    /// when this row's field has the keyboard and holds no words; any other
-    /// Backspace passes through untouched.
-    private func watchBackspace() {
-        guard backspaceMonitor == nil else { return }
-        backspaceMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+    /// takes Backspace and Tab before SwiftUI's key handlers ever see them.
+    /// Acts only while this row's field has the keyboard. Backspace is taken
+    /// only in an empty task; Tab always is, so it never jumps focus out of the
+    /// task (a Tab that can't nest does nothing).
+    private func watchKeys() {
+        guard keyMonitor == nil else { return }
+        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            guard editing, focused else { return event }
             let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask).subtracting([.capsLock, .numericPad, .function])
-            guard event.keyCode == 51, modifiers.isEmpty, editing, focused, draft.isEmpty else { return event }
-            deleteEmpty()
+            switch (event.keyCode, modifiers) {
+            case (51, []) where draft.isEmpty:
+                deleteEmpty()
+            case (48, []):
+                shift(outward: false)
+            case (48, [.shift]):
+                shift(outward: true)
+            default:
+                return event
+            }
             return nil
         }
     }
 
-    private func stopWatchingBackspace() {
-        if let backspaceMonitor { NSEvent.removeMonitor(backspaceMonitor) }
-        backspaceMonitor = nil
+    private func stopWatchingKeys() {
+        if let keyMonitor { NSEvent.removeMonitor(keyMonitor) }
+        keyMonitor = nil
+    }
+
+    /// Tab / Shift-Tab: nest this task (and its subtasks) under the task above,
+    /// or bring it back out a level. The pending save lands first; editing
+    /// carries on, keyed to the line as it now reads.
+    private func shift(outward: Bool) {
+        saveTask?.cancel()
+        commitNow()
+        let key = writeKey
+        guard let shifted = onShiftTask(task.noteID, key.line, key.occurrence, outward) else { return }
+        liveLine = shifted
+        // The list's refresh reports the exact copy once it catches up.
+        liveOccurrence = 0
+    }
+
+    /// Return: keep the words and open a new task on the next line, the way
+    /// a list works in any editor. Return in an empty task just finishes, so
+    /// holding it can't stack up blank lines.
+    private func submit() {
+        guard !draft.trimmingCharacters(in: .whitespaces).isEmpty else {
+            endEditing()
+            return
+        }
+        saveTask?.cancel()
+        commitNow()
+        let key = writeKey
+        editing = false
+        onAddTaskBelow(task.noteID, key.line, key.occurrence)
     }
 
     /// Take this empty task out of its note. The pending save lands first so
@@ -606,7 +656,10 @@ private struct TaskLineRow: View {
     private func commitNow() {
         let key = writeKey
         let cleaned = draft.replacingOccurrences(of: "\n", with: " ")
-        let newLine = task.marker + cleaned
+        // The marker as the note holds it (from the key), not the list's copy:
+        // right after a Tab or a check, the list's value may not have caught
+        // up yet, and writing its old indent or box would undo that change.
+        let newLine = (TaskPage.marker(of: key.line) ?? task.marker) + cleaned
         guard newLine != key.line else { return }
         // Advance the key only when the note took the write — a missed write
         // must not leave the row keyed to text the note never had.

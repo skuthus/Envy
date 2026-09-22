@@ -2472,12 +2472,80 @@ struct SelfCheck {
             let moved = Note(id: planNote.id, url: planNote.url,
                              content: TaskPage.movingLine("- [ ] C", occurrence: 0, beside: "    - [ ] A1", targetOccurrence: 0, after: false, in: outline)!,
                              modifiedDate: Date())
-            let reshaped = TaskPage.restructured(planRows, from: moved, includeCompleted: false)
+            let reshaped = TaskPage.restructured(planRows, from: moved, before: planNote, includeCompleted: false)
             check("task restructure: every row of the note survives a move, other notes untouched",
                   reshaped.filter { $0.noteID == planNote.id }.count == 6
                   && reshaped.filter { $0.noteID != planNote.id } == planRows.filter { $0.noteID != planNote.id })
             check("task restructure: in document order the moved block sits where it was dropped",
                   reshaped.filter { $0.noteID == planNote.id }.sorted { $0.ordinal < $1.ordinal }.map(\.body) == ["A", "C", "C1", "A1", "A2", "B"])
+            // Enter opens a new task on the next line.
+            let enterNote = "- [ ] A\n    * [ ] A1\n- [ ] \n- [ ] B\n    note text\n- [ ] C\n"
+            check("task enter: after a plain task, a sibling with its bullet and indent",
+                  TaskPage.newTask(after: "- [ ] C", occurrence: 0, in: enterNote).map { $0.line } == "- [ ] ")
+            check("task enter: after a task with subtasks, a first subtask at their level (never splitting them off)",
+                  TaskPage.newTask(after: "- [ ] A", occurrence: 0, in: enterNote).map { $0.line } == "    * [ ] ")
+            check("task enter: after a task with indented text under it, a subtask",
+                  TaskPage.newTask(after: "- [ ] B", occurrence: 0, in: enterNote).map { $0.line } == "    - [ ] ")
+            check("task enter: the new empty line's copy number counts the identical empty lines above it",
+                  TaskPage.newTask(after: "- [ ] C", occurrence: 0, in: enterNote).map { $0.occurrence } == 1
+                  && TaskPage.newTask(after: "    * [ ] A1", occurrence: 0, in: enterNote).map { $0.occurrence } == 0)
+            check("task enter: a line that's gone opens nothing",
+                  TaskPage.newTask(after: "- [ ] Z", occurrence: 0, in: enterNote) == nil)
+            // Return's new task shows directly under the task, in any arrangement.
+            let dueNote = Note(id: "/tmp/Due.md", url: URL(fileURLWithPath: "/tmp/Due.md"),
+                               content: "- [ ] one \(token(daysFromNow: 1))\n- [ ] two\n- [ ] three \(token(daysFromNow: 3))\n", modifiedDate: Date())
+            let byDue = TaskPage.lines(in: [dueNote, work], query: "tasks:")
+            let opened = TaskPage.newTask(after: "- [ ] one \(token(daysFromNow: 1))", occurrence: 0, in: dueNote.content)!
+            let withNew = Note(id: dueNote.id, url: dueNote.url,
+                               content: TaskPage.insertingLine(after: "- [ ] one \(token(daysFromNow: 1))", occurrence: 0, newLine: opened.line, in: dueNote.content)!,
+                               modifiedDate: Date())
+            let shownNew = TaskPage.restructured(byDue, from: withNew, before: dueNote, includeCompleted: false)
+            let oneAt = shownNew.firstIndex { $0.body.hasPrefix("one") }!
+            check("task enter: the new task sits right under the task, even in due order",
+                  shownNew[oneAt + 1].body.isEmpty && shownNew.count == byDue.count + 1)
+            let lastOpened = TaskPage.newTask(after: "- [ ] three \(token(daysFromNow: 3))", occurrence: 0, in: dueNote.content)!
+            let withLast = Note(id: dueNote.id, url: dueNote.url,
+                                content: TaskPage.insertingLine(after: "- [ ] three \(token(daysFromNow: 3))", occurrence: 0, newLine: lastOpened.line, in: dueNote.content)!,
+                                modifiedDate: Date())
+            let shownLast = TaskPage.restructured(byDue, from: withLast, before: dueNote, includeCompleted: false)
+            let threeAt = shownLast.firstIndex { $0.body.hasPrefix("three") }!
+            check("task enter: under the note's last task too, though another of its rows comes later in due order",
+                  shownLast[threeAt + 1].body.isEmpty)
+            // A filtered page keeps a row mid-edit that stops matching its words.
+            let shownFiltered = TaskPage.restructured(TaskPage.lines(in: [dueNote], query: "tasks: one"), from: withNew,
+                                                      before: dueNote, includeCompleted: false)
+            check("task filter: a new blank shows at once under the matching task, and nothing the filter hid",
+                  shownFiltered.map(\.body).first == "one \(token(daysFromNow: 1))" && shownFiltered.count == 2)
+            let rescanFiltered = TaskPage.lines(in: [withNew], query: "tasks: one")
+            check("task filter: a plain rescan would drop it", rescanFiltered.count == 1)
+            check("task filter: a same-page rescan keeps it, still under the task",
+                  TaskPage.stabilized(rescanFiltered, toOrderOf: shownFiltered, keepingFrom: [withNew]).map(\.body)
+                  == shownFiltered.map(\.body))
+            let blankGone = Note(id: withNew.id, url: withNew.url, content: dueNote.content, modifiedDate: Date())
+            check("task filter: …and lets it go once the note no longer has it",
+                  TaskPage.stabilized(TaskPage.lines(in: [blankGone], query: "tasks: one"), toOrderOf: shownFiltered, keepingFrom: [blankGone]).count == 1)
+            check("task marker: indent, bullet, box and spacing — body excluded",
+                  TaskPage.marker(of: "    * [x]  done it") == "    * [x]  " && TaskPage.marker(of: "- [ ] ") == "- [ ] "
+                  && TaskPage.marker(of: "plain") == nil)
+            // Tab / Shift-Tab.
+            let tabNote = "- [ ] A\n    - [ ] A1\n- [ ] B\n    - [ ] B1\n- [ ] \n\n- [ ] after gap\n"
+            check("task tab: a task nests under the task above, its subtasks moving with it",
+                  TaskPage.shiftingLine("- [ ] B", occurrence: 0, outward: false, in: tabNote).map { $0.content }
+                  == "- [ ] A\n    - [ ] A1\n    - [ ] B\n        - [ ] B1\n- [ ] \n\n- [ ] after gap\n")
+            check("task tab: a blank task nests under the task above, returning its new line",
+                  TaskPage.shiftingLine("- [ ] ", occurrence: 0, outward: false, in: tabNote).map { $0.line } == "    - [ ] ")
+            check("task tab: the first task, or one right after a blank line, can't nest",
+                  TaskPage.shiftingLine("- [ ] A", occurrence: 0, outward: false, in: tabNote) == nil
+                  && TaskPage.shiftingLine("- [ ] after gap", occurrence: 0, outward: false, in: tabNote) == nil)
+            check("task tab: a first subtask can't nest deeper (nothing at its level above)",
+                  TaskPage.shiftingLine("    - [ ] A1", occurrence: 0, outward: false, in: tabNote) == nil)
+            check("task shift-tab: a subtask moves out a level",
+                  TaskPage.shiftingLine("    - [ ] B1", occurrence: 0, outward: true, in: tabNote).map { $0.line } == "- [ ] B1")
+            check("task shift-tab: a top-level task can't move out",
+                  TaskPage.shiftingLine("- [ ] B", occurrence: 0, outward: true, in: tabNote) == nil)
+            check("task tab: tab-indented notes indent with a tab",
+                  TaskPage.shiftingLine("\t- [ ] y", occurrence: 0, outward: false, in: "- [ ] p\n\t- [ ] x\n\t- [ ] y\n").map { $0.line } == "\t\t- [ ] y"
+                  && TaskPage.shiftingLine("\t- [ ] x", occurrence: 0, outward: true, in: "- [ ] p\n\t- [ ] x\n").map { $0.line } == "- [ ] x")
             let emDash = "/tmp/Idea — plan.md"
             check("task page: a note key matches the same path from separate strings, and only that path",
                   NoteKey(emDash) == NoteKey(String(decoding: Array(emDash.utf8), as: UTF8.self))
