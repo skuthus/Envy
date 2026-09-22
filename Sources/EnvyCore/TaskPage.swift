@@ -1,5 +1,42 @@
 import Foundation
 
+/// A note's id as a key that stays cheap at scale. The task page groups,
+/// diffs, and refreshes thousands of rows by their note on every change, and
+/// String's own hashing and == normalize Unicode first — on long non-ASCII
+/// paths (one em dash in a title is enough) that made those passes the page's
+/// main cost. This hashes the UTF-8 bytes once, when the note is scanned, and
+/// compares by that hash and then the bytes. Byte equality is exact here:
+/// every row of a note carries the very same id string.
+public struct NoteKey: Hashable, Sendable {
+    public let id: String
+    private let hash: Int
+
+    public init(_ id: String) {
+        var native = id
+        var hasher = Hasher()
+        native.withUTF8 { hasher.combine(bytes: UnsafeRawBufferPointer($0)) }
+        self.id = native
+        hash = hasher.finalize()
+    }
+
+    public static func == (a: NoteKey, b: NoteKey) -> Bool {
+        a.hash == b.hash && a.id.utf8.elementsEqual(b.id.utf8)
+    }
+
+    public func hash(into hasher: inout Hasher) { hasher.combine(hash) }
+}
+
+/// A task row's identity: its note and its ordinal there, neither of which a
+/// check or a text edit changes.
+public struct TaskID: Hashable, Sendable {
+    public let note: NoteKey
+    public let ordinal: Int
+
+    public static func == (a: TaskID, b: TaskID) -> Bool {
+        a.ordinal == b.ordinal && a.note == b.note
+    }
+}
+
 /// One open task line, still stored in its source note.
 ///
 /// The task page is a live view over these lines. It does not copy them
@@ -7,10 +44,12 @@ import Foundation
 /// `body` is the words after that. Writing `marker + body` back over
 /// `sourceLine` is the whole edit.
 public struct OpenTask: Equatable, Sendable, Identifiable {
-    public let id: String
+    public let id: TaskID
     public let noteID: String
     public let noteTitle: String
-    /// Index of this open line among the note's open lines, top to bottom.
+    /// Index of this line among all the note's task lines (open and checked),
+    /// top to bottom. A check or a text edit doesn't move it, so it anchors
+    /// the row's id.
     public let ordinal: Int
     /// Which copy this is, when the note has several identical lines.
     public let occurrence: Int
@@ -28,7 +67,7 @@ public struct OpenTask: Equatable, Sendable, Identifiable {
     public let edited: Date
 
     public init(
-        id: String,
+        id: TaskID,
         noteID: String,
         noteTitle: String,
         ordinal: Int,
@@ -55,18 +94,22 @@ public struct OpenTask: Equatable, Sendable, Identifiable {
         self.edited = edited
     }
 
-    /// A copy with its checkbox flipped — for the optimistic in-place update
-    /// when "Show completed" is on, so a checked task reads struck-through at
-    /// once instead of waiting for the rescan. nil if there's no box to flip.
-    public func togglingCompletion() -> OpenTask? {
-        guard let newSource = TaskPage.toggledLine(sourceLine),
-              let newMarker = TaskPage.toggledLine(marker) else { return nil }
-        return OpenTask(
-            id: noteID + "\u{1}" + String(occurrence) + "\u{1}" + newSource,
-            noteID: noteID, noteTitle: noteTitle, ordinal: ordinal, occurrence: occurrence,
-            sourceLine: newSource, indent: indent, marker: newMarker, body: body,
-            due: due, isCompleted: !isCompleted, edited: edited
-        )
+    public var noteKey: NoteKey { id.note }
+
+    /// Field by field, cheapest first and strings by their bytes: the page
+    /// compares its whole list (thousands of rows) on every rescan, and
+    /// String's == normalizes Unicode on every non-ASCII compare. `noteID` is
+    /// covered by `id`, and `marker`/`body` are cut from `sourceLine`, so equal
+    /// source lines mean those are equal too.
+    public static func == (a: OpenTask, b: OpenTask) -> Bool {
+        a.id == b.id
+            && a.isCompleted == b.isCompleted
+            && a.occurrence == b.occurrence
+            && a.indent == b.indent
+            && a.due == b.due
+            && a.edited == b.edited
+            && a.sourceLine.utf8.elementsEqual(b.sourceLine.utf8)
+            && a.noteTitle.utf8.elementsEqual(b.noteTitle.utf8)
     }
 }
 
@@ -75,9 +118,13 @@ public struct OpenTask: Equatable, Sendable, Identifiable {
 public enum TaskPage {
     public static let queryToken = "tasks:"
     /// Same shape the editor treats as a task, open ([ ]) or checked ([x]/[X]).
-    /// A line inside a code fence is skipped later.
+    /// A line inside a code fence is skipped later. Indentation is spaces and
+    /// tabs only — `\s` would also match line breaks, letting a task under a
+    /// blank line start its match on that blank line and carry a leading "\n"
+    /// into its source line, which then matches no line of the note and can
+    /// never be checked or edited.
     private static let openTaskRegex = try! NSRegularExpression(
-        pattern: #"^(\s*(?:[-*+][ \t]+)?)(\[[ xX]\])([ \t]+.*)$"#,
+        pattern: #"^([ \t]*(?:[-*+][ \t]+)?)(\[[ xX]\])([ \t]+.*)$"#,
         options: [.anchorsMatchLines]
     )
 
@@ -139,6 +186,9 @@ public enum TaskPage {
         let hasBacktick = ns.range(of: "`").location != NSNotFound
         var tasks: [OpenTask] = []
         var seenLine: [String: Int] = [:]
+        let key = NoteKey(note.id)
+        var title = note.title
+        title.makeContiguousUTF8()
         for match in openTaskRegex.matches(in: content, range: full) {
             let loc = match.range.location
             if fenced.contains(where: { loc >= $0.location && loc <= NSMaxRange($0) }) { continue }
@@ -147,6 +197,8 @@ public enum TaskPage {
             var sourceLine = ns.substring(with: lineRange)
             if sourceLine.hasSuffix("\n") { sourceLine.removeLast() }
             if sourceLine.hasSuffix("\r") { sourceLine.removeLast() }
+            // Native UTF-8, so the page's byte compares of it stay fast.
+            sourceLine.makeContiguousUTF8()
 
             let group1 = ns.substring(with: match.range(at: 1))
             var indent = 0
@@ -165,9 +217,9 @@ public enum TaskPage {
             seenLine[sourceLine, default: 0] += 1
             let ordinal = tasks.count
             tasks.append(OpenTask(
-                id: note.id + "\u{1}" + String(occurrence) + "\u{1}" + sourceLine,
+                id: TaskID(note: key, ordinal: ordinal),
                 noteID: note.id,
-                noteTitle: note.title,
+                noteTitle: title,
                 ordinal: ordinal,
                 occurrence: occurrence,
                 sourceLine: sourceLine,
@@ -180,6 +232,51 @@ public enum TaskPage {
             ))
         }
         return tasks
+    }
+
+    /// `lines` with one note's rows re-read from that note's current text, for
+    /// showing a write from the page the instant it lands instead of after the
+    /// whole-vault rescan. Rows are matched by id (note + ordinal, which a
+    /// check or a text edit never moves), so every row keeps its place in the
+    /// list and picks up the note's exact line, box, and occurrence. A row the
+    /// note no longer has, or that is now hidden (checked, with completed
+    /// off), drops out. Lines from other notes pass through untouched.
+    public static func refreshing(_ lines: [OpenTask], from note: Note, includeCompleted: Bool) -> [OpenTask] {
+        let fresh = scanTasks(in: note)
+        let key = NoteKey(note.id)
+        return lines.compactMap { line in
+            guard line.noteKey == key else { return line }
+            let ordinal = line.id.ordinal
+            guard ordinal < fresh.count, includeCompleted || !fresh[ordinal].isCompleted else { return nil }
+            return fresh[ordinal]
+        }
+    }
+
+    /// `fresh` (a rescan) in the order `previous` (what's on screen) already
+    /// shows, so a rescan never moves rows under the cursor. A check or an edit
+    /// saves the note, and the new edited date alone would float an undated
+    /// note's whole section to the top. A row new since `previous` goes just
+    /// after the row before it in `fresh` that was already on screen — its own
+    /// note's previous line, for a new subtask or an appended task. Rows gone
+    /// since drop out.
+    public static func stabilized(_ fresh: [OpenTask], toOrderOf previous: [OpenTask]) -> [OpenTask] {
+        guard !previous.isEmpty, !fresh.isEmpty else { return fresh }
+        var rank: [TaskID: Int] = [:]
+        rank.reserveCapacity(previous.count)
+        for (i, task) in previous.enumerated() { rank[task.id] = i }
+        var key = [Double](repeating: 0, count: fresh.count)
+        var previousRank = -1.0
+        for i in fresh.indices {
+            if let r = rank[fresh[i].id] {
+                key[i] = Double(r)
+                previousRank = Double(r)
+            } else {
+                key[i] = previousRank + 0.5
+            }
+        }
+        return fresh.indices
+            .sorted { key[$0] != key[$1] ? key[$0] < key[$1] : $0 < $1 }
+            .map { fresh[$0] }
     }
 
     /// Only the open ([ ]) task lines — the default the page shows and what the

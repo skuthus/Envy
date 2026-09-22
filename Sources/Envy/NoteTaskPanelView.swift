@@ -54,19 +54,11 @@ struct NoteTaskPanelView: View {
                 lines: lines,
                 theme: theme,
                 onCommit: { nid, line, occ, newLine in
-                    store.rewriteTaskLine(noteID: nid, originalLine: line, occurrence: occ, with: newLine)
+                    write(nid) { store.rewriteTaskLine(noteID: nid, originalLine: line, occurrence: occ, with: newLine) }
                 },
                 onComplete: { nid, line, occ in
-                    if let toggled = TaskPage.toggledLine(line) {
-                        store.rewriteTaskLine(noteID: nid, originalLine: line, occurrence: occ, with: toggled)
-                        if let idx = lines.firstIndex(where: { $0.noteID == nid && $0.sourceLine == line && $0.occurrence == occ }) {
-                            if showCompleted {
-                                if let flipped = lines[idx].togglingCompletion() { lines[idx] = flipped }
-                            } else {
-                                lines.remove(at: idx)
-                            }
-                        }
-                    }
+                    guard let toggled = TaskPage.toggledLine(line) else { return false }
+                    return write(nid) { store.rewriteTaskLine(noteID: nid, originalLine: line, occurrence: occ, with: toggled) }
                 },
                 onOpenNote: { nid, _ in onOpenNote(URL(fileURLWithPath: nid)) },
                 onAddTask: { _ = store.appendTaskLine(toNoteID: noteID, $0) },
@@ -111,6 +103,21 @@ struct NoteTaskPanelView: View {
         return TaskPage.openTasks(in: note).contains { $0.sourceLine == line }
     }
 
+    /// One write from the panel, shown the instant it lands: the written
+    /// note's rows are re-read from its new text (exact, nothing guessed), and
+    /// any rescan already in flight — snapshotted before this write — is
+    /// superseded so it can't land stale over it. A missed write shows nothing
+    /// and rebuilds instead.
+    private func write(_ noteID: String, _ op: () -> Bool) -> Bool {
+        generation += 1
+        guard op(), let note = store.note(withID: noteID) else {
+            recompute()
+            return false
+        }
+        lines = TaskPage.refreshing(lines, from: note, includeCompleted: showCompleted)
+        return true
+    }
+
     /// This note's open tasks, off the main thread for consistency (a single
     /// note is cheap, but this keeps the pattern identical to the vault panel).
     private func recompute() {
@@ -119,13 +126,16 @@ struct NoteTaskPanelView: View {
         let id = noteID
         let snapshot = store.notes
         let incl = showCompleted
+        let shown = lines
         Task { @MainActor in
-            let result = await Task.detached(priority: .userInitiated) { () -> [OpenTask] in
-                guard let note = snapshot.first(where: { $0.id == id }) else { return [] }
-                return incl ? TaskPage.allTasks(in: note) : TaskPage.openTasks(in: note)
+            let result = await Task.detached(priority: .userInitiated) { () -> (lines: [OpenTask], unchanged: Bool) in
+                guard let note = snapshot.first(where: { $0.id == id }) else { return ([], shown.isEmpty) }
+                let fresh = incl ? TaskPage.allTasks(in: note) : TaskPage.openTasks(in: note)
+                return (fresh, fresh == shown)
             }.value
             guard g == generation else { return }
-            lines = result
+            // Already on screen (a write from this panel shows at once).
+            if !result.unchanged { lines = result.lines }
         }
     }
 }

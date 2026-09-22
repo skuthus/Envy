@@ -339,7 +339,13 @@ struct ContentView: View {
     /// snapshot on exactly the right triggers (store.notes changes included).
     @State var fleetingCountCache = 0
     @State var inboxNoteIDsCache: Set<String> = []
-    @State private var searchComputeGeneration = 0
+    @State var searchComputeGeneration = 0
+    /// The note ids the per-note folder maps were last built from — see
+    /// rebuildNoteFolderCachesIfNotesChanged.
+    @State var noteFolderCacheIDs: [String] = []
+    /// The query (and Completed setting) the task lines on screen were built
+    /// for — a rescan of that same page keeps their order (see recompute).
+    @State var taskCachePageKey = ""
 
     struct SearchComputation: Sendable {
         var notes: [Note]
@@ -428,14 +434,26 @@ struct ContentView: View {
         let foldImageText = searchImageText
         let inbox = inboxEnabled
         let inclCompleted = showCompletedTasks
+        // A rescan of the page already on screen (a store change, not a new
+        // query) keeps its rows where they are, and is compared against it off
+        // the main thread: after a check or an edit the page already shows the
+        // write, so the rescan is usually identical and SwiftUI is handed
+        // nothing — no second diff of thousands of rows per click.
+        let pageKey = querySnapshot + "\u{1}" + (inclCompleted ? "1" : "0")
+        let shownTasks = taskDocumentLinesCache
+        let samePage = pageKey == taskCachePageKey
         let result = await Task.detached(priority: .userInitiated) {
             let search = Self.computeSearch(notes: notesSnapshot, query: querySnapshot, pinnedIDs: pinnedSnapshot, sortField: field, sortAscending: ascending, showInbox: showInbox, inboxDirectory: inboxDirectory, imageText: imageText, foldImageText: foldImageText, inboxEnabled: inbox)
-            let tasks = TaskPage.isTaskQuery(querySnapshot) ? TaskPage.lines(in: search.notes, query: querySnapshot, includeCompleted: inclCompleted) : []
-            return (search: search, tasks: tasks)
+            var tasks = TaskPage.isTaskQuery(querySnapshot) ? TaskPage.lines(in: search.notes, query: querySnapshot, includeCompleted: inclCompleted) : []
+            if samePage { tasks = TaskPage.stabilized(tasks, toOrderOf: shownTasks) }
+            return (search: search, tasks: tasks, tasksUnchanged: tasks == shownTasks)
         }.value
         guard generation == searchComputeGeneration else { return }
         filteredNotesCache = result.search.notes
-        taskDocumentLinesCache = result.tasks
+        // Still exactly what was compared: anything that changes the page
+        // (a write from it, the sync path) bumps the generation first.
+        if !result.tasksUnchanged { taskDocumentLinesCache = result.tasks }
+        taskCachePageKey = pageKey
         suggestionNoteCache = result.search.suggestion
         queryHasExactTitleMatch = result.search.hasExactTitleMatch
         fleetingCountCache = result.search.fleetingCount
@@ -464,6 +482,7 @@ struct ContentView: View {
         fleetingCountCache = result.fleetingCount
         inboxNoteIDsCache = result.inboxNoteIDs
         taskDocumentLinesCache = TaskPage.isTaskQuery(query) ? TaskPage.lines(in: result.notes, query: query, includeCompleted: showCompletedTasks) : []
+        taskCachePageKey = query + "\u{1}" + (showCompletedTasks ? "1" : "0")
     }
 
     /// Titles of every note, newest-edited first — feeds the editors'
@@ -876,7 +895,9 @@ struct ContentView: View {
             // Notes moved/added/removed — refresh the per-note folder maps only.
             // No filesystem walk here: the folder *list* is unchanged by a note
             // moving, and a new folder created via a move is added incrementally.
-            rebuildNoteFolderCaches()
+            // A plain content save (typing, a task check) changes no note's
+            // folder, so the maps are left as they are.
+            rebuildNoteFolderCachesIfNotesChanged()
             // Gated so ordinary editing (which fires this via the debounced
             // save) never touches the disk for templates — a notes reload
             // only changes the template list when it came from converting

@@ -322,6 +322,7 @@ extension ContentView {
     /// subset). noteDirectory is already resolved and notes are enumerated from
     /// it, so a plain prefix compare matches without re-standardizing every URL.
     func rebuildNoteFolderCaches() {
+        noteFolderCacheIDs = store.notes.map(\.id)
         guard indexIncludeSubfolders else { noteSubfolderCache = [:]; noteFolderColorCache = [:]; return }
         var subs: [String: String] = [:]
         var colors: [String: Color] = [:]
@@ -333,14 +334,28 @@ extension ContentView {
             // (un-standardized), so under a special root like /private/tmp —
             // where standardizedFileURL rewrites /private/tmp → /tmp — the
             // prefix never matched and this cache came out empty (blank list-row
-            // folders, zeroed folder-browse counts). standardizedFileURL is
-            // string-only (no I/O), so deriving it per note costs nothing real.
+            // folders, zeroed folder-browse counts). standardizedFileURL is not
+            // free: it checks the path is reachable on disk, so this pass is a
+            // filesystem call per note — see rebuildNoteFolderCachesIfNotesChanged.
             guard let relative = store.subfolderPath(of: note) else { continue }
             subs[note.id] = relative
             if let color = folderColorMap[relative] { colors[note.id] = color }
         }
         noteSubfolderCache = subs
         noteFolderColorCache = colors
+    }
+
+    /// The store.notes trigger for the maps above. Only a note being added,
+    /// removed, renamed, or moved can change them — every one of those changes
+    /// an id — so a content save (every debounced keystroke save, every task
+    /// check) skips the rebuild, which at thousands of notes was the largest
+    /// single cost of a save on the main thread. An unchanged note keeps its id
+    /// string's storage, so this compare is a pointer check per note.
+    func rebuildNoteFolderCachesIfNotesChanged() {
+        let notes = store.notes
+        if notes.count == noteFolderCacheIDs.count,
+           zip(notes, noteFolderCacheIDs).allSatisfy({ $0.id == $1 }) { return }
+        rebuildNoteFolderCaches()
     }
 
     @ViewBuilder
@@ -1174,34 +1189,40 @@ extension ContentView {
     var taskDocumentLines: [OpenTask] { taskDocumentLinesCache }
 
     /// Write one open line's words back into its note, matched by the exact
-    /// line text and occurrence the row carries — never by position. So a
-    /// check that reordered the list a moment earlier can't send this write to
-    /// the wrong line, and no rescan is needed to locate it.
-    func commitTaskLine(noteID: String, originalLine: String, occurrence: Int, newLine: String) {
-        guard newLine != originalLine else { return }
-        store.rewriteTaskLine(noteID: noteID, originalLine: originalLine, occurrence: occurrence, with: newLine)
+    /// line text and occurrence the row carries — never by position.
+    @discardableResult
+    func commitTaskLine(noteID: String, originalLine: String, occurrence: Int, newLine: String) -> Bool {
+        guard newLine != originalLine else { return true }
+        return applyTaskWrite(noteID: noteID) {
+            store.rewriteTaskLine(noteID: noteID, originalLine: originalLine, occurrence: occurrence, with: newLine)
+        }
     }
 
-    /// Check the box on one open line, matched the same way. The line then
-    /// leaves this page on the next rebuild.
-    func completeTaskLine(noteID: String, line: String, occurrence: Int) {
-        guard let toggled = TaskPage.toggledLine(line) else { return }
-        store.rewriteTaskLine(noteID: noteID, originalLine: line, occurrence: occurrence, with: toggled)
-        // Instant feedback: drop the just-checked line from the shown list now,
-        // rather than waiting for the whole-vault rescan to land. The rescan
-        // then reconciles authoritatively. (When completed tasks are shown, the
-        // rescan flips it to checked instead.)
-        if let idx = taskDocumentLinesCache.firstIndex(where: {
-            $0.noteID == noteID && $0.sourceLine == line && $0.occurrence == occurrence
-        }) {
-            if showCompletedTasks {
-                if let flipped = taskDocumentLinesCache[idx].togglingCompletion() {
-                    taskDocumentLinesCache[idx] = flipped
-                }
-            } else {
-                taskDocumentLinesCache.remove(at: idx)
-            }
+    /// Flip the box on one line ([ ] ↔ [x]), matched the same way.
+    @discardableResult
+    func completeTaskLine(noteID: String, line: String, occurrence: Int) -> Bool {
+        guard let toggled = TaskPage.toggledLine(line) else { return false }
+        return applyTaskWrite(noteID: noteID) {
+            store.rewriteTaskLine(noteID: noteID, originalLine: line, occurrence: occurrence, with: toggled)
         }
+    }
+
+    /// One write from the task page, shown the instant it lands: the written
+    /// note's rows are re-read from its new text right here (one note, not the
+    /// vault), so the page matches the file exactly — box, words, occurrence —
+    /// with nothing guessed. The whole-vault rescan still follows the store
+    /// change; any rescan already in flight snapshotted the notes before this
+    /// write, so it's superseded rather than left to land stale over it. A
+    /// write that misses (the page was behind the note) shows nothing and
+    /// rebuilds instead — the page never claims a change the file doesn't have.
+    private func applyTaskWrite(noteID: String, _ write: () -> Bool) -> Bool {
+        searchComputeGeneration += 1
+        guard write(), let note = store.note(withID: noteID) else {
+            Task { await recomputeFilteredNotes() }
+            return false
+        }
+        taskDocumentLinesCache = TaskPage.refreshing(taskDocumentLinesCache, from: note, includeCompleted: showCompletedTasks)
+        return true
     }
 
     /// Add an empty subtask into the note, one level indented, right after the
@@ -1275,7 +1296,12 @@ extension ContentView {
         // appears (entering task mode) and on any further query edit while
         // here, so the list being gone can't strand it. No debounce — this
         // only fires in task mode, and .task(id:) supersedes an in-flight run.
-        .task(id: query) { await recomputeFilteredNotes() }
+        // Arriving on the page, or changing its query, starts from the page's
+        // natural order; only rescans while it stays up keep rows in place.
+        .task(id: query) {
+            taskCachePageKey = ""
+            await recomputeFilteredNotes()
+        }
         .onChange(of: showCompletedTasks) { _, _ in Task { await recomputeFilteredNotes() } }
     }
 

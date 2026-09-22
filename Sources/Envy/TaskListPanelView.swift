@@ -16,6 +16,9 @@ struct TaskListPanelView: View {
     @State private var lines: [OpenTask] = []
     @AppStorage("taskShowCompleted") private var showCompleted = false
     @State private var generation = 0
+    /// The Completed setting the rows on screen were built with; nil until the
+    /// first build (or after reopening) — see recompute.
+    @State private var shownIncludesCompleted: Bool?
     @State private var focusNoteID: String?
     @State private var focusLine: String?
 
@@ -26,19 +29,11 @@ struct TaskListPanelView: View {
             lines: lines,
             theme: theme,
             onCommit: { noteID, line, occ, newLine in
-                store.rewriteTaskLine(noteID: noteID, originalLine: line, occurrence: occ, with: newLine)
+                write(noteID) { store.rewriteTaskLine(noteID: noteID, originalLine: line, occurrence: occ, with: newLine) }
             },
             onComplete: { noteID, line, occ in
-                if let toggled = TaskPage.toggledLine(line) {
-                    store.rewriteTaskLine(noteID: noteID, originalLine: line, occurrence: occ, with: toggled)
-                    if let idx = lines.firstIndex(where: { $0.noteID == noteID && $0.sourceLine == line && $0.occurrence == occ }) {
-                        if showCompleted {
-                            if let flipped = lines[idx].togglingCompletion() { lines[idx] = flipped }
-                        } else {
-                            lines.remove(at: idx)
-                        }
-                    }
-                }
+                guard let toggled = TaskPage.toggledLine(line) else { return false }
+                return write(noteID) { store.rewriteTaskLine(noteID: noteID, originalLine: line, occurrence: occ, with: toggled) }
             },
             onOpenNote: { noteID, _ in onOpenNote(URL(fileURLWithPath: noteID)) },
             onAddTask: { _ = store.appendTaskLine($0) },
@@ -64,7 +59,10 @@ struct TaskListPanelView: View {
         .environment(\.interfaceFontScale, scale)
         .background(Color(nsColor: theme.resolvedBackgroundColor))
         .ignoresSafeArea(.container, edges: .top)
-        .onAppear { recompute() }
+        .onAppear {
+            shownIncludesCompleted = nil
+            recompute()
+        }
         .onChange(of: store.notes) { _, _ in recompute() }
         .onChange(of: showCompleted) { _, _ in recompute() }
     }
@@ -74,6 +72,21 @@ struct TaskListPanelView: View {
         return TaskPage.openTasks(in: note).contains { $0.sourceLine == line }
     }
 
+    /// One write from the panel, shown the instant it lands: the written
+    /// note's rows are re-read from its new text (exact, nothing guessed), and
+    /// any rescan already in flight — snapshotted before this write — is
+    /// superseded so it can't land stale over it. A missed write shows nothing
+    /// and rebuilds instead.
+    private func write(_ noteID: String, _ op: () -> Bool) -> Bool {
+        generation += 1
+        guard op(), let note = store.note(withID: noteID) else {
+            recompute()
+            return false
+        }
+        lines = TaskPage.refreshing(lines, from: note, includeCompleted: showCompleted)
+        return true
+    }
+
     /// Off the main thread, exactly like the main window's pipeline — a
     /// whole-vault task scan is ~100ms and must never block the panel.
     private func recompute() {
@@ -81,12 +94,19 @@ struct TaskListPanelView: View {
         let g = generation
         let snapshot = store.notes
         let incl = showCompleted
+        // Same page as on screen: keep its order and skip an identical update
+        // (see ContentView.recomputeFilteredNotes).
+        let shown = lines
+        let samePage = shownIncludesCompleted == incl
         Task { @MainActor in
-            let result = await Task.detached(priority: .userInitiated) {
-                TaskPage.lines(in: snapshot, query: "tasks:", includeCompleted: incl)
+            let result = await Task.detached(priority: .userInitiated) { () -> (lines: [OpenTask], unchanged: Bool) in
+                var fresh = TaskPage.lines(in: snapshot, query: "tasks:", includeCompleted: incl)
+                if samePage { fresh = TaskPage.stabilized(fresh, toOrderOf: shown) }
+                return (fresh, fresh == shown)
             }.value
             guard g == generation else { return }
-            lines = result
+            if !result.unchanged { lines = result.lines }
+            shownIncludesCompleted = incl
         }
     }
 }

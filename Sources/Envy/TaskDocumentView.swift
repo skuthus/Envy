@@ -14,9 +14,11 @@ struct TaskDocumentView: View {
     let lines: [OpenTask]
     let theme: Theme
     /// (noteID, the line as it stands in the note, occurrence, the replacement).
-    let onCommit: (String, String, Int, String) -> Void
-    /// (noteID, the line as it stands in the note, occurrence).
-    let onComplete: (String, String, Int) -> Void
+    /// Returns whether the note took the write.
+    let onCommit: (String, String, Int, String) -> Bool
+    /// (noteID, the line as it stands in the note, occurrence). Returns
+    /// whether the note took the write.
+    let onComplete: (String, String, Int) -> Bool
     let onOpenNote: (String, String) -> Void
     let onAddTask: (String) -> Void
     /// (noteID, the line to nest under, occurrence).
@@ -47,12 +49,12 @@ struct TaskDocumentView: View {
     /// By-due direction. Soonest first until the arrow is clicked.
     @State private var dueAscending = true
     /// Notes whose section is collapsed, in By note.
-    @State private var collapsed: Set<String> = []
+    @State private var collapsed: Set<NoteKey> = []
 
     /// One note's open lines, in document order. Sections are ordered by the
     /// note's soonest task (undated notes last, newest-edited first).
     private struct Group: Identifiable {
-        let id: String
+        let id: NoteKey
         let title: String
         let firstLine: String
         let tasks: [OpenTask]
@@ -225,7 +227,7 @@ struct TaskDocumentView: View {
             .buttonStyle(.plain)
 
             Button {
-                onOpenNote(group.id, group.firstLine)
+                onOpenNote(group.id.id, group.firstLine)
             } label: {
                 Text(group.title.isEmpty ? "Untitled" : group.title)
                     .font(.system(size: 12 * interfaceFontScale, weight: .semibold))
@@ -279,15 +281,16 @@ struct TaskDocumentView: View {
             // appear is the order of their soonest task, which is exactly the
             // section order we want. Tasks within a note go back to document
             // order.
-            var order: [String] = []
-            var byNote: [String: [OpenTask]] = [:]
-            var title: [String: String] = [:]
+            var order: [NoteKey] = []
+            var byNote: [NoteKey: [OpenTask]] = [:]
+            var title: [NoteKey: String] = [:]
             for task in lines {
-                if byNote[task.noteID] == nil {
-                    order.append(task.noteID)
-                    title[task.noteID] = task.noteTitle
+                let key = task.noteKey
+                if byNote[key] == nil {
+                    order.append(key)
+                    title[key] = task.noteTitle
                 }
-                byNote[task.noteID, default: []].append(task)
+                byNote[key, default: []].append(task)
             }
             groups = order.map { id in
                 let tasks = byNote[id]!.sorted { $0.ordinal < $1.ordinal }
@@ -326,8 +329,8 @@ private struct TaskLineRow: View {
     let depth: Int
     /// Show the source-note chip. Off under a header that already names it.
     let showSource: Bool
-    let onCommit: (String, String, Int, String) -> Void
-    let onComplete: (String, String, Int) -> Void
+    let onCommit: (String, String, Int, String) -> Bool
+    let onComplete: (String, String, Int) -> Bool
     let onOpenNote: (String, String) -> Void
     let onAddSubtask: (String, String, Int) -> Void
     let onAddTaskBelow: (String, String, Int) -> Void
@@ -352,8 +355,8 @@ private struct TaskLineRow: View {
         indented: Bool,
         depth: Int,
         showSource: Bool,
-        onCommit: @escaping (String, String, Int, String) -> Void,
-        onComplete: @escaping (String, String, Int) -> Void,
+        onCommit: @escaping (String, String, Int, String) -> Bool,
+        onComplete: @escaping (String, String, Int) -> Bool,
         onOpenNote: @escaping (String, String) -> Void,
         onAddSubtask: @escaping (String, String, Int) -> Void,
         onAddTaskBelow: @escaping (String, String, Int) -> Void,
@@ -416,7 +419,12 @@ private struct TaskLineRow: View {
                         .font(.system(size: max(13, theme.resolvedFont.pointSize) * scale))
                         .foregroundStyle(Color(nsColor: theme.resolvedTextColor))
                         .focused($focused)
-                        .onAppear { focused = true }
+                        // Next turn, not in onAppear itself: the field isn't in
+                        // the window yet there, and while another field holds
+                        // the keyboard (the search box, every time the page was
+                        // just reached by typing tasks:) that request is dropped
+                        // — the field shows but typing goes nowhere.
+                        .onAppear { DispatchQueue.main.async { focused = true } }
                         .onSubmit(endEditing)
                 } else {
                     Button {
@@ -441,7 +449,7 @@ private struct TaskLineRow: View {
 
             if showSource {
                 Button {
-                    onOpenNote(task.noteID, liveLine)
+                    onOpenNote(task.noteID, writeKey.line)
                 } label: {
                     // A short fixed chip, not the note title — the title's
                     // length was crowding out the due date at the end of the
@@ -466,34 +474,50 @@ private struct TaskLineRow: View {
             Divider().padding(.leading, leadingInset)
         }
         .contextMenu {
-            Button("Add Task Below") { onAddTaskBelow(task.noteID, liveLine, liveOccurrence) }
-            Button("Add Subtask") { onAddSubtask(task.noteID, liveLine, liveOccurrence) }
+            Button("Add Task Below") { onAddTaskBelow(task.noteID, writeKey.line, writeKey.occurrence) }
+            Button("Add Subtask") { onAddSubtask(task.noteID, writeKey.line, writeKey.occurrence) }
             Divider()
-            Button("Open Source Note") { onOpenNote(task.noteID, liveLine) }
+            Button("Open Source Note") { onOpenNote(task.noteID, writeKey.line) }
         }
-        .onAppear {
-            // A row just created by the menu drops straight into edit mode.
-            if autoFocus, !editing {
-                editing = true
-                onFocusConsumed()
-            }
+        // A row just created by the menu drops straight into edit mode — on
+        // first appearance, and also when the focus target moves onto a row
+        // that's already visible (the "+"/Add Subtask reusing an existing empty
+        // task rather than stacking a new one, which wouldn't re-fire onAppear).
+        .onAppear { if autoFocus { focusThisRow() } }
+        .onChange(of: autoFocus) { _, isTarget in if isTarget { focusThisRow() } }
+        // Save as you type (the rest of Envy does). The row id is the
+        // note+ordinal, which is stable while editing text — no insert/remove
+        // happens mid-edit — so a debounced commit here doesn't drop focus.
+        .onChange(of: draft) { _, _ in
+            guard editing else { return }
+            saveTask = DebouncedSave.schedule(replacing: saveTask) { commitNow() }
         }
-        // No per-keystroke debounced save: with a content-based row id, a
-        // commit mid-typing would rescan and pull this row's identity out from
-        // under the edit (dropping focus and scrambling drafts). The edit lands
-        // when the field loses focus (below) or the box is checked instead.
         .onChange(of: focused) { _, isFocused in
             if editing, !isFocused { endEditing() }
         }
-        .onChange(of: task.body) { _, newBody in
-            // The cache rebuilt with a fresh value for this row (same ordinal).
-            // Resync only when the user isn't mid-edit, so their typing and the
-            // chained write key are never clobbered.
+        .onChange(of: task) { _, newTask in
+            // The list has a fresh value for this row: a check, an edit, a
+            // rescan, or the note changing on disk. Resync on any change, not
+            // just the words — a check changes only the box, and a key left on
+            // the old line makes the next write miss. Never mid-edit, so the
+            // typing and its chained key are left alone.
             guard !editing else { return }
-            draft = newBody
-            liveLine = task.sourceLine
-            liveOccurrence = task.occurrence
+            draft = newTask.body
+            liveLine = newTask.sourceLine
+            liveOccurrence = newTask.occurrence
         }
+    }
+
+    /// Drop this row into edit mode. Resync @State to this task first — the row
+    /// may have been reused (same ordinal id) from a shifted or differently-
+    /// bodied task, so its leftover draft/line must not leak into the edit.
+    private func focusThisRow() {
+        guard !editing else { return }
+        draft = task.body
+        liveLine = task.sourceLine
+        liveOccurrence = task.occurrence
+        editing = true
+        onFocusConsumed()
     }
 
     /// Save the words, then flip the checkbox (the handler toggles [ ]↔[x]), so
@@ -502,7 +526,12 @@ private struct TaskLineRow: View {
     private func finish() {
         saveTask?.cancel()
         if editing { commitNow() }
-        onComplete(task.noteID, liveLine, liveOccurrence)
+        let key = writeKey
+        guard onComplete(task.noteID, key.line, key.occurrence),
+              let toggled = TaskPage.toggledLine(key.line) else { return }
+        // Still editing: the list's refresh won't resync a row mid-edit, so
+        // carry the flipped box into the chained key ourselves.
+        liveLine = toggled
     }
 
     private func endEditing() {
@@ -513,14 +542,27 @@ private struct TaskLineRow: View {
     }
 
     private func commitNow() {
+        let key = writeKey
         let cleaned = draft.replacingOccurrences(of: "\n", with: " ")
         let newLine = task.marker + cleaned
-        guard newLine != liveLine else { return }
-        onCommit(task.noteID, liveLine, liveOccurrence, newLine)
-        // The note now holds `newLine`, unique among any identical siblings
-        // (which still carry the old text), so the next write matches it at 0.
+        guard newLine != key.line else { return }
+        // Advance the key only when the note took the write — a missed write
+        // must not leave the row keyed to text the note never had.
+        guard onCommit(task.noteID, key.line, key.occurrence, newLine) else { return }
         liveLine = newLine
+        // Unique among identical siblings (they still carry the old text)
+        // until the list's refresh reports the exact occurrence.
         liveOccurrence = 0
+    }
+
+    /// The line as the note holds it now, for the next write. Out of an edit
+    /// that's the list's own value: the container re-reads the note after
+    /// every write, so it's exact. Mid-edit the list's value can trail the
+    /// last keystroke's save, so the row's chained key leads — with the
+    /// list's occurrence once it has caught up to the same text.
+    private var writeKey: (line: String, occurrence: Int) {
+        guard editing else { return (task.sourceLine, task.occurrence) }
+        return (liveLine, task.sourceLine == liveLine ? task.occurrence : liveOccurrence)
     }
 
     /// Base indent (nudged under a note header, flush in the flat list) plus a

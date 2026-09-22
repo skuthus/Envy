@@ -2394,6 +2394,64 @@ struct SelfCheck {
                   (insertedSecond?.hasSuffix("- [ ] Call the dentist\n    - [ ] second") == true)
                   || (insertedSecond?.contains("- [ ] Call the dentist\n    - [ ] second\n") == true))
 
+            // A task under a blank line is its own line, not the blank line too.
+            let spaced = Note(id: "/tmp/Spaced.md", url: URL(fileURLWithPath: "/tmp/Spaced.md"),
+                              content: "# Heading\n\n- [ ] first\n\n\n    - [ ] nested\n", modifiedDate: Date())
+            let spacedTasks = TaskPage.openTasks(in: spaced)
+            check("task page: a task under a blank line has no leading newline",
+                  spacedTasks.map(\.sourceLine) == ["- [ ] first", "    - [ ] nested"])
+            check("task page: a task under blank lines keeps its own indent",
+                  spacedTasks.map(\.indent) == [0, 4] && spacedTasks[1].marker == "    - [ ] ")
+            check("task page: a task under a blank line can be checked",
+                  TaskPage.replacingLine(occurrence: 0, of: spacedTasks[0].sourceLine,
+                                         with: TaskPage.toggledLine(spacedTasks[0].sourceLine)!, in: spaced.content)
+                  == "# Heading\n\n- [x] first\n\n\n    - [ ] nested\n")
+
+            // A write from the page re-reads just that note's rows in place.
+            let dupNote = Note(id: "/tmp/Dup.md", url: URL(fileURLWithPath: "/tmp/Dup.md"),
+                               content: "- [ ] a\n- [ ] dup\n- [ ] dup\n", modifiedDate: Date())
+            let shown = TaskPage.lines(in: [dupNote, work], query: "tasks:", includeCompleted: true)
+            let secondDup = TaskPage.replacingLine(occurrence: 1, of: "- [ ] dup", with: "- [x] dup", in: dupNote.content)!
+            let afterCheck = TaskPage.refreshing(shown, from: Note(id: dupNote.id, url: dupNote.url, content: secondDup, modifiedDate: Date()), includeCompleted: true)
+            check("task page refresh: every row keeps its place",
+                  afterCheck.map(\.id) == shown.map(\.id))
+            let dupRows = afterCheck.filter { $0.noteID == dupNote.id }
+            check("task page refresh: the checked copy reads checked, its twin stays open",
+                  dupRows.map(\.isCompleted) == [false, false, true])
+            check("task page refresh: occurrences follow the new text (the open twin is now copy 0)",
+                  dupRows[1].sourceLine == "- [ ] dup" && dupRows[1].occurrence == 0
+                  && dupRows[2].sourceLine == "- [x] dup" && dupRows[2].occurrence == 0)
+            check("task page refresh: other notes' rows are untouched",
+                  afterCheck.filter { $0.noteID != dupNote.id } == shown.filter { $0.noteID != dupNote.id })
+            let hidden = TaskPage.refreshing(TaskPage.lines(in: [dupNote], query: "tasks:"),
+                                             from: Note(id: dupNote.id, url: dupNote.url, content: secondDup, modifiedDate: Date()),
+                                             includeCompleted: false)
+            check("task page refresh: with completed hidden, the checked row drops out",
+                  hidden.map(\.sourceLine) == ["- [ ] a", "- [ ] dup"])
+            check("task page: two scans of the same notes compare equal (a no-op rescan changes nothing)",
+                  TaskPage.lines(in: [dupNote, work], query: "tasks:", includeCompleted: true) == shown)
+            // A rescan keeps what's on screen where it is.
+            let older = Note(id: "/tmp/Older.md", url: URL(fileURLWithPath: "/tmp/Older.md"),
+                             content: "- [ ] old one\n- [ ] old two\n", modifiedDate: Date(timeIntervalSinceNow: -3600))
+            let newer = Note(id: "/tmp/Newer.md", url: URL(fileURLWithPath: "/tmp/Newer.md"),
+                             content: "- [ ] new one\n", modifiedDate: Date(timeIntervalSinceNow: -60))
+            let onScreen = TaskPage.lines(in: [older, newer], query: "tasks:")
+            check("task page: undated notes list newest-edited first", onScreen.map(\.body) == ["new one", "old one", "old two"])
+            let olderSaved = Note(id: older.id, url: older.url, content: "- [x] old one\n- [ ] old two\n- [ ] old three\n", modifiedDate: Date())
+            let rescan = TaskPage.lines(in: [olderSaved, newer], query: "tasks:", includeCompleted: true)
+            check("task page: a save alone would float that note to the top", rescan.first?.noteID == older.id)
+            let stable = TaskPage.stabilized(rescan, toOrderOf: onScreen)
+            check("task page: a stabilized rescan keeps the on-screen order, with the new row slotted in its note",
+                  stable.map(\.body) == ["new one", "old one", "old two", "old three"])
+            check("task page: a stabilized rescan still carries the fresh content",
+                  stable[1].isCompleted && stable.count == rescan.count)
+            check("task page: a stabilized rescan of an unchanged page is the page",
+                  TaskPage.stabilized(onScreen, toOrderOf: onScreen) == onScreen)
+            let emDash = "/tmp/Idea — plan.md"
+            check("task page: a note key matches the same path from separate strings, and only that path",
+                  NoteKey(emDash) == NoteKey(String(decoding: Array(emDash.utf8), as: UTF8.self))
+                  && NoteKey(emDash) != NoteKey("/tmp/Idea - plan.md"))
+
             let store = await makeTempStore()
             var note = store.create(title: "Chores")
             note.content = "- [ ] one\n- [ ] one\n"
