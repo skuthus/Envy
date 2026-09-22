@@ -112,6 +112,11 @@ struct ContentView: View {
     @State var suppressNextSelectionScroll = false
     @State var trashSweepTask: Task<Void, Never>?
     @FocusState var focusedField: FocusField?
+    /// When the omnibar was last typed into (AppKit's text-changed
+    /// notification during a key press). A page swap right after one was
+    /// typed; see restoreOmnibarAfterPageSwap.
+    @State var omnibarTypedAt: Date = .distantPast
+
     @AppStorage("layoutMode") var layoutModeRaw = LayoutMode.vertical.rawValue
     /// Hides the note list entirely, leaving just the editor — in either layout.
     @AppStorage("listCollapsed") var listCollapsed = false
@@ -332,6 +337,9 @@ struct ContentView: View {
     /// results themselves. Both used to be O(notes) scans in the search
     /// field's body on every keystroke render.
     @State var suggestionNoteCache: Note?
+    /// On the tasks: page, the note title the words after `tasks:` autofill
+    /// to (a note that has tasks) — found in the same background pass.
+    @State var taskTitleSuggestionCache: String?
     @State var queryHasExactTitleMatch = false
     /// How many notes are waiting in Inbox/ (drives the fleeting badge) and
     /// which of the store's notes live there (drives each row's fleeting
@@ -451,7 +459,9 @@ struct ContentView: View {
             if samePage {
                 tasks = TaskPage.stabilized(tasks, toOrderOf: shownTasks, keepingFrom: notesSnapshot, includeCompleted: inclCompleted)
             }
-            return (search: search, tasks: tasks, tasksUnchanged: tasks == shownTasks)
+            let taskTitle = TaskPage.isTaskQuery(querySnapshot)
+                ? TaskPage.titleCompletion(for: querySnapshot, in: notesSnapshot, includeCompleted: inclCompleted) : nil
+            return (search: search, tasks: tasks, tasksUnchanged: tasks == shownTasks, taskTitle: taskTitle)
         }.value
         guard generation == searchComputeGeneration else { return }
         filteredNotesCache = result.search.notes
@@ -460,6 +470,7 @@ struct ContentView: View {
         if !result.tasksUnchanged { taskDocumentLinesCache = result.tasks }
         taskCachePageKey = pageKey
         suggestionNoteCache = result.search.suggestion
+        taskTitleSuggestionCache = result.taskTitle
         queryHasExactTitleMatch = result.search.hasExactTitleMatch
         fleetingCountCache = result.search.fleetingCount
         inboxNoteIDsCache = result.search.inboxNoteIDs
@@ -687,8 +698,21 @@ struct ContentView: View {
         .environment(\.interfaceFontScale, interfaceTextSize.scale)
     }
 
-    private var notificationHandledLayout: some View {
+    /// The page, watched from above the task-page swap (see
+    /// restoreOmnibarAfterPageSwap). Its own property so the long modifier
+    /// chain below stays within what the type checker can handle.
+    private var pageSwapAwareLayout: some View {
         layoutSwitch
+            .onReceive(NotificationCenter.default.publisher(for: NSControl.textDidChangeNotification)) { note in
+                // Only during a key press: SwiftUI rewriting a focused field's
+                // text (a query set in code) posts the same notification.
+                if Self.isOmnibar(note.object), NSApp.currentEvent?.type == .keyDown { omnibarTypedAt = Date() }
+            }
+            .onChange(of: isTaskDocumentQuery) { _, _ in restoreOmnibarAfterPageSwap() }
+    }
+
+    private var notificationHandledLayout: some View {
+        pageSwapAwareLayout
         .background(backgroundView.ignoresSafeArea())
         .environment(\.glassify, glassify)
         .onReceive(NotificationCenter.default.publisher(for: .newNoteRequested)) { _ in

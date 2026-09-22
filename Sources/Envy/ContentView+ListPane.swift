@@ -1188,6 +1188,45 @@ extension ContentView {
 
     var taskDocumentLines: [OpenTask] { taskDocumentLinesCache }
 
+    /// Typing `tasks:` (or deleting it) swaps the page, and the full-width task
+    /// view and the ordinary list each build their own copy of the omnibar —
+    /// the one being typed in is torn down mid-word (before its own onChange
+    /// even runs), so the rest of the typing, and its autofill, went nowhere.
+    /// When that swap was typed into the omnibar, hand focus to the new copy
+    /// with the cursor at the end. A query set from elsewhere (Open Source
+    /// Note, a note opened from the menu-bar panel) leaves focus be.
+    ///
+    /// Done in AppKit, in one step: focusing a text field selects all of it,
+    /// and a keystroke landing before a separate "move to the end" would
+    /// replace the whole query. Making the new field first responder and
+    /// placing the cursor together leaves no such moment.
+    func restoreOmnibarAfterPageSwap() {
+        guard Date().timeIntervalSince(omnibarTypedAt) < 0.5 else { return }
+        DispatchQueue.main.async {
+            guard let window = NSApp.keyWindow ?? NSApp.mainWindow,
+                  let field = Self.omnibarField(in: window.contentView) else {
+                focusedField = .search
+                return
+            }
+            window.makeFirstResponder(field)
+            field.currentEditor()?.selectedRange = NSRange(location: (field.stringValue as NSString).length, length: 0)
+        }
+    }
+
+    /// The omnibar's backing NSTextField, found by its placeholder.
+    static func isOmnibar(_ object: Any?) -> Bool {
+        (object as? NSTextField).map { $0.isEditable && $0.placeholderString == "Search or Create Note" } ?? false
+    }
+
+    private static func omnibarField(in view: NSView?) -> NSTextField? {
+        guard let view else { return nil }
+        if isOmnibar(view) { return view as? NSTextField }
+        for child in view.subviews {
+            if let found = omnibarField(in: child) { return found }
+        }
+        return nil
+    }
+
     /// Write one open line's words back into its note, matched by the exact
     /// line text and occurrence the row carries — never by position. Returns
     /// which copy of its text the line now is (nil: the note didn't take it).
@@ -1466,6 +1505,7 @@ extension ContentView {
     /// the query's last word is actually a tag: operator, since a note
     /// title match against the same text wouldn't mean anything there.
     private var suggestionRemainder: String? {
+        if let taskTitleRemainder = taskTitleSuggestionRemainder { return taskTitleRemainder }
         if let tagRemainder = tagSuggestionRemainder { return tagRemainder }
         if let linkRemainder = linkSuggestionRemainder { return linkRemainder }
         if let folderRemainder = folderSuggestionRemainder { return folderRemainder }
@@ -1559,6 +1599,17 @@ extension ContentView {
         return String(match.dropFirst(fragment.count))
     }
 
+    /// On the tasks: page, the words after `tasks:` autofill to the title of
+    /// a note that has tasks (see TaskPage.titleCompletion); accepting it
+    /// shows that note's tasks. Revalidated against the live query, like the
+    /// rest, so it never trails what's typed.
+    private var taskTitleSuggestionRemainder: String? {
+        guard isTaskDocumentQuery, let title = taskTitleSuggestionCache,
+              let (_, fragment) = TaskPage.titleFragment(of: query),
+              title.count > fragment.count, title.lowercased().hasPrefix(fragment.lowercased()) else { return nil }
+        return String(title.dropFirst(fragment.count))
+    }
+
     /// "tag:xyz"/"-tag:xyz" — the tag-name equivalent of the note-title
     /// suggestion, completing against every tag used anywhere in The Index
     /// (see allTagsByFrequencyCache), most-used first when several share a
@@ -1575,6 +1626,11 @@ extension ContentView {
     /// words in a multi-word query), or the whole query for a note-title
     /// completion, matching how each kind of ghost text is displayed.
     func completeSuggestion() {
+        if taskTitleSuggestionRemainder != nil, let title = taskTitleSuggestionCache,
+           let (head, _) = TaskPage.titleFragment(of: query) {
+            query = TaskPage.acceptingTitle(title, head: head)
+            return
+        }
         if let (prefix, fragment) = tagCompletionContext, let remainder = tagSuggestionRemainder {
             var words = query.split(separator: " ").map(String.init)
             if !words.isEmpty {

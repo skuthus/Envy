@@ -2551,6 +2551,30 @@ struct SelfCheck {
             check("task write key: a rewrite reports which copy of its text the line becomes",
                   TaskPage.occurrenceAfterRewrite(of: "- [ ] egg", occurrence: 0, to: "- [ ] milk", in: "- [ ] milk\n- [ ] egg\n") == 1
                   && TaskPage.occurrenceAfterRewrite(of: "- [ ] milk", occurrence: 0, to: "- [x] milk", in: "- [ ] milk\n- [ ] egg\n") == 0)
+            // Autofilling a note title after tasks:.
+            let dana = Note(id: "/tmp/Call with Dana.md", url: URL(fileURLWithPath: "/tmp/Call with Dana.md"),
+                            content: "- [ ] send notes\n- [ ] book room\n", modifiedDate: Date(timeIntervalSinceNow: -60))
+            let bare = Note(id: "/tmp/Call with Bo.md", url: URL(fileURLWithPath: "/tmp/Call with Bo.md"),
+                            content: "no tasks here\n", modifiedDate: Date())
+            let journal = Note(id: "/tmp/Journal — Sep 2, 6:17 AM.md", url: URL(fileURLWithPath: "/tmp/Journal — Sep 2, 6:17 AM.md"),
+                               content: "- [ ] water plants\n", modifiedDate: Date())
+            check("task autofill: the fragment is what's typed after tasks:",
+                  TaskPage.titleFragment(of: "tag:x tasks: call with")?.fragment == "call with"
+                  && TaskPage.titleFragment(of: "tag:x tasks: call with")?.head == "tag:x tasks: ")
+            check("task autofill: nothing to complete right after tasks:, or after an operator",
+                  TaskPage.titleFragment(of: "tasks: ") == nil && TaskPage.titleFragment(of: "tasks: due:to") == nil)
+            check("task autofill: completes to a note that has tasks, skipping one that doesn't",
+                  TaskPage.titleCompletion(for: "tasks: call with", in: [dana, bare, journal], includeCompleted: false) == dana.title)
+            check("task autofill: accepting a plain title writes it as words",
+                  TaskPage.acceptingTitle(dana.title, head: "tasks: ") == "tasks: Call with Dana")
+            check("task autofill: accepting a title with a comma or colon quotes it",
+                  TaskPage.acceptingTitle(journal.title, head: "tasks: ") == "tasks: \"Journal — Sep 2, 6:17 AM\"")
+            check("task autofill: the accepted title shows that note's tasks, whatever their words",
+                  TaskPage.lines(in: [dana, journal], query: "tasks: Call with Dana").map(\.body).sorted() == ["book room", "send notes"])
+            check("task autofill: …quoted titles too (their colon isn't an operator)",
+                  TaskPage.lines(in: [dana, journal], query: TaskPage.acceptingTitle(journal.title, head: "tasks: ")).map(\.body) == ["water plants"])
+            check("task autofill: plain words still filter task text",
+                  TaskPage.lines(in: [dana, journal], query: "tasks: book").map(\.body) == ["book room"])
             // Tab / Shift-Tab.
             let tabNote = "- [ ] A\n    - [ ] A1\n- [ ] B\n    - [ ] B1\n- [ ] \n\n- [ ] after gap\n"
             check("task tab: a task nests under the task above, its subtasks moving with it",

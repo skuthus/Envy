@@ -368,6 +368,45 @@ public enum TaskPage {
         }
     }
 
+    /// What's being typed after `tasks:` at the end of the query — the part a
+    /// note-title autofill completes — and everything before it. nil when
+    /// there's nothing plain to complete: no words yet, or the words hold an
+    /// operator, a quote, an exclusion, or a comma (a new group).
+    public static func titleFragment(of query: String) -> (head: String, fragment: String)? {
+        guard let token = query.range(of: queryToken, options: [.backwards, .caseInsensitive]),
+              token.lowerBound == query.startIndex || query[query.index(before: token.lowerBound)] == " " else { return nil }
+        let rest = query[token.upperBound...]
+        let fragment = rest.drop { $0 == " " }
+        guard !fragment.isEmpty, !fragment.hasPrefix("\""), !fragment.hasPrefix("-"),
+              !fragment.contains(","), !fragment.split(separator: " ").contains(where: { $0.contains(":") }) else { return nil }
+        return (String(query[..<fragment.startIndex]), String(fragment))
+    }
+
+    /// The note title to autofill after `tasks:`: the most recently edited
+    /// note that has tasks to show and whose title starts with what's typed.
+    /// A title with a double quote in it can't be written as a phrase, so
+    /// it's left out.
+    public static func titleCompletion(for query: String, in notes: [Note], includeCompleted: Bool) -> String? {
+        guard let (_, fragment) = titleFragment(of: query) else { return nil }
+        let lowered = fragment.lowercased()
+        return notes
+            .filter { $0.title.count > fragment.count && $0.lowercasedTitle.hasPrefix(lowered) && !$0.title.contains("\"") }
+            .sorted { $0.modifiedDate > $1.modifiedDate }
+            .first { !(includeCompleted ? allTasks(in: $0) : openTasks(in: $0)).isEmpty }?
+            .title
+    }
+
+    /// The query once a title autofill is accepted: the title in place of the
+    /// fragment — quoted when its words wouldn't survive as plain words (a
+    /// comma starts a new group, a colon reads as an operator, a leading dash
+    /// as an exclusion, runs of spaces collapse).
+    public static func acceptingTitle(_ title: String, head: String) -> String {
+        let plain = !title.contains(",") && !title.contains(":") && !title.contains("  ")
+            && !title.split(separator: " ").contains { $0.hasPrefix("-") }
+            && title == title.trimmingCharacters(in: .whitespaces)
+        return head + (plain ? title : "\"" + title + "\"")
+    }
+
     /// Only the open ([ ]) task lines — the default the page shows and what the
     /// "has tasks" checks want.
     public static func openTasks(in note: Note) -> [OpenTask] {
@@ -721,6 +760,11 @@ public enum TaskPage {
                     filter.includesTasks = true
                 } else if lower.hasPrefix("due:") {
                     filter.due = NoteStore.unquote(String(lower.dropFirst("due:".count)))
+                } else if lower.hasPrefix("\"") {
+                    // A quoted phrase — a note title, say — is words, even
+                    // with a colon inside ("Journal — 6:17 AM").
+                    let phrase = NoteStore.unquote(lower)
+                    if !phrase.isEmpty { filter.include.append(phrase) }
                 } else if lower.contains(":") {
                     continue
                 } else if lower.hasPrefix("-"), lower.count > 1 {
@@ -735,7 +779,10 @@ public enum TaskPage {
 
     private static func matches(_ filter: LineFilter, task: OpenTask) -> Bool {
         let haystack = task.body.lowercased()
-        if filter.include.contains(where: { !haystack.contains($0) }) { return false }
+        // The words spell out the task's note title exactly (an accepted
+        // title autofill): every task of that note, whatever its words.
+        let namesItsNote = !filter.include.isEmpty && filter.include.joined(separator: " ") == task.noteTitle.lowercased()
+        if !namesItsNote, filter.include.contains(where: { !haystack.contains($0) }) { return false }
         if filter.exclude.contains(where: { haystack.contains($0) }) { return false }
         if let due = filter.due {
             return NoteStore.taskDueMatches(task.due, filter: due)
