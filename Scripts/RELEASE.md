@@ -143,17 +143,44 @@ Speed is the priority for this codebase, so anything touching the editor or
 search needs a latency check, not just a correctness check.
 
 ```bash
-swift build -c release
-swift run -c release EnvySelfCheck      # EnvyCore only — does NOT cover Envy
-Scripts/build-test-app.sh               # -> dist/EnvyTest.app
+Scripts/preflight/run.sh                # the gate: must print PREFLIGHT PASSED
 ```
 
-`EnvySelfCheck` depends only on `EnvyCore`. `MarkdownStyler`, `MarkdownTextView`,
-and everything else in the `Envy` executable target are outside its reach. Say so
-plainly rather than implying the checks cover the change.
+It runs, in order:
 
-**Stop here.** Hand over `dist/EnvyTest.app` and wait for Skyler to confirm it
-works. This gate exists because it is the only real coverage the app target gets.
+- the release build
+- `EnvySelfCheck`
+- security and hygiene checks: secrets, debug leftovers, HTTPS update feed plus
+  signing key, no arbitrary-loads exception, pinned dependencies
+- the signed `EnvyTest.app`: deep signature, hardened runtime, Developer ID, no
+  debugging or injection entitlements
+- the live UI suite, which drives EnvyTest end to end with real clicks and
+  typing on a clone of `~/TestFolder` and checks the note files on disk:
+  - note flows
+  - everything on the `tasks:` page and both pop-outs
+  - speed budgets, background work, idle CPU and memory
+  - crash reports
+
+The report goes to `dist/preflight-report.md`.
+
+- The live suite takes over the mouse and keyboard for about 10 minutes. Say so
+  before starting it, and don't use the Mac meanwhile. It needs Accessibility
+  permission for the terminal.
+- It restores EnvyTest's settings and deletes the clone however it ends.
+- `--quick` skips the live suite, for a fast check mid-work only. It is not
+  enough to release.
+
+**Any failure halts the release** (Gate 1 applies). Fix it, or — only if the
+failure is in the test itself — fix the test and say so, then re-run.
+
+`EnvySelfCheck` alone depends only on `EnvyCore`, and the live suite covers
+what's been built into it — it is a regression net, not proof of no bugs. When
+a change touches something the suite doesn't exercise, say so plainly and add
+a test for it (`Scripts/preflight/harness/Tests.swift`).
+
+**Stop here.** Hand over `/Applications/EnvyTest.app` and the report, and wait
+for Skyler to confirm it works. The preflight is automated coverage; this gate
+is the human one.
 
 ## §3 — Build the release artifacts
 
