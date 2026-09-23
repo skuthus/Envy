@@ -33,6 +33,10 @@ DOWNLOADS_DIR="$SITE_DIR/assets/downloads"
 INFO_PLIST="$ROOT_DIR/Scripts/Info.plist"
 GENERATE_APPCAST="$ROOT_DIR/.build/artifacts/sparkle/Sparkle/bin/generate_appcast"
 NOTARY_PROFILE="envy-notary"
+# Every `netlify deploy` here passes --no-build --dir .: the site is plain files
+# with no build step, and netlify-cli 17+ runs a build before deploying by
+# default — which fails ("Error while running build") and stopped the 1.12.0
+# release at the preview deploy.
 SITE_URL="https://envynote.app"
 
 VERSION=""
@@ -260,7 +264,7 @@ Anyone who already installed $CURRENT_VERSION keeps it." "rollback"
 
   live cp "$snapshot" "$UPDATES_DIR/appcast.xml"
   live cp "$UPDATES_DIR/Envy-$previous.dmg" "$DOWNLOADS_DIR/Envy.dmg"
-  live bash -c "cd '$SITE_DIR' && netlify deploy --prod"
+  live bash -c "cd '$SITE_DIR' && netlify deploy --prod --no-build --dir ."
 
   if [ "$DRY_RUN" = 0 ]; then
     local served
@@ -283,7 +287,7 @@ do_site_only() {
   info "publishing a draft to preview before anything touches production..."
   local draft_url=""
   if [ "$DRY_RUN" = 0 ]; then
-    draft_url="$(cd "$SITE_DIR" && netlify deploy --json | python3 -c 'import json,sys; print(json.load(sys.stdin).get("deploy_url",""))')"
+    draft_url="$(cd "$SITE_DIR" && netlify deploy --no-build --dir . --json | python3 -c 'import json,sys; print(json.load(sys.stdin).get("deploy_url",""))')"
     [ -n "$draft_url" ] && ok "preview: $draft_url" || warn "draft deploy produced no URL"
   else
     warn "dry run: would publish a draft deploy and print its preview URL"
@@ -291,7 +295,7 @@ do_site_only() {
 
   gate "Open the preview above and confirm it looks right. This next step publishes to $SITE_URL." "ship it"
 
-  live bash -c "cd '$SITE_DIR' && netlify deploy --prod"
+  live bash -c "cd '$SITE_DIR' && netlify deploy --prod --no-build --dir ."
   ok "deployed"
 
   phase "Verifying"
@@ -492,7 +496,7 @@ PY
   phase "Preview deploy"
   local draft_url=""
   if [ "$DRY_RUN" = 0 ]; then
-    draft_url="$(cd "$SITE_DIR" && netlify deploy --json | python3 -c 'import json,sys; print(json.load(sys.stdin).get("deploy_url",""))')"
+    draft_url="$(cd "$SITE_DIR" && netlify deploy --no-build --dir . --json | python3 -c 'import json,sys; print(json.load(sys.stdin).get("deploy_url",""))')"
     ok "preview: $draft_url"
   else
     warn "dry run: would publish a draft deploy first"
@@ -515,7 +519,7 @@ EOF
   gate "Publish to production?" "ship it"
 
   phase "Publishing"
-  live bash -c "cd '$SITE_DIR' && netlify deploy --prod"
+  live bash -c "cd '$SITE_DIR' && netlify deploy --prod --no-build --dir ."
   ok "website deployed"
 
   if [ "$DRY_RUN" = 0 ]; then
@@ -561,7 +565,7 @@ EOF
       ok "update files still served (dmg $dmg_code, delta ${delta:-none} $delta_code)"
     else
       warn "update files missing after the site push (dmg $dmg_code, delta $delta_code) — re-publishing"
-      live bash -c "cd '$SITE_DIR' && netlify deploy --prod"
+      live bash -c "cd '$SITE_DIR' && netlify deploy --prod --no-build --dir ."
       dmg_code="$(curl -s -o /dev/null -w "%{http_code}" -I "$SITE_URL/assets/updates/Envy-$VERSION.dmg")"
       [ "$dmg_code" = "200" ] || die "Update dmg still not served ($dmg_code) after re-publishing."
       ok "re-published; update files served again"
