@@ -86,6 +86,8 @@ enum Fixture {
     static let rev = "pfz/rev/PFZ Rev.md"
     static let rev2 = "pfz/rev/PFZ Rev2.md"
     static let autofill = "pfz/autofill/PFZ Autofill Target Note.md"
+    static let due = "pfz/due/PFZ Due.md"
+    static let dueContent = "# PFZ Due\n\n- [ ] due one\n- [ ] due two\n"
 
     static func checksContent() -> String {
         "# PFZ Checks\n\n" + (1...10).map { String(format: "- [ ] pfzq task %02d\n", $0) }.joined()
@@ -111,6 +113,7 @@ enum Fixture {
         vault.write(rev, "# PFZ Rev\n\n" + (1...24).map { "Filler paragraph \($0) for spacing.\n\n" }.joined() + "- [ ] rev target\n")
         vault.write(rev2, "# PFZ Rev2\n\nrev other note\n")
         vault.write(autofill, "# PFZ Autofill Target Note\n\n- [ ] af one\n- [ ] af two\n- [ ] af three\n")
+        vault.write(due, dueContent)
         for (i, age) in [1.0, 5, 24, 72].enumerated() {
             vault.write("pfz/order/PFZ Order \(i + 1).md",
                         "# PFZ Order \(i + 1)\n\n" + (1...3).map { "- [ ] pfzord \(i + 1).\($0)\n" }.joined(), ageHours: age)
@@ -616,6 +619,65 @@ func stableOrder() throws -> String {
     let firsts = order().enumerated().filter { $0.offset % 3 == 0 }.map { String($0.element.prefix(9)) }
     try expect(firsts.prefix(2).sorted() == ["pfzord 3.", "pfzord 4."], "coming back didn't put the just-edited notes first: \(firsts)")
     return "no movement while up; re-sorted on return"
+}
+
+/// "@today" / "@friday" become their dates the moment they're typed — in a
+/// task row (main page or pop-out) exactly as in the editor.
+func isoDate(_ date: Date) -> String {
+    let f = DateFormatter(); f.locale = Locale(identifier: "en_US_POSIX"); f.dateFormat = "yyyy-MM-dd"
+    return f.string(from: date)
+}
+
+func dueTagsFreeze(_ panel: Bool) throws -> String {
+    vault.write(Fixture.due, Fixture.dueContent); pause(1.5)
+    if !panel { app.setQuery("folder:pfz/due tasks:") }
+    let w = try surface(panel)
+    try readyToType(panel)
+    func field() -> String {
+        var v = ""
+        walk(w) { e, _ in if str(e, kAXRoleAttribute) == "AXTextField", let s = attr(e, kAXValueAttribute) as? String, s.hasPrefix("due one") { v = s }; return v.isEmpty }
+        return v
+    }
+    try clickText(w, "due one")
+    Input.type(" @today")
+    let today = "@" + isoDate(Date())
+    try expect(waitFor(0.5) { field() == "due one \(today)" }, "@today wasn't converted as typed — field shows '\(field())'")
+    var styled = false
+    walk(w) { e, _ in if str(e, kAXRoleAttribute) == "AXStaticText", (attr(e, kAXValueAttribute) as? String) == "due one \(today)" { styled = true }; return !styled }
+    try expect(styled, "the due tag isn't styled while typing")
+    // The caret belongs to the field's own (invisible) text; the styled copy on
+    // top must lay out identically or the I-beam lands short of the words.
+    if let focused = attr(app.el, kAXFocusedUIElementAttribute).map({ $0 as! AXUIElement }),
+       let sel = attr(focused, kAXSelectedTextRangeAttribute) {
+        var r = CFRange(); AXValueGetValue(sel as! AXValue, .cfRange, &r)
+        var last = CFRange(location: max(0, r.location - 1), length: 1)
+        var bounds: AnyObject?
+        AXUIElementCopyParameterizedAttributeValue(focused, kAXBoundsForRangeParameterizedAttribute as CFString, AXValueCreate(.cfRange, &last)!, &bounds)
+        var caret = CGRect.zero; if let bounds { AXValueGetValue(bounds as! AXValue, .cgRect, &caret) }
+        var overlay: CGRect?
+        walk(w) { e, _ in if str(e, kAXRoleAttribute) == "AXStaticText", (attr(e, kAXValueAttribute) as? String) == "due one \(today)" { overlay = frame(e) }; return overlay == nil }
+        if let overlay {
+            try expect(abs(caret.maxX - overlay.maxX) < 1.5,
+                       String(format: "the cursor sits %.1fpt away from the end of the visible text", abs(caret.maxX - overlay.maxX)))
+        }
+    }
+    try expect(waitFor(2) { vault.taskLines(Fixture.due).first == "- [ ] due one \(today)" }, "the file has \(vault.taskLines(Fixture.due))")
+    return "converted to \(today) as typed, styled while editing, cursor at its end, saved"
+}
+
+func editorDueFreeze() throws -> String {
+    vault.write(Fixture.due, Fixture.dueContent); pause(1.2)
+    app.setQuery("PFZ Due")
+    try app.front()
+    guard let ed = app.editor(), let f = frame(ed) else { throw Failure(message: "no editor") }
+    Input.click(CGPoint(x: f.minX + 60, y: f.maxY - 20)); pause(0.3)
+    Input.click(CGPoint(x: f.minX + 60, y: f.maxY - 20)); pause(0.3)
+    try readyToType(false)
+    Input.type(" @today")
+    let today = "@" + isoDate(Date())
+    try expect(waitFor(1) { app.editorText.contains(today) && !app.editorText.contains("@today") }, "the editor didn't convert @today")
+    try expect(waitFor(2) { vault.read(Fixture.due).contains(today) }, "not saved")
+    return "@today → \(today)"
 }
 
 // MARK: Performance and health

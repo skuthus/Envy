@@ -670,28 +670,6 @@ extension MarkdownTextView {
 
         private static let emojiShortcodeRegex = try! NSRegularExpression(pattern: #":([a-zA-Z0-9_+\-]{1,32}):$"#)
 
-        /// Replaces a just-completed ":shortcode:" ending at the cursor with
-        /// its real emoji character — the note's saved content is just the
-        /// plain emoji, same as if the user had typed/pasted it directly, no
-        /// special syntax kept around to render later.
-        @MainActor
-        // A relative due token — a day name, "@today"/"@tomorrow"/
-        // "@yesterday" — anchored at the cursor, i.e. just completed. Same
-        // shape as emojiShortcodeRegex: matched against the window ending at
-        // the caret, so only the token being typed is affected.
-        private static let relativeDueTokenRegex = try! NSRegularExpression(
-            pattern: #"(?<!\w)@(today|tomorrow|yesterday|monday|tuesday|wednesday|thursday|friday|saturday|sunday)$"#,
-            options: [.caseInsensitive]
-        )
-
-        /// The unambiguous, sort-friendly form a frozen token is written as.
-        private static let isoDueFormatter: DateFormatter = {
-            let f = DateFormatter()
-            f.locale = Locale(identifier: "en_US_POSIX")
-            f.dateFormat = "yyyy-MM-dd"
-            return f
-        }()
-
         /// Freezes a relative due token to the absolute date it means right
         /// now, the instant it's finished being typed: "@wednesday" becomes
         /// "@2026-07-22" in the text.
@@ -712,17 +690,10 @@ extension MarkdownTextView {
         @MainActor
         private func freezeRelativeDueTokenIfNeeded(in textView: NSTextView) {
             let cursor = textView.selectedRange()
-            guard cursor.length == 0 else { return }
-            let nsText = textView.string as NSString
-            let windowStart = max(0, cursor.location - 24)
-            let window = nsText.substring(with: NSRange(location: windowStart, length: cursor.location - windowStart))
-            let windowRange = NSRange(location: 0, length: (window as NSString).length)
-            guard let match = Self.relativeDueTokenRegex.firstMatch(in: window, range: windowRange) else { return }
-            let word = (window as NSString).substring(with: match.range(at: 1))
-            guard let resolved = NoteStore.resolveDueToken(word) else { return }
-            let absolute = "@" + Self.isoDueFormatter.string(from: resolved)
-
-            let docRange = NSRange(location: windowStart + match.range.location, length: match.range.length)
+            guard cursor.length == 0,
+                  let freeze = NoteStore.frozenDueToken(in: textView.string, endingAt: cursor.location) else { return }
+            let absolute = freeze.replacement
+            let docRange = freeze.range
             guard textView.shouldChangeText(in: docRange, replacementString: absolute) else { return }
             textView.textStorage?.replaceCharacters(in: docRange, with: absolute)
             textView.setSelectedRange(NSRange(location: docRange.location + (absolute as NSString).length, length: 0))
@@ -732,6 +703,11 @@ extension MarkdownTextView {
             textView.didChangeText()
         }
 
+        /// Replaces a just-completed ":shortcode:" ending at the cursor with
+        /// its real emoji character — the note's saved content is just the
+        /// plain emoji, same as if the user had typed/pasted it directly, no
+        /// special syntax kept around to render later.
+        @MainActor
         private func expandEmojiShortcodeIfNeeded(in textView: NSTextView) {
             let cursor = textView.selectedRange()
             guard cursor.length == 0 else { return }

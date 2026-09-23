@@ -2774,6 +2774,38 @@ public final class NoteStore: ObservableObject {
         return Calendar.current.date(from: components)
     }
 
+    /// A relative due token — a day name, "@today"/"@tomorrow"/"@yesterday" —
+    /// ending exactly at `caret`, with the absolute date it means right now
+    /// ("@2026-07-22") to write in its place. The rule for freezing relative
+    /// tokens the instant they're typed, shared by the editor and the task
+    /// rows so both behave the same: a still-relative token re-resolves on
+    /// every read, silently rolls forward, and can never go overdue, and the
+    /// keystroke that completes it is the only moment its real date is known.
+    /// nil when the text before the caret doesn't end in one.
+    nonisolated public static func frozenDueToken(in text: String, endingAt caret: Int) -> (range: NSRange, replacement: String)? {
+        let ns = text as NSString
+        guard caret >= 0, caret <= ns.length else { return nil }
+        let windowStart = max(0, caret - 24)
+        let window = ns.substring(with: NSRange(location: windowStart, length: caret - windowStart))
+        guard let match = relativeDueTokenRegex.firstMatch(in: window, range: NSRange(location: 0, length: (window as NSString).length)),
+              let resolved = resolveDueToken((window as NSString).substring(with: match.range(at: 1))) else { return nil }
+        return (NSRange(location: windowStart + match.range.location, length: match.range.length),
+                "@" + isoDueFormatter.string(from: resolved))
+    }
+
+    nonisolated private static let relativeDueTokenRegex = try! NSRegularExpression(
+        pattern: #"(?<!\w)@(today|tomorrow|yesterday|monday|tuesday|wednesday|thursday|friday|saturday|sunday)$"#,
+        options: [.caseInsensitive]
+    )
+
+    /// The unambiguous, sort-friendly form a frozen token is written as.
+    nonisolated private static let isoDueFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "yyyy-MM-dd"
+        return f
+    }()
+
     // MARK: - Pinning
 
     /// Moves every note whose id is in `pinnedIDs` to the front, preserving

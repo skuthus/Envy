@@ -43,6 +43,8 @@ currentPin = "list"
 runner.section("Notes")
 coreTests(vocab)
 
+runner.test("Editor: @today becomes today's date as typed") { try editorDueFreeze() }
+
 runner.section("tasks: page")
 runner.test("Typing through the switch to tasks: keeps focus and autofill") { try typingThroughSwitch(vocab.tag) }
 runner.test("Note-title autofill after tasks:") { try titleAutofill() }
@@ -54,6 +56,7 @@ runner.test("Tab / Shift-Tab nest and un-nest") { try tabCases(false) }
 runner.test("Backspace deletes empty tasks only") { try backspaceCases(false) }
 runner.test("Drag to rearrange within a note") { try dragCases(false) }
 runner.test("Retype to a duplicate, check at once") { try duplicateRetypeAndCheck() }
+runner.test("Due tags convert and style as typed") { try dueTagsFreeze(false) }
 runner.test("Rows stay put while the page is up") { try stableOrder() }
 runner.test("Open Source Note") { try openSourceNote() }
 runner.test("Full vault page: open and check speed", timeout: 180) { try fullPagePerformance() }
@@ -66,6 +69,7 @@ runner.test("Enter opens a task right below") { try relaunch(pin: vault.path(Fix
 runner.test("Tab / Shift-Tab nest and un-nest") { try relaunch(pin: vault.path(Fixture.tab)); return try tabCases(true) }
 runner.test("Backspace deletes empty tasks only") { try relaunch(pin: vault.path(Fixture.back)); return try backspaceCases(true) }
 runner.test("Drag to rearrange") { try relaunch(pin: vault.path(Fixture.move)); return try dragCases(true) }
+runner.test("Due tags convert and style as typed") { try relaunch(pin: vault.path(Fixture.due)); return try dueTagsFreeze(true) }
 runner.test("+ adds a task each press") { try relaunch(pin: vault.path(Fixture.small)); return try plusButton() }
 runner.test("Keys act only in their own window") { try relaunch(pin: vault.path(Fixture.winY)); return try crossWindowKeys() }
 

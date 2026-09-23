@@ -383,6 +383,8 @@ private struct TaskLineRow: View {
     @State private var editing = false
     @State private var saveTask: Task<Void, Never>?
     @State private var keyMonitor: Any?
+    /// The edit field's width, to know when its words still fit on one line.
+    @State private var fieldWidth: CGFloat = 0
     /// The window this row is edited in — the monitor acts on its keys only.
     @State private var keyWindow: NSWindow?
     @FocusState private var focused: Bool
@@ -457,18 +459,34 @@ private struct TaskLineRow: View {
 
             Group {
                 if editing {
-                    TextField("Task", text: $draft)
-                        .textFieldStyle(.plain)
-                        .font(.system(size: max(13, theme.resolvedFont.pointSize) * scale))
-                        .foregroundStyle(Color(nsColor: theme.resolvedTextColor))
-                        .focused($focused)
-                        // Next turn, not in onAppear itself: the field isn't in
-                        // the window yet there, and while another field holds
-                        // the keyboard (the search box, every time the page was
-                        // just reached by typing tasks:) that request is dropped
-                        // — the field shows but typing goes nowhere.
-                        .onAppear { DispatchQueue.main.async { focused = true } }
-                        .onSubmit(submit)
+                    // A due tag shows bold and colored while it's typed, the
+                    // way the editor shows it: the field's own text is drawn
+                    // clear and the styled words sit on top (the search box's
+                    // technique for its operators). Only while the words fit —
+                    // an overlay can't follow a field that scrolls sideways.
+                    ZStack(alignment: .leading) {
+                        TextField("Task", text: $draft)
+                            .textFieldStyle(.plain)
+                            .font(.system(size: fontSize))
+                            .foregroundStyle(styleWhileTyping ? Color.clear : Color(nsColor: theme.resolvedTextColor))
+                            .focused($focused)
+                            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { fieldWidth = $0 }
+                        if styleWhileTyping {
+                            // Same weight as the field underneath: bold is wider,
+                            // and the caret belongs to the field's own text, so a
+                            // bold date left the caret short of its end.
+                            styled(draft, boldDue: false)
+                                .lineLimit(1)
+                                .allowsHitTesting(false)
+                        }
+                    }
+                    // Next turn, not in onAppear itself: the field isn't in
+                    // the window yet there, and while another field holds
+                    // the keyboard (the search box, every time the page was
+                    // just reached by typing tasks:) that request is dropped
+                    // — the field shows but typing goes nowhere.
+                    .onAppear { DispatchQueue.main.async { focused = true } }
+                    .onSubmit(submit)
                 } else {
                     Button {
                         editing = true
@@ -533,6 +551,7 @@ private struct TaskLineRow: View {
         // happens mid-edit — so a debounced commit here doesn't drop focus.
         .onChange(of: draft) { _, _ in
             guard editing else { return }
+            freezeDueTokenAtCaret()
             saveTask = DebouncedSave.schedule(replacing: saveTask) { commitNow() }
         }
         // Outline keys while this row is editing: Backspace in an empty task
@@ -647,6 +666,19 @@ private struct TaskLineRow: View {
         onAddTaskBelow(task.noteID, key.line, key.occurrence)
     }
 
+    /// The editor's rule for due tags, in a task row: a relative one —
+    /// "@today", "@friday" — becomes the date it means the moment it's typed
+    /// ("@2026-09-25"), so the task can go overdue instead of rolling forward
+    /// forever. Done through the field's own editor, like the note editor
+    /// does it, so the caret stays where it was; the edit comes back through
+    /// the binding, and the now-absolute date doesn't match again.
+    private func freezeDueTokenAtCaret() {
+        guard focused, let editor = NSApp.keyWindow?.firstResponder as? NSTextView, editor.string == draft else { return }
+        let caret = editor.selectedRange()
+        guard caret.length == 0, let freeze = NoteStore.frozenDueToken(in: draft, endingAt: caret.location) else { return }
+        editor.insertText(freeze.replacement, replacementRange: freeze.range)
+    }
+
     /// Take this empty task out of its note. The pending save lands first so
     /// the note holds exactly the empty line being removed.
     private func deleteEmpty() {
@@ -698,12 +730,26 @@ private struct TaskLineRow: View {
     }
 
     /// The task words, with each `@date` bold and colored the way the note editor colors it.
-    private var styledBody: Text {
-        let body = task.body
+    private var styledBody: Text { styled(task.body) }
+
+    private var fontSize: CGFloat { max(13, theme.resolvedFont.pointSize) * scale }
+
+    /// The words being edited carry a live due tag and still fit the field.
+    private var styleWhileTyping: Bool {
+        guard editing, draft.contains("@"),
+              MarkdownSemantics.dueTokenRanges(in: draft).contains(where: { !$0.isCrossedOut }) else { return false }
+        let width = (draft as NSString).size(withAttributes: [.font: NSFont.systemFont(ofSize: fontSize)]).width
+        return width < fieldWidth - 4
+    }
+
+    /// A task's words with each live `@date` colored by urgency — and bold,
+    /// except over the edit field, whose caret needs every glyph the width
+    /// the field itself lays out.
+    private func styled(_ body: String, boldDue: Bool = true) -> Text {
         let ns = body as NSString
-        let size = max(13, theme.resolvedFont.pointSize) * scale
+        let size = fontSize
         let baseFont = Font.system(size: size)
-        let dueFont = Font.system(size: size, weight: .bold)
+        let dueFont = boldDue ? Font.system(size: size, weight: .bold) : baseFont
         let baseColor = Color(nsColor: theme.resolvedTextColor)
         let tokens = MarkdownSemantics.dueTokenRanges(in: body).filter { !$0.isCrossedOut }
         guard !tokens.isEmpty else {

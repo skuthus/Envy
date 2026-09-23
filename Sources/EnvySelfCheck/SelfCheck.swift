@@ -2575,6 +2575,19 @@ struct SelfCheck {
                   TaskPage.lines(in: [dana, journal], query: TaskPage.acceptingTitle(journal.title, head: "tasks: ")).map(\.body) == ["water plants"])
             check("task autofill: plain words still filter task text",
                   TaskPage.lines(in: [dana, journal], query: "tasks: book").map(\.body) == ["book room"])
+            // Relative due tags freeze to a date as they're typed (editor and task rows share this).
+            let isoToday: String = { let f = DateFormatter(); f.locale = Locale(identifier: "en_US_POSIX"); f.dateFormat = "yyyy-MM-dd"; return f.string(from: Date()) }()
+            let typedToday = "call mom @today"
+            check("due freeze: @today just typed becomes today's date",
+                  NoteStore.frozenDueToken(in: typedToday, endingAt: (typedToday as NSString).length).map { $0.replacement } == "@" + isoToday
+                  && NoteStore.frozenDueToken(in: typedToday, endingAt: (typedToday as NSString).length)?.range == NSRange(location: 9, length: 6))
+            check("due freeze: a day name freezes to its next date",
+                  NoteStore.frozenDueToken(in: "x @Friday", endingAt: 9)?.replacement.range(of: #"^@\d{4}-\d{2}-\d{2}$"#, options: .regularExpression) != nil)
+            check("due freeze: only a token ending at the caret, and never half-typed or absolute ones",
+                  NoteStore.frozenDueToken(in: "x @today more", endingAt: 13) == nil
+                  && NoteStore.frozenDueToken(in: "x @tod", endingAt: 6) == nil
+                  && NoteStore.frozenDueToken(in: "x @2026-09-25", endingAt: 13) == nil
+                  && NoteStore.frozenDueToken(in: "me@today", endingAt: 8) == nil)
             // Tab / Shift-Tab.
             let tabNote = "- [ ] A\n    - [ ] A1\n- [ ] B\n    - [ ] B1\n- [ ] \n\n- [ ] after gap\n"
             check("task tab: a task nests under the task above, its subtasks moving with it",
