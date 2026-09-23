@@ -137,7 +137,7 @@ CFBundleVersion              X.Y.Z
 `Info-Test.plist` is the EnvyTest bundle and carries its own identity. Leave it
 unless the change is specifically about the test build.
 
-## §2 — Verify the build, then stop
+## §2 — Verify the build
 
 Speed is the priority for this codebase, so anything touching the editor or
 search needs a latency check, not just a correctness check.
@@ -178,9 +178,10 @@ what's been built into it — it is a regression net, not proof of no bugs. When
 a change touches something the suite doesn't exercise, say so plainly and add
 a test for it (`Scripts/preflight/harness/Tests.swift`).
 
-**Stop here.** Hand over `/Applications/EnvyTest.app` and the report, and wait
-for Skyler to confirm it works. The preflight is automated coverage; this gate
-is the human one.
+No pause for a hand check here: "push to prod" is the approval (see Approval),
+and the preflight is the verification. On a pass, carry straight on to §3 and
+include the report's summary in the final release report. `push-to-prod.sh`
+runs this same gate at this point.
 
 ## §3 — Build the release artifacts
 
@@ -241,10 +242,13 @@ the version and size in several places, and none of them are generated:
 | `<meta name="description">` | size in MB |
 | JSON-LD `"softwareVersion"` | X.Y.Z |
 | `#e-ver` | `X.Y.Z &middot; macOS` |
-| `#e-dl-meta` | `<size> MB &middot; macOS 14+` |
+| `#e-dl-meta` | `<size> MB &middot; macOS 26+` |
 | spec table `Size` row | size in MB |
-| `#e-cta-meta` | `<size> MB &middot; macOS 14+` |
+| `#e-cta-meta` | `<size> MB &middot; macOS 26+` |
 | `.e-fineprint` | size in MB |
+
+The minimum is whatever `LSMinimumSystemVersion` in `Scripts/Info.plist` says
+(26.0 as of 1.12.0) — check it rather than copying the last release's text.
 
 The `#e-ver` / `#e-dl-meta` / `#e-cta-meta` IDs are also rewritten at runtime by
 the Windows-detection script near the bottom of `index.html`. That path swaps in

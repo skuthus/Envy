@@ -2,6 +2,16 @@
 
 Also published at [envynote.app/changelog.html](https://envynote.app/changelog.html).
 
+## 1.12.0 — September 22, 2026
+
+Master your tasks: every checklist item in every note, in one place, and you can work them without leaving it.
+
+- **The `tasks:` page.** Type `tasks:` in the search box and every task line (`- [ ] …`) from every note shows on one full-width page — still living in its own note, so checking a box or editing the words writes straight back there. View it **By note** (a section per note; the header opens it) or **By due** (soonest first; click again to flip). Toggle **Completed** to include checked tasks. Combine it with any search: `tag:work tasks:`, `due:today tasks:`, `tasks: groceries`. After `tasks:`, typing autofills a note's title — accept it with → to see just that note's tasks.
+- **Work tasks like an outline.** Type to edit — it saves as you go. **Return** adds a new task right below (a first subtask when the task has some). **Tab** / **Shift-Tab** nest a task under the one above or bring it back out, subtasks and all. **Backspace** in an empty task deletes it. **Drag** a task to rearrange it within its note. Right-click for **Add Task Below**, **Add Subtask**, and **Open Source Note**, which opens the note at that line.
+- **Pin tasks to the menu bar.** Right-click the menu-bar eye → **Pin Task List** for a small pop-out of every task, or right-click a note → **Pin Note Tasks** for just that note's (with a **+** to add one). One thing is pinned at a time; **Unpin Item** clears it.
+- **Faster saving in large libraries.** Every save used to rebuild a folder map for the whole library, touching the disk once per note; content edits now skip it, so typing in a big library does less work on every save.
+- **Changes from other devices aren't missed.** An edit synced from another device or app within half a second of one of Envy's own saves used to be ignored — and could be overwritten by Envy's next save. Envy now tells its own saves apart from everyone else's.
+
 ## 1.11.5 — September 20, 2026
 
 Envy stays quick at thousands of notes, and there's a guide you can hand to an AI agent.

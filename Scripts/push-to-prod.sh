@@ -330,25 +330,18 @@ reaches nobody who already has it."
   live /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $VERSION" "$INFO_PLIST"
   ok "Info.plist updated"
 
-  phase "Building the test app for verification"
-  # EnvySelfCheck only depends on EnvyCore. The whole Envy executable target —
-  # the editor, the styler, search — is outside its reach, so this is a partial
-  # check and gets described as one rather than being allowed to imply coverage.
-  # --product Envy, not a blanket build: EnvySelfCheck does @testable import
-  # EnvyCore, and a release build does not enable testing, so building the whole
-  # package in release fails with ModuleNotTestable before it reaches anything
-  # useful. build-app.sh scopes its build the same way for the same reason.
+  phase "Preflight gate: build, self-checks, security, live UI suite"
+  # Scripts/preflight/run.sh is the release gate (RELEASE.md §2): the release
+  # build, EnvySelfCheck, security and hygiene checks, the signed EnvyTest
+  # bundle, then EnvyTest driven end to end with real clicks and typing on a
+  # clone of ~/TestFolder — correctness in the note files, speed budgets,
+  # background work, crashes. Any failure stops the release here.
   #
-  # SelfCheck then runs in debug, where -enable-testing is on by default. It is
-  # a correctness check, so the build configuration it runs under does not
-  # matter; the release binary above is what actually ships.
-  live swift build -c release --product Envy
-  live swift run EnvySelfCheck
-  ok "EnvySelfCheck passed (covers EnvyCore only, not the app target)"
-  live "$ROOT_DIR/Scripts/build-test-app.sh"
-
-  gate "Open dist/EnvyTest.app and confirm it works.
-This is the only real coverage the app target gets, so it is worth the minute." "it works"
+  # --allow-dirty: the version bump above is an intended, uncommitted change.
+  # The clean-tree rule was already enforced in Preflight, before the bump.
+  warn "the live UI suite takes over the mouse and keyboard for ~10 minutes — hands off the Mac"
+  live "$ROOT_DIR/Scripts/preflight/run.sh" --allow-dirty
+  ok "preflight passed — report: dist/preflight-report.md"
 
   phase "Building, notarizing, and packaging the release"
   live "$ROOT_DIR/Scripts/make-dmg.sh"
@@ -546,12 +539,34 @@ EOF
   fi
 
   phase "Committing and tagging"
-  live bash -c "cd '$SITE_DIR' && git add -A && git commit -m 'Envy $VERSION release: dmg, appcast, homepage version' && git push"
+  # [skip netlify]: the site repo is git-connected with auto-publish, and a
+  # build from git drops the gitignored DMGs and deltas that the deploy above
+  # just uploaded — the in-app updater then 404s (it broke past releases).
+  # The marker makes Netlify skip that build; the check below proves it.
+  live bash -c "cd '$SITE_DIR' && git add -A && git commit -m 'Envy $VERSION release: dmg, appcast, homepage version [skip netlify]' && git push"
   live git add -A
   live git commit -m "Release $VERSION"
   live git tag "v$VERSION"
   live git push
   live git push --tags
+
+  if [ "$DRY_RUN" = 0 ]; then
+    phase "Verifying the update files survived the site push"
+    sleep 45   # long enough for a git-triggered Netlify build to have landed, had one run
+    local dmg_code delta delta_code
+    dmg_code="$(curl -s -o /dev/null -w "%{http_code}" -I "$SITE_URL/assets/updates/Envy-$VERSION.dmg")"
+    delta="$(grep -o "Envy$VERSION-[0-9.]*\.delta" "$UPDATES_DIR/appcast.xml" | head -1)"
+    delta_code="$( [ -n "$delta" ] && curl -s -o /dev/null -w "%{http_code}" -I "$SITE_URL/assets/updates/$delta" || echo none )"
+    if [ "$dmg_code" = "200" ] && { [ "$delta_code" = "200" ] || [ "$delta_code" = "none" ]; }; then
+      ok "update files still served (dmg $dmg_code, delta ${delta:-none} $delta_code)"
+    else
+      warn "update files missing after the site push (dmg $dmg_code, delta $delta_code) — re-publishing"
+      live bash -c "cd '$SITE_DIR' && netlify deploy --prod"
+      dmg_code="$(curl -s -o /dev/null -w "%{http_code}" -I "$SITE_URL/assets/updates/Envy-$VERSION.dmg")"
+      [ "$dmg_code" = "200" ] || die "Update dmg still not served ($dmg_code) after re-publishing."
+      ok "re-published; update files served again"
+    fi
+  fi
 
   phase "GitHub release"
   local notes="$LOG_DIR/release-notes.md"

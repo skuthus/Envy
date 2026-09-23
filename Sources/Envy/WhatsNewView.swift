@@ -19,12 +19,19 @@ struct WhatsNewView: View {
     }
 
     private let newFeatures: [Feature] = [
-        Feature(title: "Fast note switching on a large library", details: []),
-        Feature(title: "Install an agent guide for your notes (File → Install Agent Guide…)", details: [])
+        Feature(title: "tasks!", details: [
+            "This is a huge new feature, y'all. All of your checklist items, across all your notes, in one place. There's like, way more to it. Check out the docs for details."
+        ])
     ]
 
     private let bugFixes: [Feature] = [
-        Feature(title: "Smoother window resizing on long notes", details: [])
+        Feature(title: "Faster saving in large libraries", details: [
+            "Yeah I don't know what that means either, but it sure is there now."
+        ]),
+        Feature(title: "Changes synced from other devices are no longer missed right after a save", details: [
+            "sick ass feature that you totally won't notice."
+        ]),
+        Feature(title: "Other totally great stuff. Polish, etc. etc.", details: [])
     ]
 
     private func section(_ heading: String, _ items: [Feature]) -> some View {
@@ -58,7 +65,7 @@ struct WhatsNewView: View {
                 Text("What's New in Envy")
                     .font(.title.bold())
                 if !versionText.isEmpty {
-                    Text("Version \(versionText) · Agent Guide and Optimizations")
+                    Text("Version \(versionText) · Master Your Tasks")
                         .font(.callout)
                         .foregroundStyle(.secondary)
                 }
@@ -66,9 +73,9 @@ struct WhatsNewView: View {
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
-                    section("Changes", newFeatures)
+                    section("New", newFeatures)
                     Divider()
-                    section("Bug Fixes", bugFixes)
+                    section("Improvements and fixes", bugFixes)
                 }
                 .padding(18)
                 .frame(maxWidth: .infinity, alignment: .leading)
