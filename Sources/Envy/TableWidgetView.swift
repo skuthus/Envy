@@ -114,14 +114,31 @@ struct TableWidgetView: View {
         // column simply grows; the generous per-cell width slack (see
         // textWidth) keeps the field a step wider than its text so a single
         // keystroke never momentarily overflows and sticks a wrap.
+        let id = CellID(row: row, column: column)
+        // Bold, italic, code, and strikethrough render the way the editor
+        // renders them — a field can only show raw text, so while a cell isn't
+        // being edited its words are drawn formatted over the field (whose own
+        // text goes clear), and clicking in edits the raw source as before.
+        let rendered = focused == id ? nil : Self.formatted(model.cell(row, column))
         TextField("", text: binding(row: row, column: column), axis: .vertical)
             .textFieldStyle(.plain)
             .lineLimit(1...8)
             .font(.system(size: fontSize).weight(isHeader ? .bold : .regular))
             .monospacedDigit()
-            .foregroundStyle(textColor)
+            .foregroundStyle(rendered == nil ? textColor : .clear)
             .multilineTextAlignment(textAlignment(align))
-            .focused($focused, equals: CellID(row: row, column: column))
+            .focused($focused, equals: id)
+            .overlay(alignment: overlayAlignment(align)) {
+                if let rendered {
+                    Text(rendered)
+                        .font(.system(size: fontSize).weight(isHeader ? .bold : .regular))
+                        .monospacedDigit()
+                        .foregroundStyle(textColor)
+                        .multilineTextAlignment(textAlignment(align))
+                        .lineLimit(1...8)
+                        .allowsHitTesting(false)
+                }
+            }
             .padding(.horizontal, hPad)
             .padding(.vertical, vPad)
             .frame(width: width, alignment: frameAlignment(align))
@@ -260,6 +277,24 @@ struct TableWidgetView: View {
         case .left: return .leading
         case .center: return .center
         case .right: return .trailing
+        }
+    }
+
+    /// A cell's words with their inline markdown applied (**bold**, *italic*,
+    /// `code`, ~~strike~~), or nil when there's no markup to render — then the
+    /// plain field shows as it always has.
+    static func formatted(_ cell: String) -> AttributedString? {
+        guard cell.contains(where: { "*_`~".contains($0) }),
+              let parsed = try? AttributedString(markdown: cell, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)),
+              String(parsed.characters) != cell else { return nil }
+        return parsed
+    }
+
+    private func overlayAlignment(_ align: TableCellAlign) -> Alignment {
+        switch align {
+        case .left: return .topLeading
+        case .center: return .top
+        case .right: return .topTrailing
         }
     }
 
