@@ -1075,9 +1075,16 @@ enum MarkdownStyler {
             }
         }
 
+        // The per-domain link emoji is shared by `[text](url)` links and bare
+        // URL pills below, so a site's mark shows however it's linked.
+        let domainPills = UserDefaults.standard.object(forKey: "linkDomainPills") as? Bool ?? true
+        let emojiMap = domainPills
+            ? DomainEmojiPreferences.loadAll(from: UserDefaults.standard.string(forKey: DomainEmojiPreferences.storageKey) ?? "")
+            : [:]
+
         for match in linkRegex.matches(in: text, range: full) {
             guard !isClaimed(match.range) else { continue }
-            styleLinkLike(match: match, textStorage: textStorage, text: text, baseFont: baseFont, markerColor: markerColor, linkColor: linkColor, revealed: touches(match.range, cursorSelection))
+            styleLinkLike(match: match, textStorage: textStorage, text: text, baseFont: baseFont, markerColor: markerColor, linkColor: linkColor, emojiMap: emojiMap, revealed: touches(match.range, cursorSelection))
             claimed.append(match.range)
         }
 
@@ -1106,10 +1113,6 @@ enum MarkdownStyler {
         // flanking the domain, and HoverAwareTextView draws the glyphs into
         // them. The pill attribute spans emoji-slot…domain…arrow-slot so the
         // capsule and both glyphs line up off one enclosing rect.
-        let domainPills = UserDefaults.standard.object(forKey: "linkDomainPills") as? Bool ?? true
-        let emojiMap = domainPills
-            ? DomainEmojiPreferences.loadAll(from: UserDefaults.standard.string(forKey: DomainEmojiPreferences.storageKey) ?? "")
-            : [:]
         let arrowSlot = ("↗" as NSString).size(withAttributes: [.font: baseFont]).width + 6
         let nsText = text as NSString
 
@@ -1295,12 +1298,19 @@ enum MarkdownStyler {
         baseFont: NSFont,
         markerColor: NSColor,
         linkColor: NSColor,
+        emojiMap: [String: String],
         revealed: Bool
     ) {
         let labelRange = match.range(at: 1)
         let urlRange = match.range(at: 2)
         let bracketOpen = NSRange(location: labelRange.location - 1, length: 1)
         let bracketClose = NSRange(location: labelRange.location + labelRange.length, length: 1)
+        let linkURL = URL(string: (text as NSString).substring(with: urlRange))
+        let emoji = linkURL.flatMap { url -> String? in
+            guard let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https",
+                  let domain = DomainEmojiPreferences.domainKey(for: url) else { return nil }
+            return emojiMap[domain]
+        }
         let urlWithParens = NSRange(
             location: bracketClose.location + 1,
             length: (urlRange.location + urlRange.length + 1) - (bracketClose.location + 1)
@@ -1308,7 +1318,7 @@ enum MarkdownStyler {
 
         textStorage.addAttribute(.foregroundColor, value: linkColor, range: labelRange)
         textStorage.addAttribute(.underlineStyle, value: NSUnderlineStyle.single.rawValue, range: labelRange)
-        if let url = URL(string: (text as NSString).substring(with: urlRange)) {
+        if let url = linkURL {
             if url.scheme?.hasPrefix("http") == true {
                 textStorage.addAttribute(.link, value: url, range: labelRange)
             } else if url.scheme == nil, url.host == nil, let fragment = url.fragment {
@@ -1327,7 +1337,19 @@ enum MarkdownStyler {
             textStorage.addAttribute(.foregroundColor, value: markerColor, range: bracketClose)
             textStorage.addAttribute(.foregroundColor, value: markerColor, range: urlWithParens)
         } else {
-            collapse(range: bracketOpen, in: textStorage, text: text, font: baseFont)
+            if let emoji {
+                // The hidden "[" becomes the emoji's slot — reserved the same
+                // way a bare URL pill reserves its own (see below), and drawn
+                // by HoverAwareTextView.
+                let emojiFont = NSFont.systemFont(ofSize: baseFont.pointSize * Self.pillEmojiScale)
+                let emojiWidth = (emoji as NSString).size(withAttributes: [.font: emojiFont]).width
+                let natural = advanceWidth(of: "[", font: baseFont)
+                textStorage.addAttribute(.foregroundColor, value: NSColor.clear, range: bracketOpen)
+                textStorage.addAttribute(.kern, value: (emojiWidth + 4) - natural, range: bracketOpen)
+                textStorage.addAttribute(.envyURLEmoji, value: emoji, range: bracketOpen)
+            } else {
+                collapse(range: bracketOpen, in: textStorage, text: text, font: baseFont)
+            }
             collapse(range: bracketClose, in: textStorage, text: text, font: baseFont)
             collapse(range: urlWithParens, in: textStorage, text: text, font: baseFont)
         }

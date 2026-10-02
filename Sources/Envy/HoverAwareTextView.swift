@@ -69,6 +69,24 @@ final class HoverAwareTextView: NSTextView {
                                    withAttributes: [.font: font, .foregroundColor: tint])
                     }
                 }
+
+                // Emoji on `[text](url)` links: same reserved slot, no capsule.
+                // A pill's own emoji was already drawn above.
+                storage.enumerateAttribute(.envyURLEmoji, in: visibleChars, options: []) { value, attrRange, _ in
+                    guard let emoji = value as? String,
+                          storage.attribute(.envyURLPill, at: attrRange.location, effectiveRange: nil) == nil else { return }
+                    let font = (storage.attribute(.font, at: attrRange.location, effectiveRange: nil) as? NSFont)
+                        ?? NSFont.systemFont(ofSize: NSFont.systemFontSize)
+                    let glyphRange = layoutManager.glyphRange(forCharacterRange: attrRange, actualCharacterRange: nil)
+                    var box = layoutManager.boundingRect(forGlyphRange: glyphRange, in: textContainer)
+                    box.origin.x += self.textContainerInset.width
+                    box.origin.y += self.textContainerInset.height
+                    let emojiFont = NSFont.systemFont(ofSize: font.pointSize * MarkdownStyler.pillEmojiScale)
+                    let s = emoji as NSString
+                    let size = s.size(withAttributes: [.font: emojiFont])
+                    s.draw(at: NSPoint(x: box.minX, y: box.midY - size.height / 2),
+                           withAttributes: [.font: emojiFont])
+                }
             }
         }
 
